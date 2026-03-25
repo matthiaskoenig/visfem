@@ -39,6 +39,8 @@ dependencies = [
 	"trame>=3.12.0",
 	"h5py>=3.16.0",
 	"imageio>=2.37.3",
+	"trame-vuetify>=3.2.1",
+	"trame-vtk>=2.11.6",
 ]
 
 [project.optional-dependencies]

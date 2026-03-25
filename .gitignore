@@ -1,0 +1,15 @@
+uv.lock
+.vscode
+*.pyc
+*~
+.DS_Store
+.eggs/
+build
+.idea
+.tox/
+.venv
+src/visfem.egg-info/
+
+wheels
+__pycache__
+.pytest_cache

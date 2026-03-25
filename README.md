@@ -5,7 +5,7 @@
 [![Version](https://img.shields.io/pypi/v/visfem.svg)](https://pypi.org/project/visfem/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/visfem.svg)](https://pypi.org/project/visfem/)
 [![MIT License](https://img.shields.io/pypi/l/visfem.svg)](https://opensource.org/licenses/MIT)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.5308801.svg)](https://doi.org/10.5281/zenodo.5308801)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19220183.svg)](https://doi.org/10.5281/zenodo.19220183)
 
 VisFEM is a collection of python utilities for visualization of FEM models with code available from
 [https://github.com/matthiaskoenig/visfem](https://github.com/matthiaskoenig/visfem).
@@ -22,9 +22,9 @@ pip install visfem
 ## How to cite
 To cite the software repository
 
-> Nemitz, N., Elias, M. & König, M. (2025).
+> Elias, M. & König, M. (2025).
 > *VisFEM: Web visualization of FEM models.*
-> Zenodo. [https://doi.org/10.5281/zenodo.13987865](https://doi.org/10.5281/zenodo.13987865)
+> Zenodo. [https://doi.org/10.5281/zenodo.19220183](https://doi.org/10.5281/zenodo.19220183)
 
 
 ## License

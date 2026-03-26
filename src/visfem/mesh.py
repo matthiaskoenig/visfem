@@ -1,4 +1,4 @@
-"""Exploratory mesh loading and visualization using meshio and PyVista."""
+"""Mesh loading and visualization using meshio and PyVista."""
 
 import logging
 import math
@@ -35,16 +35,21 @@ def load_mesh_from_timeseries(path: Path, step: int = 0) -> pv.UnstructuredGrid:
     return pv.from_meshio(mesh)
 
 
-def plot_mesh(path: Path, step: int = 0) -> None:
+def plot_mesh(path: Path, step: int = 0, field: str | None = None) -> None:
     """Load and display a single mesh file."""
     pvmesh = load_mesh_from_timeseries(path, step)
     logger.info(f"Mesh: {path.name} (step {step})")
     logger.info(f"  Points: {pvmesh.n_points}")
     logger.info(f"  Cells:  {pvmesh.n_cells}")
-    pvmesh.plot(show_edges=True)
+    pvmesh.plot(scalars=field, show_edges=True)
 
 
-def animate_mesh(path: Path, output_dir: Path, every_nth: int = 10) -> None:
+def animate_mesh(
+    path: Path,
+    output_dir: Path,
+    every_nth: int = 10,
+    field: str | None = None,
+) -> None:
     """Animate all time steps of a mesh file and save as GIF."""
     output_dir.mkdir(parents=True, exist_ok=True)
     with meshio.xdmf.TimeSeriesReader(path) as reader:
@@ -63,7 +68,7 @@ def animate_mesh(path: Path, output_dir: Path, every_nth: int = 10) -> None:
             )
             pvmesh = pv.from_meshio(mesh)
             plotter.clear()
-            plotter.add_mesh(pvmesh, show_edges=True)
+            plotter.add_mesh(pvmesh, scalars=field, show_edges=True)
             plotter.add_text(f"t = {t:.2f}", font_size=12)
             plotter.write_frame()
 
@@ -72,16 +77,23 @@ def animate_mesh(path: Path, output_dir: Path, every_nth: int = 10) -> None:
 
 def _grid_shape(n: int) -> tuple[int, int]:
     """Compute the tightest (nrows, ncols) grid for n subplots, max 4 columns.
+
+    Squares get a square grid to avoid empty slots (e.g. 4 → 2×2).
+    All other counts use up to 4 columns with ceiling division for rows.
     """
     sqrt = int(math.isqrt(n))
-    if sqrt * sqrt == n:      # perfect square → square grid, zero empty slots
+    if sqrt * sqrt == n:
         return sqrt, sqrt
     ncols = min(n, 4)
     nrows = -(-n // ncols)    # ceiling division
     return nrows, ncols
 
 
-def plot_all_resolutions(mesh_files: list[Path], step: int = 0) -> None:
+def plot_all_resolutions(
+    mesh_files: list[Path],
+    step: int = 0,
+    field: str | None = None,
+) -> None:
     """Plot mesh resolutions in a dynamically sized grid with linked cameras."""
     n = len(mesh_files)
     if n == 0:
@@ -96,7 +108,7 @@ def plot_all_resolutions(mesh_files: list[Path], step: int = 0) -> None:
         col = i % ncols
         plotter.subplot(row, col)
         pvmesh = load_mesh_from_timeseries(mesh_path, step=step)
-        plotter.add_mesh(pvmesh, show_edges=True)
+        plotter.add_mesh(pvmesh, scalars=field, show_edges=True)
         plotter.add_title(mesh_path.stem, font_size=8)
         logger.info(f"{mesh_path.stem}: {pvmesh.n_points} points, {pvmesh.n_cells} cells")
 
@@ -151,6 +163,9 @@ if __name__ == "__main__":
     STEP = 150
     ANIMATE_EVERY_NTH = 10
 
+    FIELD = None  # PyVista picks default; run print_fields() to see available ones
+    # FIELD = "pressure"  # uncomment to select a specific field
+
     MESH_FILES = [
         DATA_DIR / "lobule_sixth_00005.xdmf",
         DATA_DIR / "lobule_sixth_000025.xdmf",
@@ -159,8 +174,8 @@ if __name__ == "__main__":
     ]
 
     # run
-    # plot_mesh(MESH_FILES[1], step=STEP)
-    # animate_mesh(MESH_FILES[1], output_dir=OUTPUT_DIR, every_nth=ANIMATE_EVERY_NTH)
-    plot_all_resolutions(MESH_FILES, step=STEP)
+    # plot_mesh(MESH_FILES[1], step=STEP, field=FIELD)
+    # animate_mesh(MESH_FILES[1], output_dir=OUTPUT_DIR, every_nth=ANIMATE_EVERY_NTH, field=FIELD)
+    plot_all_resolutions(MESH_FILES, step=STEP, field=FIELD)
     # print_fields(MESH_FILES[1], step=STEP)
     # plot_scalar_fields(MESH_FILES[1], step=STEP)

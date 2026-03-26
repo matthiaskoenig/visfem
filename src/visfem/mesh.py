@@ -1,15 +1,28 @@
 """Exploratory mesh loading and visualization using meshio and PyVista."""
 
+import logging
 from pathlib import Path
 
 import meshio
 import pyvista as pv
 
+from visfem.log import get_logger
+
+logger: logging.Logger = get_logger(__name__)
+
+
+def get_field_names(path: Path, step: int = 0) -> list[str]:
+    """Read all available scalar field names from an XDMF time series file."""
+    with meshio.xdmf.TimeSeriesReader(path) as reader:
+        reader.read_points_cells()
+        _, point_data, cell_data = reader.read_data(step)
+    return list(point_data.keys()) + list(cell_data.keys())
+
 
 def load_mesh_from_timeseries(path: Path, step: int = 0) -> pv.UnstructuredGrid:
     """Load a single time step from an XDMF time series and convert to PyVista."""
     with meshio.xdmf.TimeSeriesReader(path) as reader:
-        print(f"Number of time steps: {reader.num_steps}")
+        logger.debug(f"Loading '{path.name}' — {reader.num_steps} time steps available")
         points, cells = reader.read_points_cells()
         t, point_data, cell_data = reader.read_data(step)
         mesh = meshio.Mesh(
@@ -18,25 +31,26 @@ def load_mesh_from_timeseries(path: Path, step: int = 0) -> pv.UnstructuredGrid:
             point_data=point_data,
             cell_data=cell_data,
         )
-    return pv.utilities.from_meshio(mesh)
+    return pv.from_meshio(mesh)
 
 
 def plot_mesh(path: Path, step: int = 0) -> None:
     """Load and display a single mesh file."""
     pvmesh = load_mesh_from_timeseries(path, step)
-    print(f"Mesh: {path.name} (step {step})")
-    print(f"  Points: {pvmesh.n_points}")
-    print(f"  Cells:  {pvmesh.n_cells}")
+    logger.info(f"Mesh: {path.name} (step {step})")
+    logger.info(f"  Points: {pvmesh.n_points}")
+    logger.info(f"  Cells:  {pvmesh.n_cells}")
     pvmesh.plot(show_edges=True)
 
 
-def animate_mesh(path: Path, every_nth: int = 10) -> None:
-    """Animate all time steps of a mesh file."""
+def animate_mesh(path: Path, output_dir: Path, every_nth: int = 10) -> None:
+    """Animate all time steps of a mesh file and save as GIF."""
+    output_dir.mkdir(parents=True, exist_ok=True)
     with meshio.xdmf.TimeSeriesReader(path) as reader:
         points, cells = reader.read_points_cells()
 
         plotter = pv.Plotter()
-        plotter.open_gif(OUTPUT_DIR / "mesh_animation.gif")
+        plotter.open_gif(output_dir / "mesh_animation.gif")
 
         for step in range(0, reader.num_steps, every_nth):
             t, point_data, cell_data = reader.read_data(step)
@@ -46,7 +60,7 @@ def animate_mesh(path: Path, every_nth: int = 10) -> None:
                 point_data=point_data,
                 cell_data=cell_data,
             )
-            pvmesh = pv.utilities.from_meshio(mesh)
+            pvmesh = pv.from_meshio(mesh)
             plotter.clear()
             plotter.add_mesh(pvmesh, show_edges=True)
             plotter.add_text(f"t = {t:.2f}", font_size=12)
@@ -66,7 +80,7 @@ def plot_all_resolutions(mesh_files: list[Path], step: int = 0) -> None:
         pvmesh = load_mesh_from_timeseries(mesh_path, step=step)
         plotter.add_mesh(pvmesh, show_edges=True)
         plotter.add_title(mesh_path.stem, font_size=8)
-        print(f"{mesh_path.stem}: {pvmesh.n_points} points, {pvmesh.n_cells} cells")
+        logger.info(f"{mesh_path.stem}: {pvmesh.n_points} points, {pvmesh.n_cells} cells")
 
     plotter.link_views()
     plotter.show()
@@ -75,33 +89,25 @@ def plot_all_resolutions(mesh_files: list[Path], step: int = 0) -> None:
 def print_fields(path: Path, step: int = 0) -> None:
     """Print all available data fields in the mesh."""
     with meshio.xdmf.TimeSeriesReader(path) as reader:
-        points, cells = reader.read_points_cells()
-        t, point_data, cell_data = reader.read_data(step)
+        reader.read_points_cells()
+        _, point_data, cell_data = reader.read_data(step)
 
-        print("\n--- Point data (on nodes) ---")
-        for name, data in point_data.items():
-            print(f"  {name}: shape {data.shape}")
+    logger.info("--- Point data (on nodes) ---")
+    for name, data in point_data.items():
+        logger.info(f"  {name}: shape {data.shape}")
 
-        print("\n--- Cell data (on cells) ---")
-        for name, data in cell_data.items():
-            print(f"  {name}: shape {data[0].shape}")
+    logger.info("--- Cell data (on cells) ---")
+    for name, data in cell_data.items():
+        logger.info(f"  {name}: shape {data[0].shape}")
 
 
 def plot_scalar_fields(path: Path, step: int = 0) -> None:
-    """Plot selected scalar fields side by side in a grid."""
+    """Plot all scalar fields side by side in a grid."""
     pvmesh = load_mesh_from_timeseries(path, step)
-
-    scalar_fields = [
-        "pressure",
-        "rr_necrosis",
-        "rr_zonation_pattern",
-        "cell_type",
-        "rr_(S)",
-        "rr_(P)",
-    ]
+    scalar_fields = get_field_names(path, step)
 
     ncols = 3
-    nrows = 2
+    nrows = -(-len(scalar_fields) // ncols)  # ceiling division
     plotter = pv.Plotter(shape=(nrows, ncols))
 
     for i, field in enumerate(scalar_fields):
@@ -114,8 +120,8 @@ def plot_scalar_fields(path: Path, step: int = 0) -> None:
     plotter.link_views()
     plotter.show()
 
+
 if __name__ == "__main__":
-    # configuration
     DATA_DIR = Path(__file__).parents[3] / "visfem_data" / "convergence_sixth" / "xdmf"
     OUTPUT_DIR = Path(__file__).parents[3] / "visfem_results"
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -131,8 +137,8 @@ if __name__ == "__main__":
     ]
 
     # run
-    # plot_mesh(MESH_FILES[0], step=STEP)
-    # animate_mesh(MESH_FILES[0], every_nth=ANIMATE_EVERY_NTH)
+    plot_mesh(MESH_FILES[0], step=STEP)
+    # animate_mesh(MESH_FILES[0], output_dir=OUTPUT_DIR, every_nth=ANIMATE_EVERY_NTH)
     # plot_all_resolutions(MESH_FILES, step=STEP)
     # print_fields(MESH_FILES[0], step=STEP)
-    plot_scalar_fields(MESH_FILES[3], step=STEP)
+    # plot_scalar_fields(MESH_FILES[0], step=STEP)

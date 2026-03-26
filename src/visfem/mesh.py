@@ -33,7 +33,7 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
         logger.debug(f"[pyvista-native] loading '{path.name}'")
         return pv.read(str(path))
 
-    # Fallback: let meshio handle anything else (.msh, .med, .stl, .ply, …)
+    # Fallback
     logger.debug(f"[meshio-fallback] loading '{path.name}'")
     return pv.from_meshio(meshio.read(str(path)))
 
@@ -193,10 +193,15 @@ def _ircadb_vtk_dir(ircadb_dir: Path, patient: int) -> Path:
     return ircadb_dir / f"3Dircadb1.{patient}" / "MESHES_VTK"
 
 
+def get_organ_names(ircadb_dir: Path, patient: int) -> list[str]:
+    """Return sorted list of available organ names for a given patient."""
+    vtk_dir = _ircadb_vtk_dir(ircadb_dir, patient)
+    return sorted(f.stem for f in vtk_dir.glob("*.vtk"))
+
+
 def print_ircadb_organs(ircadb_dir: Path, patient: int) -> None:
     """Print all available organ meshes for a patient."""
-    vtk_dir = _ircadb_vtk_dir(ircadb_dir, patient)
-    organs = sorted(f.stem for f in vtk_dir.glob("*.vtk"))
+    organs = get_organ_names(ircadb_dir, patient)
     logger.info(f"--- Patient {patient} — organs available ({len(organs)}) ---")
     for organ in organs:
         logger.info(f"  {organ}")

@@ -20,7 +20,7 @@ logger: logging.Logger = get_logger(__name__)
 DATA_DIR = Path(os.environ.get("VISFEM_DATA_DIR", Path(__file__).parents[3] / "visfem_data" / "convergence_sixth" / "xdmf"))
 
 MESH_FILES = {
-    "Coarse (00005)":         DATA_DIR / "lobule_sixth_00005.xdmf",
+    "Coarse (00005)":        DATA_DIR / "lobule_sixth_00005.xdmf",
     "Medium-coarse (000025)": DATA_DIR / "lobule_sixth_000025.xdmf",
     "Medium-fine (0000125)":  DATA_DIR / "lobule_sixth_0000125.xdmf",
     "Fine (00000625)":        DATA_DIR / "lobule_sixth_00000625.xdmf",
@@ -80,9 +80,9 @@ class VisfemApp(TrameApp):
 
         step = int(self.state.step)
         num_steps = self._step_counts[self.state.mesh_name]
-        if not (0 <= step < num_steps):
-            logger.warning(f"Step {step} out of range [0, {num_steps - 1}], clamping.")
-            step = max(0, min(step, num_steps - 1))
+        if not (1 <= step <= num_steps - 1):
+            logger.warning(f"Step {step} out of range [1, {num_steps - 1}], clamping.")
+            step = max(1, min(step, num_steps - 1))
 
         try:
             new_mesh = load_mesh_from_timeseries(mesh_path, step=step)
@@ -155,12 +155,13 @@ class VisfemApp(TrameApp):
                 v3.VSlider(
                     v_model=("step",),
                     min=1,
-                    max=("num_steps",),
+                    max=("num_steps - 1",),
                     step=1,
                     label="Step",
+                    thumb_label=True,
                     density="compact",
                     hide_details=True,
-                    style="max-width: 300px;",
+                    style="max-width: 300px; margin-top: 20px;",
                 )
 
                 v3.VBtn(icon="mdi-crop-free", click=self.reset_camera)

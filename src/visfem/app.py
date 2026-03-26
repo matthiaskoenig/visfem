@@ -15,8 +15,9 @@ from trame.widgets.vtk import VtkLocalView
 from visfem.log import get_logger
 from visfem.mesh import get_field_names, load_mesh_from_timeseries
 
-logger: logging.Logger = get_logger(__name__)
+logger = get_logger(__name__)  # module-level logger
 
+# Default data directory; override via VISFEM_DATA_DIR env var
 DATA_DIR = Path(
     os.environ.get(
         "VISFEM_DATA_DIR",
@@ -24,6 +25,7 @@ DATA_DIR = Path(
     )
 )
 
+# Available mesh resolutions mapped to their XDMF files
 MESH_FILES = {
     "Coarse (00005)":         DATA_DIR / "lobule_sixth_00005.xdmf",
     "Medium-coarse (000025)": DATA_DIR / "lobule_sixth_000025.xdmf",
@@ -44,9 +46,11 @@ class VisfemApp(TrameApp):
         self._setup_mesh()
         self._build_ui()
 
-    # Setup
+    # --- Setup ---
+
     def _setup_mesh(self) -> None:
         """Load initial mesh, read field names, and cache step counts per file."""
+        # Pre-cache step counts to avoid reopening files on every mesh switch
         self._step_counts: dict[str, int] = {
             name: _num_steps(path) for name, path in MESH_FILES.items()
         }
@@ -65,7 +69,7 @@ class VisfemApp(TrameApp):
             self.pvmesh,
             scalars=initial_field,
             show_edges=True,
-            copy_mesh=False,
+            copy_mesh=False,  # avoid redundant copy; mesh is owned here
         )
         self.plotter.reset_camera()
 
@@ -77,7 +81,8 @@ class VisfemApp(TrameApp):
             "num_steps": self._step_counts[initial_name],
         })
 
-    # Redraw
+    # --- Redraw ---
+
     def _redraw(self, mesh_name: str, field: str | None, step: int) -> None:
         """Clear and redraw the plotter with updated mesh/field/step."""
         mesh_path = MESH_FILES.get(mesh_name)
@@ -85,6 +90,7 @@ class VisfemApp(TrameApp):
             logger.error(f"Mesh file not found: {mesh_path}")
             return
 
+        # Clamp step to valid range
         num_steps = self._step_counts[mesh_name]
         step = max(1, min(step, num_steps - 1))
 
@@ -104,7 +110,8 @@ class VisfemApp(TrameApp):
         )
         self.ctrl.view_update()
 
-    # State callbacks
+    # --- State callbacks ---
+
     @change("scalar_field", "step")
     def _on_field_or_step_change(self, **_) -> None:
         """Redraw when the active field or timestep changes."""
@@ -129,6 +136,8 @@ class VisfemApp(TrameApp):
 
         scalar_fields = get_field_names(mesh_path, step=1)
         self.state.scalar_fields = scalar_fields
+
+        # Keep current field if it exists in the new mesh, else fall back to first
         current_field = self.state.scalar_field
         new_field = (
             current_field if current_field in scalar_fields
@@ -138,14 +147,16 @@ class VisfemApp(TrameApp):
 
         self._redraw(mesh_name=mesh_name, field=new_field, step=step)
 
-    # Camera
+    # --- Camera ---
+
     def reset_camera(self) -> None:
         """Reset camera to default position."""
         self.plotter.reset_camera()
         self.ctrl.view_push_camera()
         self.ctrl.reset_camera()
 
-    # UI
+    # --- UI ---
+
     def _build_ui(self) -> None:
         """Build the user interface."""
         mesh_names = list(MESH_FILES.keys())
@@ -153,7 +164,7 @@ class VisfemApp(TrameApp):
         with SinglePageWithDrawerLayout(self.server) as self.ui:
             self.ui.title.set_text("VisFEM")
 
-            # Sidebar - mesh resolution selector
+            # Sidebar: mesh resolution selector
             with self.ui.drawer as drawer:
                 drawer.width = 250
                 with v3.VContainer(classes="pa-4"):
@@ -165,7 +176,7 @@ class VisfemApp(TrameApp):
                         hide_details=True,
                     )
 
-            # Toolbar - field selector + step slider + camera reset
+            # Toolbar: field selector + step slider + camera reset
             with self.ui.toolbar:
                 v3.VSpacer()
 

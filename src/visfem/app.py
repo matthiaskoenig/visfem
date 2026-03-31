@@ -86,7 +86,7 @@ def _format_time(t: float) -> str:
 # ---- App ----
 
 class VisfemApp(TrameApp):
-    def __init__(self, server=None):
+    def __init__(self, server: object = None) -> None:
         super().__init__(server)
         self._setup_state()
         self._build_ui()
@@ -282,7 +282,7 @@ class VisfemApp(TrameApp):
     # ---- Reactive callbacks ----
 
     @change("conv_name")
-    def _on_conv_name_change(self, **_) -> None:
+    def _on_conv_name_change(self, **_: object) -> None:
         if self.state.mode != "convergence":
             return
         name = self.state.conv_name
@@ -301,7 +301,7 @@ class VisfemApp(TrameApp):
         self._redraw_convergence(name, self.state.conv_field, step)
 
     @change("conv_field", "conv_step")
-    def _on_conv_field_or_step_change(self, **_) -> None:
+    def _on_conv_field_or_step_change(self, **_: object) -> None:
         if self.state.mode != "convergence":
             return
         step = int(self.state.conv_step)
@@ -311,7 +311,7 @@ class VisfemApp(TrameApp):
         self._redraw_convergence(self.state.conv_name, self.state.conv_field, step)
 
     @change("spp_name")
-    def _on_spp_name_change(self, **_) -> None:
+    def _on_spp_name_change(self, **_: object) -> None:
         if self.state.mode != "spp":
             return
         name = self.state.spp_name
@@ -330,7 +330,7 @@ class VisfemApp(TrameApp):
         self._redraw_spp(name, self.state.spp_field, step)
 
     @change("spp_field", "spp_step")
-    def _on_spp_field_or_step_change(self, **_) -> None:
+    def _on_spp_field_or_step_change(self, **_: object) -> None:
         if self.state.mode != "spp":
             return
         step = int(self.state.spp_step)
@@ -340,7 +340,7 @@ class VisfemApp(TrameApp):
         self._redraw_spp(self.state.spp_name, self.state.spp_field, step)
 
     @change("patient_name")
-    def _on_patient_change(self, **_) -> None:
+    def _on_patient_change(self, **_: object) -> None:
         if self.state.mode != "ircadb":
             return
         self._redraw_ircadb(self.state.patient_name)

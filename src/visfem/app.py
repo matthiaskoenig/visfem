@@ -1,20 +1,16 @@
 """Trame web application for FEM mesh visualization."""
-
 import os
 from pathlib import Path
-
 import pyvista as pv
 from trame.app import TrameApp
 from trame.decorators import change
 from trame.ui.vuetify3 import SinglePageWithDrawerLayout
 from trame.widgets import vuetify3 as v3
-from trame.widgets.vtk import VtkLocalView
-
+from trame.widgets.vtk import VtkLocalView, VtkWebXRHelper
 from visfem.log import get_logger
 from visfem.mesh import get_metadata, load_mesh
 
 logger = get_logger(__name__)
-
 
 # Data directories
 DATA_DIR = Path(
@@ -29,7 +25,6 @@ CONVERGENCE_FILES = {
     "Medium-fine (0000125)":  DATA_DIR / "lobule_sixth_0000125.xdmf",
     "Fine (00000625)":        DATA_DIR / "lobule_sixth_00000625.xdmf",
 }
-
 SPP_DIR = Path(
     os.environ.get(
         "VISFEM_SPP_DIR",
@@ -42,7 +37,6 @@ SPP_FILES = {
     "Lobule p6":   SPP_DIR / "lobule" / "lobule_spt_p6.xdmf",
     "Scan 64 p1":  SPP_DIR / "scan" / "scan_64_p1.xdmf",
 }
-
 IRCADB_DIR = Path(
     os.environ.get(
         "VISFEM_IRCADB_DIR",
@@ -135,7 +129,6 @@ class VisfemApp(TrameApp):
 
         self.state.update({
             "mode": "convergence",
-
             # Convergence state
             "conv_names": conv_names,
             "conv_name": initial_conv_name,
@@ -145,7 +138,6 @@ class VisfemApp(TrameApp):
             "conv_num_steps": initial_conv_meta["n_steps"],
             "conv_times": initial_conv_times,
             "conv_time_label": _format_time(initial_conv_times[1] if len(initial_conv_times) > 1 else 0),
-
             # SPP state
             "spp_names": spp_names,
             "spp_name": initial_spp_name,
@@ -155,10 +147,11 @@ class VisfemApp(TrameApp):
             "spp_num_steps": initial_spp_meta["n_steps"],
             "spp_times": initial_spp_times,
             "spp_time_label": _format_time(initial_spp_times[0] if initial_spp_times else 0),
-
             # IRCADb state
             "patient_names": [f"Patient {p}" for p in IRCADB_PATIENTS],
             "patient_name": f"Patient {initial_patient}" if initial_patient else "",
+            # WebXR state
+            "xr_active": False,
         })
 
     # ---- Redraw helpers ----
@@ -209,11 +202,8 @@ class VisfemApp(TrameApp):
         except ValueError:
             logger.error(f"Cannot parse patient number from '{patient_name}'")
             return
-
         organs = _ircadb_organ_names(patient)
         self.plotter.clear()
-
-        # Add each organ mesh with a distinct color from the palette
         for i, organ in enumerate(organs):
             vtk_path = _ircadb_vtk_path(patient, organ)
             if not vtk_path.exists():
@@ -231,13 +221,11 @@ class VisfemApp(TrameApp):
                 )
             except Exception as e:
                 logger.error(f"Failed to load '{vtk_path.name}': {e}")
-
         self.plotter.reset_camera()
         self.ctrl.view_push_camera()
         self.ctrl.view_update()
 
     # ---- Button handlers ----
-    # Each activate_* method sets the active mode and triggers a full redraw.
 
     def activate_convergence(self) -> None:
         self.state.mode = "convergence"
@@ -277,8 +265,21 @@ class VisfemApp(TrameApp):
         self.state.mode = "ircadb"
         self._redraw_ircadb(self.state.patient_name)
 
+    # ---- WebXR handlers ----
+
+    def _on_enter_xr(self) -> None:
+        self.state.xr_active = True
+
+    def _on_exit_xr(self) -> None:
+        self.state.xr_active = False
+
+    def toggle_xr(self) -> None:
+        if self.state.xr_active:
+            self.ctrl.stop_xr()
+        else:
+            self.ctrl.start_xr(VtkWebXRHelper.XrSessionTypes.HmdVR)
+
     # ---- Reactive callbacks ----
-    # These fire automatically when the user changes a dropdown or slider.
 
     @change("conv_name")
     def _on_conv_name_change(self, **_) -> None:
@@ -360,7 +361,6 @@ class VisfemApp(TrameApp):
             with self.ui.drawer as drawer:
                 drawer.width = 280
                 with v3.VContainer(classes="pa-4"):
-
                     # Convergence sixth section
                     v3.VListSubheader("Liver Lobule")
                     v3.VSelect(
@@ -404,7 +404,6 @@ class VisfemApp(TrameApp):
                         classes="mt-3",
                         click=self.activate_convergence,
                     )
-
                     v3.VDivider(classes="my-4")
 
                     # SPP FEMVis section
@@ -450,10 +449,9 @@ class VisfemApp(TrameApp):
                         classes="mt-3",
                         click=self.activate_spp,
                     )
-
                     v3.VDivider(classes="my-4")
 
-                    # IRCADb section - loads all organs for the selected patient
+                    # IRCADb section
                     v3.VListSubheader("3D-IRCADb-01")
                     v3.VSelect(
                         v_model=("patient_name",),
@@ -480,13 +478,24 @@ class VisfemApp(TrameApp):
                     density="compact",
                 )
                 v3.VBtn(icon="mdi-crop-free", click=self.reset_camera)
+                v3.VBtn(
+                    icon=("xr_active ? 'mdi-virtual-reality' : 'mdi-vr'",),
+                    click=self.toggle_xr,
+                )
 
             with self.ui.content:
                 with v3.VContainer(fluid=True, classes="pa-0 fill-height"):
-                    view = VtkLocalView(self.plotter.render_window)
-                    self.ctrl.reset_camera = view.reset_camera
-                    self.ctrl.view_push_camera = view.push_camera
-                    self.ctrl.view_update = view.update
+                    with VtkLocalView(self.plotter.render_window) as view:
+                        self.ctrl.reset_camera = view.reset_camera
+                        self.ctrl.view_push_camera = view.push_camera
+                        self.ctrl.view_update = view.update
+                        webxr_helper = VtkWebXRHelper(
+                            draw_controllers_ray=True,
+                            enter_xr=(self._on_enter_xr,),
+                            exit_xr=(self._on_exit_xr,),
+                        )
+                        self.ctrl.start_xr = webxr_helper.start_xr
+                        self.ctrl.stop_xr = webxr_helper.stop_xr
 
 
 def main() -> None:

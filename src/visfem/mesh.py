@@ -240,11 +240,17 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
 
 def _metadata_static(path: Path, fmt: str) -> MeshMetadata:
     """Extract metadata from a static mesh file."""
-    mesh = (
+    mesh = cast(
+        pv.DataSet,
         pv.read(str(path))
         if path.suffix.lower() in _PYVISTA_NATIVE
-        else pv.from_meshio(meshio.read(str(path)))
+        else pv.from_meshio(meshio.read(str(path))),
     )
+
+    def _field_shape(arr: np.ndarray) -> list[int]:
+        """Return shape descriptor: [1] for scalars, [n] for n-component vectors/tensors."""
+        return list(arr.shape[1:]) if arr.ndim > 1 else [1]
+
     return {
         "format": fmt,
         "n_steps": 1,
@@ -253,8 +259,10 @@ def _metadata_static(path: Path, fmt: str) -> MeshMetadata:
         "n_cells": mesh.n_cells,
         "cell_types": [str(ct.name).lower() for ct in mesh.distinct_cell_types],
         "fields": {
-            **{name: {"center": "point", "shape": [1]} for name in mesh.point_data.keys()},
-            **{name: {"center": "cell", "shape": [1]} for name in mesh.cell_data.keys()},
+            **{name: {"center": "point", "shape": _field_shape(arr)}
+               for name, arr in mesh.point_data.items()},
+            **{name: {"center": "cell", "shape": _field_shape(arr)}
+               for name, arr in mesh.cell_data.items()},
         },
     }
 

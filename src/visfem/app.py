@@ -255,7 +255,7 @@ class VisfemApp(TrameApp):
         self.ctrl.view_update()
 
     def _redraw_ircadb(self, patient_name: str, opacity: float = 0.5) -> None:
-        """Load all organ meshes for a patient and render them with distinct colors."""
+        """Load all organ meshes for a patient and render as a single merged actor."""
         if not patient_name:
             return
         try:
@@ -265,7 +265,10 @@ class VisfemApp(TrameApp):
             return
         organs = _ircadb_organ_names(patient)
         self.plotter.clear()
-        # Add each organ as a separate actor; missing files are skipped with a warning
+
+        # Stamp region_id on each submesh so colors survive merging
+        parts: list[pv.DataSet] = []
+        colors: list[str] = []
         for i, organ in enumerate(organs):
             vtk_path = _ircadb_vtk_path(patient, organ)
             if not vtk_path.exists():
@@ -273,16 +276,23 @@ class VisfemApp(TrameApp):
                 continue
             try:
                 mesh = load_mesh(vtk_path)
-                self.plotter.add_mesh(
-                    mesh,
-                    color=_ORGAN_COLORS[i % len(_ORGAN_COLORS)],
-                    opacity=opacity,
-                    show_edges=False,
-                    name=organ,
-                    copy_mesh=False,
-                )
+                mesh.cell_data["region_id"] = np.full(mesh.n_cells, i, dtype=np.int32)
+                parts.append(mesh)
+                colors.append(_ORGAN_COLORS[i % len(_ORGAN_COLORS)])
             except Exception as e:
                 logger.error(f"Failed to load '{vtk_path.name}': {e}")
+
+        if parts:
+            merged = pv.merge(parts)
+            self.plotter.add_mesh(
+                merged,
+                scalars="region_id",
+                cmap=colors,
+                opacity=opacity,
+                show_edges=False,
+                show_scalar_bar=False,
+                copy_mesh=False,
+            )
         self.plotter.reset_camera()
         self.ctrl.view_push_camera()
         self.ctrl.view_update()
@@ -299,46 +309,91 @@ class VisfemApp(TrameApp):
             self.plotter.add_mesh(surf, color="#f4a261", show_edges=False, copy_mesh=False)
 
         elif render_mode == "Cavities":
-            for label, path in HEART_CAVITY_SURFACES.items():
+            # Merge all cavity STL surfaces into one actor
+            parts: list[pv.DataSet] = []
+            colors: list[str] = []
+            for i, (label, path) in enumerate(HEART_CAVITY_SURFACES.items()):
                 if not path.exists():
                     logger.warning(f"Cavity surface not found: {path}, skipping.")
                     continue
                 try:
                     mesh = cast(pv.DataSet, pv.read(str(path)))
-                    self.plotter.add_mesh(
-                        mesh,
-                        color=HEART_CAVITY_COLORS[label],
-                        opacity=0.85,
-                        show_edges=False,
-                        name=f"heart_cavity_{label}",
-                        copy_mesh=False,
-                    )
+                    mesh.cell_data["region_id"] = np.full(mesh.n_cells, i, dtype=np.int32)
+                    parts.append(mesh)
+                    colors.append(HEART_CAVITY_COLORS[label])
                 except Exception as e:
                     logger.error(f"Failed to load cavity '{path.name}': {e}")
+            if parts:
+                merged = pv.merge(parts)
+                self.plotter.add_mesh(
+                    merged,
+                    scalars="region_id",
+                    cmap=colors,
+                    opacity=0.85,
+                    show_edges=False,
+                    show_scalar_bar=False,
+                    copy_mesh=False,
+                )
 
         else:
-            # Mesh (by region) - pericardium semi-transparent, chambers opaque
+            # Mesh (by region) - merge all regions into one actor
+            # Pericardium rendered separately at low opacity so it stays as a ghost shell
             try:
                 mesh = load_mesh(HEART_MESH_PATH)
             except Exception as e:
                 logger.error(f"Failed to load heart mesh: {e}")
                 return
             mat = mesh.cell_data["Material"]
-            for mat_id, color in _HEART_MATERIAL_COLORS.items():
+
+            # Opaque chambers: one merged actor
+            opaque_parts: list[pv.DataSet] = []
+            opaque_colors: list[str] = []
+            for i, (mat_id, color) in enumerate(
+                (mid, c) for mid, c in _HEART_MATERIAL_COLORS.items()
+                if mid not in _HEART_PERICARDIUM_IDS
+            ):
                 mask = mat == mat_id
                 if not mask.any():
                     continue
-                opacity = 0.15 if mat_id in _HEART_PERICARDIUM_IDS else 1.0
-                submesh = mesh.extract_cells(np.where(mask)[0])
+                sub = mesh.extract_cells(np.where(mask)[0])
+                sub.cell_data["region_id"] = np.full(sub.n_cells, i, dtype=np.int32)
+                opaque_parts.append(sub)
+                opaque_colors.append(color)
+            if opaque_parts:
+                merged_opaque = pv.merge(opaque_parts)
                 self.plotter.add_mesh(
-                    submesh,
-                    color=color,
-                    opacity=opacity,
+                    merged_opaque,
+                    scalars="region_id",
+                    cmap=opaque_colors,
                     show_edges=False,
-                    name=f"heart_mat_{mat_id}",
+                    show_scalar_bar=False,
                     copy_mesh=False,
                 )
-            # Fiber glyphs on top if requested
+
+            # Pericardium ghost: separate merged actor at low opacity
+            peri_parts: list[pv.DataSet] = []
+            peri_colors: list[str] = []
+            for i, mat_id in enumerate(_HEART_PERICARDIUM_IDS):
+                mask = mat == mat_id
+                if not mask.any():
+                    continue
+                sub = mesh.extract_cells(np.where(mask)[0])
+                sub.cell_data["region_id"] = np.full(sub.n_cells, i, dtype=np.int32)
+                peri_parts.append(sub)
+                peri_colors.append(_HEART_MATERIAL_COLORS[mat_id])
+            if peri_parts:
+                merged_peri = pv.merge(peri_parts)
+                self.plotter.add_mesh(
+                    merged_peri,
+                    scalars="region_id",
+                    cmap=peri_colors,
+                    opacity=0.15,
+                    show_edges=False,
+                    show_scalar_bar=False,
+                    copy_mesh=False,
+                )
+
+            # Fiber glyphs as a single actor on top if requested
             if show_fibers:
                 subsample = 10
                 idx = np.arange(0, mesh.n_cells, subsample)

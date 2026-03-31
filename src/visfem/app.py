@@ -91,6 +91,8 @@ class VisfemApp(TrameApp):
         super().__init__(server)
         self._setup_state()
         self._build_ui()
+        # Reset XR state whenever a client reconnects
+        self.ctrl.on_client_connected.add(self._reset_xr_state)
 
     def _setup_state(self) -> None:
         """Initialize plotter, pre-load metadata, and set all Trame state variables.
@@ -160,6 +162,10 @@ class VisfemApp(TrameApp):
             # --- WebXR state ---
             "xr_active": False,  # toggled by VtkWebXRHelper enter/exit callbacks
         })
+
+    def _reset_xr_state(self, **_: object) -> None:
+        """Reset XR state on client connect; browser never preserves an XR session across refreshes."""
+        self.state.xr_active = False
 
     # ---- Redraw helpers ----
     # Each helper clears the plotter, loads the requested mesh, and pushes
@@ -291,6 +297,7 @@ class VisfemApp(TrameApp):
     def _on_exit_xr(self) -> None:
         """Called by VtkWebXRHelper when the XR session ends."""
         self.state.xr_active = False
+        self.ctrl.view_update()
 
     def toggle_xr(self) -> None:
         """Toggle WebXR session on/off; session type is HMD (headset) VR."""
@@ -499,21 +506,11 @@ class VisfemApp(TrameApp):
                         click=self.activate_ircadb,
                     )
 
-            # --- Top toolbar: theme toggle, camera reset, VR toggle ---
+            # --- Top toolbar: camera reset, VR toggle ---
             with self.ui.toolbar:
                 v3.VSpacer()
-                v3.VCheckbox(             # light/dark theme toggle
-                    v_model="$vuetify.theme.current.dark",
-                    true_icon="mdi-weather-night",
-                    false_icon="mdi-weather-sunny",
-                    hide_details=True,
-                    density="compact",
-                )
                 v3.VBtn(icon="mdi-crop-free", click=self.reset_camera)
-                v3.VBtn(                  # icon switches between VR states
-                    icon=("xr_active ? 'mdi-virtual-reality' : 'mdi-vr'",),
-                    click=self.toggle_xr,
-                )
+                v3.VBtn(icon="mdi-eye", click=self.toggle_xr)
 
             # --- Main content: VTK render viewport with embedded WebXR helper ---
             with self.ui.content:

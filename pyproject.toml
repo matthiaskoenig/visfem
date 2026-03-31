@@ -41,6 +41,7 @@ dependencies = [
 	"imageio>=2.37.3",
 	"trame-vuetify>=3.2.1",
 	"trame-vtk>=2.11.6",
+	"numpy>=2.4.3",
 ]
 
 [project.optional-dependencies]

@@ -33,6 +33,13 @@ class MeshMetadata(TypedDict):
 logger: logging.Logger = get_logger(__name__)
 
 
+def _require(element: ET.Element | None, tag: str, context: str) -> ET.Element:
+    """Return element, raising ValueError if None."""
+    if element is None:
+        raise ValueError(f"Missing required XML element <{tag}> in {context}")
+    return element
+
+
 # File extensions that PyVista can read natively
 _PYVISTA_NATIVE: frozenset[str] = frozenset(
     {".vtk", ".vtu", ".vtp", ".vts", ".vtr", ".vti", ".pvd", ".pvtu", ".pvtp"}
@@ -95,7 +102,6 @@ def _detect_format(path: Path) -> str:
     if suffix in _PYVISTA_NATIVE:
         return "pyvista_native"
     if suffix in _XDMF_TIMESERIES:
-        # Need to peek inside the XML to distinguish the two XDMF subtypes
         return _detect_xdmf_subtype(path)
     return "meshio_fallback"
 
@@ -110,12 +116,10 @@ def _detect_xdmf_subtype(path: Path) -> str:
     domain = tree.getroot().find("Domain")
     if domain is None:
         raise ValueError(f"No Domain element found in {path.name}")
-
     temporal_collections = [
         grid for grid in domain.findall("Grid")
         if grid.get("CollectionType") == "Temporal"
     ]
-
     if len(temporal_collections) > 1:
         return "fenics_xdmf"
     elif len(temporal_collections) == 1:
@@ -135,18 +139,14 @@ def get_metadata(path: Path) -> MeshMetadata:
     if sidecar.exists():
         logger.debug(f"Loading cached metadata from '{sidecar.name}'")
         return cast(MeshMetadata, json.loads(sidecar.read_text()))
-
     logger.debug(f"Computing metadata for '{path.name}'")
     fmt = _detect_format(path)
-
-    # Route to the format-specific metadata extractor
     if fmt == "fenics_xdmf":
         meta = _metadata_fenics_xdmf(path, fmt)
     elif fmt == "timeseries_xdmf":
         meta = _metadata_timeseries_xdmf(path, fmt)
     else:
         meta = _metadata_static(path, fmt)
-
     sidecar.write_text(json.dumps(meta, indent=2))
     logger.debug(f"Cached metadata to '{sidecar.name}'")
     return meta
@@ -159,17 +159,14 @@ def _metadata_timeseries_xdmf(path: Path, fmt: str) -> MeshMetadata:
         num_steps = reader.num_steps
         times: list[float] = []
         fields: dict[str, FieldInfo] = {}
-
         for step in range(num_steps):
             t, point_data, cell_data = reader.read_data(step)
             times.append(float(t))
-            # Collect field names and shapes from the first step only
             if not fields:
                 for name, arr in point_data.items():
                     fields[name] = {"center": "point", "shape": list(arr.shape[1:] or [1])}
                 for name, blocks in cell_data.items():
                     fields[name] = {"center": "cell", "shape": list(blocks[0].shape[1:] or [1])}
-
     return {
         "format": fmt,
         "n_steps": num_steps,
@@ -184,17 +181,19 @@ def _metadata_timeseries_xdmf(path: Path, fmt: str) -> MeshMetadata:
 def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
     """Extract metadata from a FEniCS-style XDMF file via h5py."""
     tree = ET.parse(path)
-    domain = tree.getroot().find("Domain")
-    if domain is None:
-        raise ValueError(f"No Domain element found in {path.name}")
+    domain = _require(tree.getroot().find("Domain"), "Domain", path.name)
 
     # Geometry and topology dimensions live in the first Uniform grid
     uniform = next(g for g in domain.findall("Grid") if g.get("GridType") == "Uniform")
-    geo_item = uniform.find("Geometry").find("DataItem")
-    topo_item = uniform.find("Topology").find("DataItem")
-    n_points = int(geo_item.get("Dimensions").split()[0])
-    n_cells = int(topo_item.get("Dimensions").split()[0])
-    cell_type = uniform.find("Topology").get("TopologyType", "unknown").lower()
+    topology_elem = _require(uniform.find("Topology"), "Topology", path.name)
+    topo_item     = _require(topology_elem.find("DataItem"), "DataItem", path.name)
+    geo_item      = _require(
+        _require(uniform.find("Geometry"), "Geometry", path.name).find("DataItem"),
+        "DataItem", path.name,
+    )
+    n_points  = int((geo_item.get("Dimensions") or "").split()[0])
+    n_cells   = int((topo_item.get("Dimensions") or "").split()[0])
+    cell_type = topology_elem.get("TopologyType", "unknown").lower()
 
     fields: dict[str, FieldInfo] = {}
     times: list[float] = []
@@ -222,13 +221,12 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
                     center = "point" if center == "node" else "cell"
                     data_item = attr.find("DataItem")
                     if data_item is not None:
-                        hdf5_key = data_item.text.strip().split(":/")[1]
+                        hdf5_key = (data_item.text or "").strip().split(":/")[1]
                         try:
                             shape = list(f[hdf5_key].shape[1:] or [1])
                         except KeyError:
                             shape = [1]
                         fields[field_name] = {"center": center, "shape": shape}
-
     return {
         "format": fmt,
         "n_steps": len(times),
@@ -267,20 +265,24 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
     Reads geometry from HDF5 once, then attaches all fields at the given step.
     """
     tree = ET.parse(path)
-    domain = tree.getroot().find("Domain")
+    domain = _require(tree.getroot().find("Domain"), "Domain", path.name)
 
     # Parse geometry and topology from the base Uniform grid
-    uniform = next(g for g in domain.findall("Grid") if g.get("GridType") == "Uniform")
-    geo_item = uniform.find("Geometry").find("DataItem")
-    topo_item = uniform.find("Topology").find("DataItem")
-    topo_type_raw = uniform.find("Topology").get("TopologyType", "").lower()
-    topo_type = _XDMF_TO_MESHIO_CELLTYPE.get(topo_type_raw, topo_type_raw)
+    uniform       = next(g for g in domain.findall("Grid") if g.get("GridType") == "Uniform")
+    topology_elem = _require(uniform.find("Topology"), "Topology", path.name)
+    topo_item     = _require(topology_elem.find("DataItem"), "DataItem", path.name)
+    geo_item      = _require(
+        _require(uniform.find("Geometry"), "Geometry", path.name).find("DataItem"),
+        "DataItem", path.name,
+    )
+    topo_type_raw = topology_elem.get("TopologyType", "").lower()
+    topo_type     = _XDMF_TO_MESHIO_CELLTYPE.get(topo_type_raw, topo_type_raw)
 
     h5_file = path.parent / (path.stem + ".h5")
 
     with h5py.File(str(h5_file), "r") as f:
-        points_2d = f[geo_item.text.strip().split(":/")[1]][:]
-        connectivity = f[topo_item.text.strip().split(":/")[1]][:]
+        points_2d    = f[(geo_item.text  or "").strip().split(":/")[1]][:]
+        connectivity = f[(topo_item.text or "").strip().split(":/")[1]][:]
 
         # FEniCS often writes 2D coordinates only; pad z column with zeros
         if points_2d.shape[1] == 2:
@@ -310,16 +312,14 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
                     f"({len(children)} steps available), skipping."
                 )
                 continue
-
             attr = children[step].find("Attribute")
             if attr is None:
                 continue
             data_item = attr.find("DataItem")
             if data_item is None:
                 continue
-
-            center = attr.get("Center", "Node").lower()
-            hdf5_key = data_item.text.strip().split(":/")[1]
+            center   = attr.get("Center", "Node").lower()
+            hdf5_key = (data_item.text or "").strip().split(":/")[1]
             try:
                 arr = f[hdf5_key][:]
                 # Squeeze trailing size-1 dim so scalar fields have shape (n,) not (n, 1)
@@ -384,7 +384,6 @@ if __name__ == "__main__":
     DATA_DIR = Path(__file__).parents[3] / "visfem_data" / "convergence_sixth" / "xdmf"
     OUTPUT_DIR = Path(__file__).parents[3] / "visfem_results"
     OUTPUT_DIR.mkdir(exist_ok=True)
-
     MESH_FILES = [
         DATA_DIR / "lobule_sixth_00005.xdmf",
         DATA_DIR / "lobule_sixth_000025.xdmf",
@@ -393,7 +392,6 @@ if __name__ == "__main__":
     ]
     STEP = 150
     FIELD = None
-
     # get_metadata(MESH_FILES[1])
     # load_mesh(MESH_FILES[1], step=STEP)
 
@@ -401,13 +399,11 @@ if __name__ == "__main__":
     IRCADB_DIR = Path(__file__).parents[3] / "visfem_data" / "3Dircadb1"
     PATIENT_NR = 2
     ORGAN = "liver"
-
     # get_metadata(IRCADB_DIR / f"3Dircadb1.{PATIENT_NR}" / "MESHES_VTK" / f"{ORGAN}.vtk")
     # load_mesh(IRCADB_DIR / f"3Dircadb1.{PATIENT_NR}" / "MESHES_VTK" / f"{ORGAN}.vtk")
 
     # 08_SPP_FEMVis (FEniCS XDMF, 2D meshes)
     SPP_DIR = Path(__file__).parents[3] / "visfem_data" / "08_SPP_FEMVis"
-
     # get_metadata(SPP_DIR / "deformation" / "deformation.xdmf")
     # get_metadata(SPP_DIR / "lobule" / "lobule_spt_p1.xdmf")
     # get_metadata(SPP_DIR / "lobule" / "lobule_spt_p6.xdmf")

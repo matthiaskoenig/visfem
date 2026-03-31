@@ -1,5 +1,4 @@
 """Trame web application for FEM mesh visualization."""
-import os
 from pathlib import Path
 import pyvista as pv
 from trame.app import TrameApp

@@ -4,7 +4,7 @@ import json
 import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import cast
+from typing import cast, TypedDict
 
 import h5py
 import meshio
@@ -13,6 +13,22 @@ import numpy as np
 import pyvista as pv
 
 from visfem.log import get_logger
+
+
+class FieldInfo(TypedDict):
+    center: str
+    shape: list[int]
+
+
+class MeshMetadata(TypedDict):
+    format: str
+    n_steps: int
+    times: list[float]
+    n_points: int
+    n_cells: int
+    cell_types: list[str]
+    fields: dict[str, FieldInfo]
+
 
 logger: logging.Logger = get_logger(__name__)
 
@@ -109,7 +125,7 @@ def _detect_xdmf_subtype(path: Path) -> str:
         return "fenics_xdmf"
 
 
-def get_metadata(path: Path) -> dict[str, object]:
+def get_metadata(path: Path) -> MeshMetadata:
     """Return a metadata descriptor for any supported mesh file.
 
     Result is cached as a .meta.json sidecar next to the source file.
@@ -118,32 +134,31 @@ def get_metadata(path: Path) -> dict[str, object]:
     sidecar = path.with_suffix(".meta.json")
     if sidecar.exists():
         logger.debug(f"Loading cached metadata from '{sidecar.name}'")
-        return cast(dict[str, object], json.loads(sidecar.read_text()))
+        return cast(MeshMetadata, json.loads(sidecar.read_text()))
 
     logger.debug(f"Computing metadata for '{path.name}'")
     fmt = _detect_format(path)
 
     # Route to the format-specific metadata extractor
     if fmt == "fenics_xdmf":
-        meta = _metadata_fenics_xdmf(path)
+        meta = _metadata_fenics_xdmf(path, fmt)
     elif fmt == "timeseries_xdmf":
-        meta = _metadata_timeseries_xdmf(path)
+        meta = _metadata_timeseries_xdmf(path, fmt)
     else:
-        meta = _metadata_static(path)
+        meta = _metadata_static(path, fmt)
 
-    meta["format"] = fmt
     sidecar.write_text(json.dumps(meta, indent=2))
     logger.debug(f"Cached metadata to '{sidecar.name}'")
     return meta
 
 
-def _metadata_timeseries_xdmf(path: Path) -> dict[str, object]:
+def _metadata_timeseries_xdmf(path: Path, fmt: str) -> MeshMetadata:
     """Extract metadata from a meshio-style XDMF time series."""
     with meshio.xdmf.TimeSeriesReader(path) as reader:
         points, cells = reader.read_points_cells()
         num_steps = reader.num_steps
         times: list[float] = []
-        fields: dict[str, dict[str, object]] = {}
+        fields: dict[str, FieldInfo] = {}
 
         for step in range(num_steps):
             t, point_data, cell_data = reader.read_data(step)
@@ -156,6 +171,7 @@ def _metadata_timeseries_xdmf(path: Path) -> dict[str, object]:
                     fields[name] = {"center": "cell", "shape": list(blocks[0].shape[1:] or [1])}
 
     return {
+        "format": fmt,
         "n_steps": num_steps,
         "times": times,
         "n_points": len(points) if points is not None else 0,
@@ -165,10 +181,12 @@ def _metadata_timeseries_xdmf(path: Path) -> dict[str, object]:
     }
 
 
-def _metadata_fenics_xdmf(path: Path) -> dict[str, object]:
+def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
     """Extract metadata from a FEniCS-style XDMF file via h5py."""
     tree = ET.parse(path)
     domain = tree.getroot().find("Domain")
+    if domain is None:
+        raise ValueError(f"No Domain element found in {path.name}")
 
     # Geometry and topology dimensions live in the first Uniform grid
     uniform = next(g for g in domain.findall("Grid") if g.get("GridType") == "Uniform")
@@ -178,7 +196,7 @@ def _metadata_fenics_xdmf(path: Path) -> dict[str, object]:
     n_cells = int(topo_item.get("Dimensions").split()[0])
     cell_type = uniform.find("Topology").get("TopologyType", "unknown").lower()
 
-    fields: dict[str, dict[str, object]] = {}
+    fields: dict[str, FieldInfo] = {}
     times: list[float] = []
     temporal_grids = [g for g in domain.findall("Grid") if g.get("CollectionType") == "Temporal"]
 
@@ -195,7 +213,6 @@ def _metadata_fenics_xdmf(path: Path) -> dict[str, object]:
                         value = t_elem.get("Value")
                         if value is not None:
                             times.append(float(value))
-
             # Read center and shape from the first timestep of this field
             first_child = collection.find("Grid")
             if first_child is not None:
@@ -213,6 +230,7 @@ def _metadata_fenics_xdmf(path: Path) -> dict[str, object]:
                         fields[field_name] = {"center": center, "shape": shape}
 
     return {
+        "format": fmt,
         "n_steps": len(times),
         "times": times,
         "n_points": n_points,
@@ -222,7 +240,7 @@ def _metadata_fenics_xdmf(path: Path) -> dict[str, object]:
     }
 
 
-def _metadata_static(path: Path) -> dict[str, object]:
+def _metadata_static(path: Path, fmt: str) -> MeshMetadata:
     """Extract metadata from a static mesh file."""
     mesh = (
         pv.read(str(path))
@@ -230,6 +248,7 @@ def _metadata_static(path: Path) -> dict[str, object]:
         else pv.from_meshio(meshio.read(str(path)))
     )
     return {
+        "format": fmt,
         "n_steps": 1,
         "times": [],
         "n_points": mesh.n_points,

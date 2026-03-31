@@ -8,7 +8,7 @@ from trame.ui.vuetify3 import SinglePageWithDrawerLayout
 from trame.widgets import vuetify3 as v3
 from trame.widgets.vtk import VtkLocalView, VtkWebXRHelper
 from visfem.log import get_logger
-from visfem.mesh import get_metadata, load_mesh
+from visfem.mesh import get_metadata, load_mesh, MeshMetadata
 
 logger = get_logger(__name__)
 
@@ -93,10 +93,10 @@ class VisfemApp(TrameApp):
 
     def _setup_state(self) -> None:
         # Pre-load all metadata at startup using sidecar cache (fast, no mesh loading)
-        self._convergence_meta: dict[str, dict] = {
+        self._convergence_meta: dict[str, MeshMetadata] = {
             name: get_metadata(path) for name, path in CONVERGENCE_FILES.items()
         }
-        self._spp_meta: dict[str, dict] = {
+        self._spp_meta: dict[str, MeshMetadata] = {
             name: get_metadata(path) for name, path in SPP_FILES.items()
         }
 

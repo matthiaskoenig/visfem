@@ -4,6 +4,7 @@ import json
 import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import cast
 
 import h5py
 import meshio
@@ -117,7 +118,7 @@ def get_metadata(path: Path) -> dict[str, object]:
     sidecar = path.with_suffix(".meta.json")
     if sidecar.exists():
         logger.debug(f"Loading cached metadata from '{sidecar.name}'")
-        return json.loads(sidecar.read_text())
+        return cast(dict[str, object], json.loads(sidecar.read_text()))
 
     logger.debug(f"Computing metadata for '{path.name}'")
     fmt = _detect_format(path)
@@ -177,20 +178,23 @@ def _metadata_fenics_xdmf(path: Path) -> dict[str, object]:
     n_cells = int(topo_item.get("Dimensions").split()[0])
     cell_type = uniform.find("Topology").get("TopologyType", "unknown").lower()
 
-    fields = {}
-    times = []
+    fields: dict[str, dict[str, object]] = {}
+    times: list[float] = []
     temporal_grids = [g for g in domain.findall("Grid") if g.get("CollectionType") == "Temporal"]
 
     with h5py.File(str(path.parent / path.stem) + ".h5", "r") as f:
         for collection in temporal_grids:
             field_name = collection.get("Name")
-
+            if field_name is None:
+                continue
             # Collect time values from the first field collection only
             if not times:
                 for child in collection.findall("Grid"):
                     t_elem = child.find("Time")
                     if t_elem is not None:
-                        times.append(float(t_elem.get("Value")))
+                        value = t_elem.get("Value")
+                        if value is not None:
+                            times.append(float(value))
 
             # Read center and shape from the first timestep of this field
             first_child = collection.find("Grid")
@@ -278,6 +282,8 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
 
         for collection in temporal_grids:
             field_name = collection.get("Name")
+            if field_name is None:
+                continue
             children = collection.findall("Grid")
             if step >= len(children):
                 logger.warning(
@@ -335,7 +341,7 @@ def _load_static(path: Path) -> pv.DataSet:
     """Load a static mesh file via PyVista or meshio fallback."""
     if path.suffix.lower() in _PYVISTA_NATIVE:
         logger.debug(f"[pyvista] loading '{path.name}'")
-        return pv.read(str(path))
+        return cast(pv.DataSet, pv.read(str(path)))
     logger.debug(f"[meshio] loading '{path.name}'")
     return pv.from_meshio(meshio.read(str(path)))
 

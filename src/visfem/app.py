@@ -69,7 +69,7 @@ def _ircadb_organ_names(patient: int) -> list[str]:
     return sorted(f.stem for f in vtk_dir.glob("*.vtk"))
 
 
-def _all_fields(meta: dict) -> list[str]:
+def _all_fields(meta: MeshMetadata) -> list[str]:
     """Return all field names from metadata including vectors."""
     return list(meta["fields"].keys())
 

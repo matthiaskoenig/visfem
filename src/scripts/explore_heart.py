@@ -103,7 +103,7 @@ _EP_MATERIAL_COLORS: dict[int, str] = {
 def print_metadata() -> None:
     """Print metadata summary for M.vtu."""
     meta = get_metadata(MESH_PATH)
-    print(f"\nM.vtu")
+    print("\nM.vtu")
     print(f"  format     : {meta['format']}")
     print(f"  n_points   : {meta['n_points']}")
     print(f"  n_cells    : {meta['n_cells']}")

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pyvista as pv
 
-from plot_utils import animate_field, preview_field_animation
+from plot_utils import animate_field, preview_field_animation # noqa: F401
 from visfem.mesh import get_metadata, load_mesh
 
 

@@ -108,7 +108,7 @@ def _detect_xdmf_subtype(path: Path) -> str:
         return "fenics_xdmf"
 
 
-def get_metadata(path: Path) -> dict:
+def get_metadata(path: Path) -> dict[str, object]:
     """Return a metadata descriptor for any supported mesh file.
 
     Result is cached as a .meta.json sidecar next to the source file.
@@ -136,13 +136,13 @@ def get_metadata(path: Path) -> dict:
     return meta
 
 
-def _metadata_timeseries_xdmf(path: Path) -> dict:
+def _metadata_timeseries_xdmf(path: Path) -> dict[str, object]:
     """Extract metadata from a meshio-style XDMF time series."""
     with meshio.xdmf.TimeSeriesReader(path) as reader:
         points, cells = reader.read_points_cells()
         num_steps = reader.num_steps
-        times = []
-        fields = {}
+        times: list[float] = []
+        fields: dict[str, dict[str, object]] = {}
 
         for step in range(num_steps):
             t, point_data, cell_data = reader.read_data(step)
@@ -164,7 +164,7 @@ def _metadata_timeseries_xdmf(path: Path) -> dict:
     }
 
 
-def _metadata_fenics_xdmf(path: Path) -> dict:
+def _metadata_fenics_xdmf(path: Path) -> dict[str, object]:
     """Extract metadata from a FEniCS-style XDMF file via h5py."""
     tree = ET.parse(path)
     domain = tree.getroot().find("Domain")
@@ -218,7 +218,7 @@ def _metadata_fenics_xdmf(path: Path) -> dict:
     }
 
 
-def _metadata_static(path: Path) -> dict:
+def _metadata_static(path: Path) -> dict[str, object]:
     """Extract metadata from a static mesh file."""
     mesh = (
         pv.read(str(path))

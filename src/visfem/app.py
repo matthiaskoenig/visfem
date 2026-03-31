@@ -13,14 +13,13 @@ from visfem.mesh import get_metadata, load_mesh, MeshMetadata
 logger = get_logger(__name__)
 
 # ---- Dataset paths ----
-# Resolved from env vars at startup; defaults point into visfem_data/
+# Base directory for all datasets, three levels up from the package root
+_DATA_BASE = Path(__file__).parents[3] / "visfem_data"
 
-DATA_DIR = Path(
-    os.environ.get(
-        "VISFEM_DATA_DIR",
-        Path(__file__).parents[3] / "visfem_data" / "convergence_sixth" / "xdmf",
-    )
-)
+DATA_DIR  = _DATA_BASE / "convergence_sixth" / "xdmf"
+SPP_DIR   = _DATA_BASE / "08_SPP_FEMVis"
+IRCADB_DIR = _DATA_BASE / "3Dircadb1"
+
 # Four mesh resolutions of the same liver lobule geometry (timeseries XDMF)
 CONVERGENCE_FILES = {
     "Coarse (00005)":         DATA_DIR / "lobule_sixth_00005.xdmf",
@@ -28,12 +27,7 @@ CONVERGENCE_FILES = {
     "Medium-fine (0000125)":  DATA_DIR / "lobule_sixth_0000125.xdmf",
     "Fine (00000625)":        DATA_DIR / "lobule_sixth_00000625.xdmf",
 }
-SPP_DIR = Path(
-    os.environ.get(
-        "VISFEM_SPP_DIR",
-        Path(__file__).parents[3] / "visfem_data" / "08_SPP_FEMVis",
-    )
-)
+
 # Four FEniCS XDMF files: 2D deformation, lobule (p1/p6), and scan meshes
 SPP_FILES = {
     "Deformation": SPP_DIR / "deformation" / "deformation.xdmf",
@@ -41,12 +35,7 @@ SPP_FILES = {
     "Lobule p6":   SPP_DIR / "lobule" / "lobule_spt_p6.xdmf",
     "Scan 64 p1":  SPP_DIR / "scan" / "scan_64_p1.xdmf",
 }
-IRCADB_DIR = Path(
-    os.environ.get(
-        "VISFEM_IRCADB_DIR",
-        Path(__file__).parents[3] / "visfem_data" / "3Dircadb1",
-    )
-)
+
 # Discover available patient subdirectories (3Dircadb1.1, .2, ...) at startup
 IRCADB_PATIENTS: list[int] = sorted(
     int(d.name.split(".")[-1])

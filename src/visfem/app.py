@@ -70,7 +70,7 @@ def _ircadb_organ_names(patient: int) -> list[str]:
 
 
 def _all_fields(meta: MeshMetadata) -> list[str]:
-    """Return all field names from metadata including vectors."""
+    """Return all field names from metadata, including vectors."""
     return list(meta["fields"].keys())
 
 

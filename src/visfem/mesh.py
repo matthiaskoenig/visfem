@@ -80,7 +80,7 @@ _XDMF_TO_MESHIO_CELLTYPE: dict[str, str] = {
 def _filter_to_max_dim_cells(cells: list) -> list:
     """Return only the cell blocks with the highest geometric dimension.
 
-    Drops lower-dimensional boundary marker cells (e.g. PolyLine)
+    Drops lower-dimensional boundary marker cells (e.g., PolyLine)
     that would otherwise cause pv.from_meshio() to crash.
     """
     if not cells:
@@ -132,7 +132,7 @@ def _detect_xdmf_subtype(path: Path) -> str:
 def get_metadata(path: Path) -> MeshMetadata:
     """Return a metadata descriptor for any supported mesh file.
 
-    Result is cached as a .meta.json sidecar next to the source file.
+    The result is cached as a .meta.json sidecar next to the source file.
     Delete the sidecar to force regeneration.
     """
     sidecar = path.with_suffix(".meta.json")

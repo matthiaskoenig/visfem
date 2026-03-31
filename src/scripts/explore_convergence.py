@@ -7,6 +7,7 @@ Run sections by uncommenting the relevant call at the bottom.
 
 import math
 from pathlib import Path
+from typing import Literal
 
 import pyvista as pv
 
@@ -138,7 +139,12 @@ def plot_all_resolutions(field: str, step: int = 0) -> None:
     plotter.show()
 
 
-def plot_slice(label: str, field: str, step: int = 0, normal: str = "z") -> None:
+def plot_slice(
+    label: str,
+    field: str,
+    step: int = 0,
+    normal: Literal["x", "y", "z", "-x", "-y", "-z"] = "z",
+) -> None:
     """Plot a cross-section through the 3D mesh with the ghost mesh for context."""
     path = MESH_FILES[label]
     meta = get_metadata(path)

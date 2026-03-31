@@ -1,5 +1,7 @@
 """Trame web application for FEM mesh visualization."""
 from pathlib import Path
+from typing import cast
+import numpy as np
 import pyvista as pv
 from trame.app import TrameApp
 from trame.decorators import change
@@ -15,8 +17,8 @@ logger = get_logger(__name__)
 # Base directory for all datasets, three levels up from the package root
 _DATA_BASE = Path(__file__).parents[3] / "visfem_data"
 
-DATA_DIR  = _DATA_BASE / "convergence_sixth" / "xdmf"
-SPP_DIR   = _DATA_BASE / "08_SPP_FEMVis"
+DATA_DIR   = _DATA_BASE / "convergence_sixth" / "xdmf"
+SPP_DIR    = _DATA_BASE / "08_SPP_FEMVis"
 IRCADB_DIR = _DATA_BASE / "3Dircadb1"
 
 # Four mesh resolutions of the same liver lobule geometry (timeseries XDMF)
@@ -49,6 +51,43 @@ _ORGAN_COLORS = [
     "#dcbeff", "#9a6324", "#fffac8", "#800000", "#aaffc3",
     "#808000", "#ffd8b1", "#000075", "#a9a9a9", "#ffffff",
 ]
+
+# ---- Heart dataset ----
+HEART_DIR   = _DATA_BASE / "heart"
+HEART_MESH_PATH = HEART_DIR / "M.vtu"
+HEART_EPICARD   = HEART_DIR / "Surfaces" / "epicard.stl"
+
+HEART_CAVITY_SURFACES: dict[str, Path] = {
+    "LV cavity": HEART_DIR / "Surfaces" / "cavityLV.stl",
+    "RV cavity": HEART_DIR / "Surfaces" / "cavityRV.stl",
+    "LA cavity": HEART_DIR / "Surfaces" / "cavityLA.stl",
+    "RA cavity": HEART_DIR / "Surfaces" / "cavityRA.stl",
+}
+HEART_CAVITY_COLORS: dict[str, str] = {
+    "LV cavity": "#c0152a",   # deep red
+    "RV cavity": "#e8603c",   # burnt orange
+    "LA cavity": "#ff6b9d",   # light pink
+    "RA cavity": "#d45087",   # raspberry
+}
+
+HEART_RENDER_MODES = ["Mesh (by region)", "Cavities", "Epicardium surface"]
+
+# MaterialID -> color; pericardium IDs rendered semi-transparent in _redraw_heart
+_HEART_MATERIAL_COLORS: dict[int, str] = {
+    30: "#c0152a",   # LV - deep red
+    31: "#e8603c",   # RV - burnt orange
+    32: "#d45087",   # RA - raspberry
+    33: "#f4a261",   # LA - warm peach
+    34: "#9b2d7f",   # pulmonary aortic valve - deep purple
+    35: "#c77dff",   # aortic valve - violet
+    36: "#e63e8c",   # tricuspid valve - hot pink
+    37: "#ff6b9d",   # mitral valve - light pink
+    38: "#ffb347",   # orifices - amber
+    39: "#4363d8",   # vessels - blue (small region)
+    60: "#f9c0c0",   # pericardium inner - pale rose (semi-transparent)
+    61: "#ffe0d0",   # pericardium outer - blush (semi-transparent)
+}
+_HEART_PERICARDIUM_IDS: frozenset[int] = frozenset({60, 61})
 
 
 # ---- Helpers ----
@@ -84,7 +123,7 @@ class VisfemApp(TrameApp):
     """Main Trame application.
 
     Manages plotter state, reactive callbacks, and the UI layout
-    for all three dataset modes (convergence, SPP, IRCADb).
+    for all dataset modes (convergence, SPP, IRCADb, heart).
     """
 
     def __init__(self, server: object = None) -> None:
@@ -137,7 +176,7 @@ class VisfemApp(TrameApp):
 
         # All Trame state variables - drives UI reactivity
         self.state.update({
-            "mode": "convergence",  # active dataset section: "convergence" | "spp" | "ircadb"
+            "mode": "convergence",  # active dataset section: "convergence" | "spp" | "ircadb" | "heart"
             # --- Convergence state ---
             "conv_names": conv_names,
             "conv_name": initial_conv_name,
@@ -159,6 +198,10 @@ class VisfemApp(TrameApp):
             # --- IRCADb state ---
             "patient_names": [f"Patient {p}" for p in IRCADB_PATIENTS],
             "patient_name": f"Patient {initial_patient}" if initial_patient else "",
+            # --- Heart state ---
+            "heart_render_mode": HEART_RENDER_MODES[0],
+            "heart_render_modes": HEART_RENDER_MODES,
+            "heart_show_fibers": False,
             # --- WebXR state ---
             "xr_active": False,  # toggled by VtkWebXRHelper enter/exit callbacks
         })
@@ -244,6 +287,70 @@ class VisfemApp(TrameApp):
         self.ctrl.view_push_camera()
         self.ctrl.view_update()
 
+    def _redraw_heart(self, render_mode: str, show_fibers: bool) -> None:
+        """Render the heart in the selected mode with optional fiber glyphs."""
+        self.plotter.clear()
+
+        if render_mode == "Epicardium surface":
+            if not HEART_EPICARD.exists():
+                logger.error(f"Epicardium surface not found: {HEART_EPICARD}")
+                return
+            surf = cast(pv.DataSet, pv.read(str(HEART_EPICARD)))
+            self.plotter.add_mesh(surf, color="#f4a261", show_edges=False, copy_mesh=False)
+
+        elif render_mode == "Cavities":
+            for label, path in HEART_CAVITY_SURFACES.items():
+                if not path.exists():
+                    logger.warning(f"Cavity surface not found: {path}, skipping.")
+                    continue
+                try:
+                    mesh = cast(pv.DataSet, pv.read(str(path)))
+                    self.plotter.add_mesh(
+                        mesh,
+                        color=HEART_CAVITY_COLORS[label],
+                        opacity=0.85,
+                        show_edges=False,
+                        name=f"heart_cavity_{label}",
+                        copy_mesh=False,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to load cavity '{path.name}': {e}")
+
+        else:
+            # Mesh (by region) - pericardium semi-transparent, chambers opaque
+            try:
+                mesh = load_mesh(HEART_MESH_PATH)
+            except Exception as e:
+                logger.error(f"Failed to load heart mesh: {e}")
+                return
+            mat = mesh.cell_data["Material"]
+            for mat_id, color in _HEART_MATERIAL_COLORS.items():
+                mask = mat == mat_id
+                if not mask.any():
+                    continue
+                opacity = 0.15 if mat_id in _HEART_PERICARDIUM_IDS else 1.0
+                submesh = mesh.extract_cells(np.where(mask)[0])
+                self.plotter.add_mesh(
+                    submesh,
+                    color=color,
+                    opacity=opacity,
+                    show_edges=False,
+                    name=f"heart_mat_{mat_id}",
+                    copy_mesh=False,
+                )
+            # Fiber glyphs on top if requested
+            if show_fibers:
+                subsample = 10
+                idx = np.arange(0, mesh.n_cells, subsample)
+                centers = mesh.extract_cells(idx).cell_centers()
+                centers["Fiber"] = mesh.cell_data["Fiber"][idx]
+                glyphs = centers.glyph(orient="Fiber", scale=False, factor=1.5)
+                self.plotter.add_mesh(glyphs, color="#ffffff", name="heart_fibers", copy_mesh=False)
+
+        self.plotter.reset_camera()
+        self.ctrl.view_push_camera()
+        self.ctrl.view_update()
+
     # ---- Button handlers ----
     # Called by the "Load" buttons in the drawer; set mode and trigger a redraw.
 
@@ -287,6 +394,11 @@ class VisfemApp(TrameApp):
         """Switch to IRCADb mode and redraw the selected patient."""
         self.state.mode = "ircadb"
         self._redraw_ircadb(self.state.patient_name)
+
+    def activate_heart(self) -> None:
+        """Switch to heart mode and redraw with current UI state."""
+        self.state.mode = "heart"
+        self._redraw_heart(self.state.heart_render_mode, self.state.heart_show_fibers)
 
     # ---- WebXR handlers ----
 
@@ -378,6 +490,13 @@ class VisfemApp(TrameApp):
         if self.state.mode != "ircadb":
             return
         self._redraw_ircadb(self.state.patient_name)
+
+    @change("heart_render_mode", "heart_show_fibers")
+    def _on_heart_change(self, **_: object) -> None:
+        """Redraw heart when render mode or fiber toggle changes."""
+        if self.state.mode != "heart":
+            return
+        self._redraw_heart(self.state.heart_render_mode, self.state.heart_show_fibers)
 
     # ---- Camera ----
 
@@ -504,6 +623,33 @@ class VisfemApp(TrameApp):
                         density="compact",
                         classes="mt-3",
                         click=self.activate_ircadb,
+                    )
+                    v3.VDivider(classes="my-4")
+
+                    # Heart section
+                    v3.VListSubheader("Four-Chamber Heart")
+                    v3.VSelect(
+                        v_model=("heart_render_mode",),
+                        items=("heart_render_modes",),
+                        label="Render mode",
+                        density="compact",
+                        hide_details=True,
+                    )
+                    v3.VCheckbox(
+                        v_model=("heart_show_fibers",),
+                        label="Show fibers",
+                        density="compact",
+                        hide_details=True,
+                        v_show=("heart_render_mode === 'Mesh (by region)'",),
+                        classes="mt-1",
+                    )
+                    v3.VBtn(
+                        "Load",
+                        block=True,
+                        color="primary",
+                        density="compact",
+                        classes="mt-3",
+                        click=self.activate_heart,
                     )
 
             # --- Top toolbar: camera reset, VR toggle ---

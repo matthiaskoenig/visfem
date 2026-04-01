@@ -55,7 +55,6 @@ _ORGAN_COLORS = [
 # ---- Heart dataset ----
 HEART_DIR   = _DATA_BASE / "heart"
 HEART_MESH_PATH = HEART_DIR / "M.vtu"
-HEART_EPICARD   = HEART_DIR / "Surfaces" / "epicard.stl"
 
 HEART_CAVITY_SURFACES: dict[str, Path] = {
     "LV cavity": HEART_DIR / "Surfaces" / "cavityLV.stl",
@@ -70,7 +69,7 @@ HEART_CAVITY_COLORS: dict[str, str] = {
     "RA cavity": "#d45087",   # raspberry
 }
 
-HEART_RENDER_MODES = ["Mesh (by region)", "Cavities", "Epicardium surface"]
+HEART_RENDER_MODES = ["Mesh (by region)", "Cavities"]
 
 # MaterialID -> color; pericardium IDs rendered semi-transparent in _redraw_heart
 _HEART_MATERIAL_COLORS: dict[int, str] = {
@@ -326,15 +325,7 @@ class VisfemApp(TrameApp):
         """Render the heart in the selected mode with optional fiber glyphs."""
         self.plotter.clear()
 
-        if render_mode == "Epicardium surface":
-            if not HEART_EPICARD.exists():
-                logger.error(f"Epicardium surface not found: {HEART_EPICARD}")
-                return
-            surf = cast(pv.DataSet, pv.read(str(HEART_EPICARD)))
-            self.plotter.add_mesh(surf, color="#f4a261", show_edges=False, copy_mesh=False)
-            self.state.heart_legend = [{"name": "Epicardium", "color": "#f4a261"}]
-
-        elif render_mode == "Cavities":
+        if render_mode == "Cavities":
             # Merge all cavity STL surfaces into one actor
             parts: list[pv.DataSet] = []
             colors: list[str] = []
@@ -365,7 +356,7 @@ class VisfemApp(TrameApp):
                 for label, color in HEART_CAVITY_COLORS.items()
             ]
 
-        else:
+        elif render_mode == "Mesh (by region)":
             # Mesh (by region) - merge all regions into one actor
             # Pericardium rendered separately at low opacity so it stays as a ghost shell
             try:
@@ -395,6 +386,7 @@ class VisfemApp(TrameApp):
                     merged_opaque,
                     scalars="region_id",
                     cmap=opaque_colors,
+                    opacity=0.7,
                     show_edges=False,
                     show_scalar_bar=False,
                     copy_mesh=False,

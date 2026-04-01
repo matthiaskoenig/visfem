@@ -179,11 +179,13 @@ class VisfemApp(TrameApp):
 
         # Build the plotter and load the first convergence mesh to show on startup
         self.plotter = pv.Plotter(off_screen=True, theme=pv.themes.DarkTheme())
+        self.plotter.enable_depth_peeling(number_of_peels=4)
         self.pvmesh = load_mesh(CONVERGENCE_FILES[initial_conv_name], step=1)
         self.plotter.add_mesh(
             self.pvmesh,
             scalars=initial_conv_fields[0] if initial_conv_fields else None,
             show_edges=True,
+            edge_color="#000000",
             copy_mesh=False,
         )
         self.plotter.reset_camera()
@@ -245,7 +247,7 @@ class VisfemApp(TrameApp):
             return
         self.plotter.clear()
         self.pvmesh = new_mesh
-        self.plotter.add_mesh(self.pvmesh, scalars=field, show_edges=True, copy_mesh=False)
+        self.plotter.add_mesh(self.pvmesh, scalars=field, show_edges=True, edge_color="#000000", copy_mesh=False)
         if reset_cam:
             self.plotter.reset_camera()
             self.ctrl.view_push_camera()
@@ -266,7 +268,7 @@ class VisfemApp(TrameApp):
             return
         self.plotter.clear()
         self.pvmesh = new_mesh
-        self.plotter.add_mesh(self.pvmesh, scalars=field, show_edges=True, copy_mesh=False)
+        self.plotter.add_mesh(self.pvmesh, scalars=field, show_edges=True, edge_color="#000000", copy_mesh=False)
         if reset_cam:
             self.plotter.reset_camera()
             self.ctrl.view_push_camera()
@@ -601,142 +603,162 @@ class VisfemApp(TrameApp):
                 with v3.VContainer(classes="pa-4"):
 
                     # Convergence sixth section
-                    v3.VListSubheader("Liver Lobule", style="font-size: 1rem; font-weight: 600;")
-                    v3.VSelect(           # mesh resolution
-                        v_model=("conv_name",),
-                        items=("conv_names",),
-                        density="compact",
-                        hide_details=True,
-                    )
-                    v3.VSelect(           # scalar/vector field to color by
-                        v_model=("conv_field",),
-                        items=("conv_fields",),
-                        label="Field",
-                        density="compact",
-                        hide_details=True,
-                        classes="mt-2",
-                    )
-                    v3.VSlider(           # timestep slider with time value in label
-                        v_model=("conv_step",),
-                        min=1,
-                        max=("conv_num_steps - 1",),
-                        step=1,
-                        label=("'Step (t=' + conv_time_label + ')'",),
-                        thumb_label=True,
-                        density="compact",
-                        hide_details=True,
-                        classes="mt-2",
-                    )
-                    v3.VBtn(
-                        "Load",
-                        block=True,
-                        color="primary",
-                        density="compact",
-                        classes="mt-3",
-                        click=self.activate_convergence,
-                    )
+                    with v3.VSheet(
+                        style=("mode === 'convergence' ? 'border-left: 3px solid #00897b; padding-left: 8px;' : 'border-left: 3px solid transparent; padding-left: 8px;'",),
+                        color="transparent",
+                        classes="mb-2",
+                    ):
+                        v3.VListSubheader("Liver Lobule", style="font-size: 1rem; font-weight: 600;")
+                        v3.VSelect(           # mesh resolution
+                            v_model=("conv_name",),
+                            items=("conv_names",),
+                            density="compact",
+                            hide_details=True,
+                        )
+                        v3.VSelect(           # scalar/vector field to color by
+                            v_model=("conv_field",),
+                            items=("conv_fields",),
+                            label="Field",
+                            density="compact",
+                            hide_details=True,
+                            classes="mt-2",
+                        )
+                        v3.VSlider(           # timestep slider with time value in label
+                            v_model=("conv_step",),
+                            min=1,
+                            max=("conv_num_steps - 1",),
+                            step=1,
+                            label=("'Step (t=' + conv_time_label + ')'",),
+                            thumb_label=True,
+                            density="compact",
+                            hide_details=True,
+                            classes="mt-2",
+                        )
+                        v3.VBtn(
+                            "Load",
+                            block=True,
+                            color="#00897b",
+                            density="compact",
+                            classes="mt-3",
+                            click=self.activate_convergence,
+                        )
                     v3.VDivider(classes="my-4")
 
                     # SPP FEMVis section
-                    v3.VListSubheader("SPP FEMVis", style="font-size: 1rem; font-weight: 600;")
-                    v3.VSelect(           # file selector (deformation / lobule / scan)
-                        v_model=("spp_name",),
-                        items=("spp_names",),
-                        density="compact",
-                        hide_details=True,
-                    )
-                    v3.VSelect(           # scalar/vector field
-                        v_model=("spp_field",),
-                        items=("spp_fields",),
-                        label="Field",
-                        density="compact",
-                        hide_details=True,
-                        classes="mt-2",
-                    )
-                    v3.VSlider(           # timestep slider with time value in label
-                        v_model=("spp_step",),
-                        min=0,
-                        max=("spp_num_steps - 1",),
-                        step=1,
-                        label=("'Step (t=' + spp_time_label + ')'",),
-                        thumb_label=True,
-                        density="compact",
-                        hide_details=True,
-                        classes="mt-2",
-                    )
-                    v3.VBtn(
-                        "Load",
-                        block=True,
-                        color="primary",
-                        density="compact",
-                        classes="mt-3",
-                        click=self.activate_spp,
-                    )
+                    with v3.VSheet(
+                        style=("mode === 'spp' ? 'border-left: 3px solid #00897b; padding-left: 8px;' : 'border-left: 3px solid transparent; padding-left: 8px;'",),
+                        color="transparent",
+                        classes="mb-2",
+                    ):
+                        v3.VListSubheader("SPP FEMVis", style="font-size: 1rem; font-weight: 600;")
+                        v3.VSelect(           # file selector (deformation / lobule / scan)
+                            v_model=("spp_name",),
+                            items=("spp_names",),
+                            density="compact",
+                            hide_details=True,
+                        )
+                        v3.VSelect(           # scalar/vector field
+                            v_model=("spp_field",),
+                            items=("spp_fields",),
+                            label="Field",
+                            density="compact",
+                            hide_details=True,
+                            classes="mt-2",
+                        )
+                        v3.VSlider(           # timestep slider with time value in label
+                            v_model=("spp_step",),
+                            min=0,
+                            max=("spp_num_steps - 1",),
+                            step=1,
+                            label=("'Step (t=' + spp_time_label + ')'",),
+                            thumb_label=True,
+                            density="compact",
+                            hide_details=True,
+                            classes="mt-2",
+                        )
+                        v3.VBtn(
+                            "Load",
+                            block=True,
+                            color="#00897b",
+                            density="compact",
+                            classes="mt-3",
+                            click=self.activate_spp,
+                        )
                     v3.VDivider(classes="my-4")
 
-                    # IRCADb section (patient-level loading; organ list auto-discovered)
-                    v3.VListSubheader("3D-IRCADb-01", style="font-size: 1rem; font-weight: 600;")
-                    v3.VSelect(
-                        v_model=("patient_name",),
-                        items=("patient_names",),
-                        density="compact",
-                        hide_details=True,
-                    )
-                    v3.VBtn(
-                        "Load",
-                        block=True,
-                        color="primary",
-                        density="compact",
-                        classes="mt-3",
-                        click=self.activate_ircadb,
-                    )
-                    # Organ color legend - only visible in ircadb mode
-                    with v3.VContainer(classes="pa-0 mt-2", v_if="mode === 'ircadb'"):
-                        with v3.VRow(
-                            v_for=("item in ircadb_legend",),
-                            no_gutters=True,
-                            align="center",
-                            classes="mb-1",
-                        ):
-                            v3.VIcon("mdi-square", color=("item.color",), size="small")
-                            v3.VLabel("{{ item.name }}", classes="ml-2 text-caption")
+                    # IRCADb section (patient-level loading)
+                    with v3.VSheet(
+                        style=("mode === 'ircadb' ? 'border-left: 3px solid #00897b; padding-left: 8px;' : 'border-left: 3px solid transparent; padding-left: 8px;'",),
+                        color="transparent",
+                        classes="mb-2",
+                    ):
+                        v3.VListSubheader("3D-IRCADb-01", style="font-size: 1rem; font-weight: 600;")
+                        v3.VSelect(
+                            v_model=("patient_name",),
+                            items=("patient_names",),
+                            density="compact",
+                            hide_details=True,
+                        )
+                        v3.VBtn(
+                            "Load",
+                            block=True,
+                            color="#00897b",
+                            density="compact",
+                            classes="mt-3",
+                            click=self.activate_ircadb,
+                        )
+                        # Organ color legend - only visible in ircadb mode
+                        with v3.VContainer(classes="pa-0 mt-2", v_if="mode === 'ircadb'"):
+                            with v3.VRow(
+                                v_for=("item in ircadb_legend",),
+                                no_gutters=True,
+                                align="center",
+                                classes="mb-1",
+                            ):
+                                v3.VIcon("mdi-square", color=("item.color",), size="small")
+                                v3.VLabel("{{ item.name }}", classes="ml-2 text-caption")
                     v3.VDivider(classes="my-4")
 
                     # Heart section
-                    v3.VListSubheader("Four-Chamber Heart", style="font-size: 1rem; font-weight: 600;")
-                    v3.VSelect(
-                        v_model=("heart_render_mode",),
-                        items=("heart_render_modes",),
-                        label="Render mode",
-                        density="compact",
-                        hide_details=True,
-                    )
-                    v3.VCheckbox(
-                        v_model=("heart_show_fibers",),
-                        label="Show fibers",
-                        density="compact",
-                        hide_details=True,
-                        v_show=("heart_render_mode === 'Mesh (by region)'",),
-                        classes="mt-1",
-                    )
-                    v3.VBtn(
-                        "Load",
-                        block=True,
-                        color="primary",
-                        density="compact",
-                        classes="mt-3",
-                        click=self.activate_heart,
-                    )
-                    # Region color legend - only visible in heart mode
-                    with v3.VContainer(classes="pa-0 mt-2", v_if="mode === 'heart'"):
-                        with v3.VRow(
-                            v_for=("item in heart_legend",),
-                            no_gutters=True,
-                            align="center",
-                            classes="mb-1",
-                        ):
-                            v3.VIcon("mdi-square", color=("item.color",), size="small")
-                            v3.VLabel("{{ item.name }}", classes="ml-2 text-caption")
+                    with v3.VSheet(
+                        style=("mode === 'heart' ? 'border-left: 3px solid #00897b; padding-left: 8px;' : 'border-left: 3px solid transparent; padding-left: 8px;'",),
+                        color="transparent",
+                        classes="mb-2",
+                    ):
+                        v3.VListSubheader("Four-Chamber Heart", style="font-size: 1rem; font-weight: 600;")
+                        v3.VSelect(
+                            v_model=("heart_render_mode",),
+                            items=("heart_render_modes",),
+                            label="Render mode",
+                            density="compact",
+                            hide_details=True,
+                        )
+                        v3.VCheckbox(
+                            v_model=("heart_show_fibers",),
+                            label="Show fibers",
+                            density="compact",
+                            hide_details=True,
+                            v_show=("heart_render_mode === 'Mesh (by region)'",),
+                            classes="mt-1",
+                        )
+                        v3.VBtn(
+                            "Load",
+                            block=True,
+                            color="#00897b",
+                            density="compact",
+                            classes="mt-3",
+                            click=self.activate_heart,
+                        )
+                        # Region color legend - only visible in heart mode
+                        with v3.VContainer(classes="pa-0 mt-2", v_if="mode === 'heart'"):
+                            with v3.VRow(
+                                v_for=("item in heart_legend",),
+                                no_gutters=True,
+                                align="center",
+                                classes="mb-1",
+                            ):
+                                v3.VIcon("mdi-square", color=("item.color",), size="small")
+                                v3.VLabel("{{ item.name }}", classes="ml-2 text-caption")
 
             # --- Top toolbar: camera reset, VR toggle ---
             with self.ui.toolbar:

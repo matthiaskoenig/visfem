@@ -8,6 +8,7 @@ from trame.decorators import change
 from trame.ui.vuetify3 import SinglePageWithDrawerLayout
 from trame.widgets import vuetify3 as v3
 from trame.widgets.vtk import VtkLocalView, VtkWebXRHelper
+from trame.widgets import html
 from visfem.log import get_logger
 from visfem.mesh import get_metadata, load_mesh, MeshMetadata
 
@@ -618,9 +619,12 @@ class VisfemApp(TrameApp):
 
     def _build_ui(self) -> None:
         """Construct the full Trame/Vuetify3 UI: drawer controls, toolbar, and VTK viewport."""
-        with SinglePageWithDrawerLayout(self.server, theme="dark") as self.ui:
-            self.ui.title.set_text("VisFEM")
-
+        with SinglePageWithDrawerLayout(self.server, theme="dark", title="") as self.ui:
+            self.ui.title.hide()
+            with self.ui.toolbar:
+                v3.VIcon("mdi-vector-triangle", color="#00897b", classes="mr-2")
+                html.Span("VisFEM", style="font-size: 1.3rem; font-weight: 600;")
+                v3.VSpacer()
             # --- Left drawer: dataset selector panels ---
             with self.ui.drawer as drawer:
                 drawer.width = 280
@@ -658,14 +662,10 @@ class VisfemApp(TrameApp):
                             hide_details=True,
                             classes="mt-2",
                         )
-                        v3.VBtn(
-                            "Load",
-                            block=True,
-                            color="#00897b",
-                            density="compact",
-                            classes="mt-3",
-                            click=self.activate_convergence,
-                        )
+                        with v3.VTooltip(text="Load liver lobule mesh", location="right"):
+                            with v3.Template(v_slot_activator="{ props }"):
+                                v3.VBtn("Load", block=True, color="#00897b", density="compact", classes="mt-3",
+                                        click=self.activate_convergence, v_bind="props")
                     v3.VDivider(classes="my-4")
 
                     # SPP FEMVis section
@@ -700,14 +700,10 @@ class VisfemApp(TrameApp):
                             hide_details=True,
                             classes="mt-2",
                         )
-                        v3.VBtn(
-                            "Load",
-                            block=True,
-                            color="#00897b",
-                            density="compact",
-                            classes="mt-3",
-                            click=self.activate_spp,
-                        )
+                        with v3.VTooltip(text="Load FEMVis mesh", location="right"):
+                            with v3.Template(v_slot_activator="{ props }"):
+                                v3.VBtn("Load", block=True, color="#00897b", density="compact", classes="mt-3",
+                                        click=self.activate_spp, v_bind="props")
                     v3.VDivider(classes="my-4")
 
                     # IRCADb section (patient-level loading; organ list auto-discovered)
@@ -723,14 +719,10 @@ class VisfemApp(TrameApp):
                             density="compact",
                             hide_details=True,
                         )
-                        v3.VBtn(
-                            "Load",
-                            block=True,
-                            color="#00897b",
-                            density="compact",
-                            classes="mt-3",
-                            click=self.activate_ircadb,
-                        )
+                        with v3.VTooltip(text="Load IRCADb patient data", location="right"):
+                            with v3.Template(v_slot_activator="{ props }"):
+                                v3.VBtn("Load", block=True, color="#00897b", density="compact", classes="mt-3",
+                                        click=self.activate_ircadb, v_bind="props")
                         # Organ color legend - only visible in ircadb mode
                         with v3.VContainer(classes="pa-0 mt-2", v_if="mode === 'ircadb'"):
                             with v3.VRow(
@@ -765,14 +757,10 @@ class VisfemApp(TrameApp):
                             v_show=("heart_render_mode === 'Mesh (by region)'",),
                             classes="mt-1",
                         )
-                        v3.VBtn(
-                            "Load",
-                            block=True,
-                            color="#00897b",
-                            density="compact",
-                            classes="mt-3",
-                            click=self.activate_heart,
-                        )
+                        with v3.VTooltip(text="Load heart mesh", location="right"):
+                            with v3.Template(v_slot_activator="{ props }"):
+                                v3.VBtn("Load", block=True, color="#00897b", density="compact", classes="mt-3",
+                                        click=self.activate_heart, v_bind="props")
                         # Region color legend - only visible in heart mode
                         with v3.VContainer(classes="pa-0 mt-2", v_if="mode === 'heart'"):
                             with v3.VRow(
@@ -787,8 +775,13 @@ class VisfemApp(TrameApp):
             # --- Top toolbar: camera reset, VR toggle ---
             with self.ui.toolbar:
                 v3.VSpacer()
-                v3.VBtn(icon="mdi-eye-refresh", click=self.reset_camera)
-                v3.VBtn(icon="mdi-virtual-reality", click=self.toggle_xr)
+                with v3.VTooltip(text="Reset camera", location="bottom"):
+                    with v3.Template(v_slot_activator="{ props }"):
+                        v3.VBtn(icon="mdi-eye-refresh", click=self.reset_camera, v_bind="props")
+
+                with v3.VTooltip(text="Toggle VR", location="bottom"):
+                    with v3.Template(v_slot_activator="{ props }"):
+                        v3.VBtn(icon="mdi-virtual-reality", click=self.toggle_xr, v_bind="props")
 
             # --- Main content: VTK render viewport with embedded WebXR helper ---
             with self.ui.content:

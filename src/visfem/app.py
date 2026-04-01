@@ -622,7 +622,7 @@ class VisfemApp(TrameApp):
         with SinglePageWithDrawerLayout(self.server, theme="dark", title="") as self.ui:
             self.ui.title.hide()
             with self.ui.toolbar:
-                v3.VIcon("mdi-vector-triangle", color="#00897b", classes="mr-2")
+                v3.VIcon("mdi-vector-triangle", color="#00897b", classes="mr-2") # pictograms from: https://pictogrammers.com/
                 html.Span("VisFEM", style="font-size: 1.3rem; font-weight: 600;")
                 v3.VSpacer()
             # --- Left drawer: dataset selector panels ---

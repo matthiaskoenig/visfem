@@ -258,7 +258,7 @@ class VisfemApp(TrameApp):
         self.ctrl.view_update()
 
     def _redraw_spp(self, name: str, field: str | None, step: int, reset_cam: bool = True) -> None:
-        """Load and render an SPP FEMVis mesh at the given step and field."""
+        """Load and render an SPP SimLivA mesh at the given step and field."""
         path = SPP_FILES.get(name)
         if path is None or not path.exists():
             logger.error(f"SPP file not found: {path}")
@@ -668,13 +668,13 @@ class VisfemApp(TrameApp):
                                         click=self.activate_convergence, v_bind="props")
                     v3.VDivider(classes="my-4")
 
-                    # SPP FEMVis section
+                    # SPP SimLivA section
                     with v3.VSheet(
                         style=("mode === 'spp' ? 'border-left: 3px solid #00897b; padding-left: 8px;' : 'border-left: 3px solid transparent; padding-left: 8px;'",),
                         color="transparent",
                         classes="mb-2",
                     ):
-                        v3.VListSubheader("SPP FEMVis", style="font-size: 1rem; font-weight: 600;")
+                        v3.VListSubheader("SPP SimLivA", style="font-size: 1rem; font-weight: 600;")
                         v3.VSelect(           # file selector (deformation / lobule / scan)
                             v_model=("spp_name",),
                             items=("spp_names",),
@@ -700,7 +700,7 @@ class VisfemApp(TrameApp):
                             hide_details=True,
                             classes="mt-2",
                         )
-                        with v3.VTooltip(text="Load FEMVis mesh", location="right"):
+                        with v3.VTooltip(text="Load SimLivA mesh", location="right"):
                             with v3.Template(v_slot_activator="{ props }"):
                                 v3.VBtn("Load", block=True, color="#00897b", density="compact", classes="mt-3",
                                         click=self.activate_spp, v_bind="props")

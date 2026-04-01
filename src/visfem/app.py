@@ -787,8 +787,8 @@ class VisfemApp(TrameApp):
             # --- Top toolbar: camera reset, VR toggle ---
             with self.ui.toolbar:
                 v3.VSpacer()
-                v3.VBtn(icon="mdi-crop-free", click=self.reset_camera)
-                v3.VBtn(icon="mdi-eye", click=self.toggle_xr)
+                v3.VBtn(icon="mdi-eye-refresh", click=self.reset_camera)
+                v3.VBtn(icon="mdi-virtual-reality", click=self.toggle_xr)
 
             # --- Main content: VTK render viewport with embedded WebXR helper ---
             with self.ui.content:

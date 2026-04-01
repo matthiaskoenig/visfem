@@ -48,8 +48,8 @@ IRCADB_PATIENTS: list[int] = sorted(
 _ORGAN_COLORS = [
     "#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4",
     "#42d4f4", "#f032e6", "#bfef45", "#fabed4", "#469990",
-    "#dcbeff", "#9a6324", "#fffac8", "#800000", "#aaffc3",
-    "#808000", "#ffd8b1", "#000075", "#a9a9a9", "#ffffff",
+    "#dcbeff", "#9a6324", "#00ff99", "#800000", "#aaffc3",
+    "#808000", "#ff00cc", "#000075", "#a9a9a9", "#ffffff",
 ]
 
 # ---- Heart dataset ----
@@ -214,7 +214,7 @@ class VisfemApp(TrameApp):
     # Each helper clears the plotter, loads the requested mesh, and pushes
     # the updated render to the browser via ctrl.view_update().
 
-    def _redraw_convergence(self, name: str, field: str | None, step: int) -> None:
+    def _redraw_convergence(self, name: str, field: str | None, step: int, reset_cam: bool = True) -> None:
         """Load and render a convergence mesh at the given step and field."""
         path = CONVERGENCE_FILES.get(name)
         if path is None or not path.exists():
@@ -230,11 +230,12 @@ class VisfemApp(TrameApp):
         self.plotter.clear()
         self.pvmesh = new_mesh
         self.plotter.add_mesh(self.pvmesh, scalars=field, show_edges=True, copy_mesh=False)
-        self.plotter.reset_camera()
-        self.ctrl.view_push_camera()
+        if reset_cam:
+            self.plotter.reset_camera()
+            self.ctrl.view_push_camera()
         self.ctrl.view_update()
 
-    def _redraw_spp(self, name: str, field: str | None, step: int) -> None:
+    def _redraw_spp(self, name: str, field: str | None, step: int, reset_cam: bool = True) -> None:
         """Load and render an SPP FEMVis mesh at the given step and field."""
         path = SPP_FILES.get(name)
         if path is None or not path.exists():
@@ -250,8 +251,9 @@ class VisfemApp(TrameApp):
         self.plotter.clear()
         self.pvmesh = new_mesh
         self.plotter.add_mesh(self.pvmesh, scalars=field, show_edges=True, copy_mesh=False)
-        self.plotter.reset_camera()
-        self.ctrl.view_push_camera()
+        if reset_cam:
+            self.plotter.reset_camera()
+            self.ctrl.view_push_camera()
         self.ctrl.view_update()
 
     def _redraw_ircadb(self, patient_name: str, opacity: float = 0.5) -> None:
@@ -506,7 +508,7 @@ class VisfemApp(TrameApp):
         meta = self._convergence_meta.get(self.state.conv_name)
         if meta and step < len(meta["times"]):
             self.state.conv_time_label = _format_time(meta["times"][step])
-        self._redraw_convergence(self.state.conv_name, self.state.conv_field, step)
+        self._redraw_convergence(self.state.conv_name, self.state.conv_field, step, reset_cam=False)
 
     @change("spp_name")
     def _on_spp_name_change(self, **_: object) -> None:
@@ -537,7 +539,7 @@ class VisfemApp(TrameApp):
         meta = self._spp_meta.get(self.state.spp_name)
         if meta and step < len(meta["times"]):
             self.state.spp_time_label = _format_time(meta["times"][step])
-        self._redraw_spp(self.state.spp_name, self.state.spp_field, step)
+        self._redraw_spp(self.state.spp_name, self.state.spp_field, step, reset_cam=False)
 
     @change("patient_name")
     def _on_patient_change(self, **_: object) -> None:
@@ -574,7 +576,7 @@ class VisfemApp(TrameApp):
                 with v3.VContainer(classes="pa-4"):
 
                     # Convergence sixth section
-                    v3.VListSubheader("Liver Lobule")
+                    v3.VListSubheader("Liver Lobule", style="font-size: 1rem; font-weight: 600;")
                     v3.VSelect(           # mesh resolution
                         v_model=("conv_name",),
                         items=("conv_names",),
@@ -589,23 +591,15 @@ class VisfemApp(TrameApp):
                         hide_details=True,
                         classes="mt-2",
                     )
-                    v3.VSlider(           # timestep slider
+                    v3.VSlider(
                         v_model=("conv_step",),
                         min=1,
                         max=("conv_num_steps - 1",),
                         step=1,
-                        label="Step",
+                        label=("'Step (t=' + conv_time_label + ')'",),
                         thumb_label=True,
                         density="compact",
                         hide_details=True,
-                        classes="mt-2",
-                    )
-                    v3.VTextField(        # readonly display of the actual time value
-                        model_value=("conv_time_label",),
-                        label="Time",
-                        density="compact",
-                        hide_details=True,
-                        readonly=True,
                         classes="mt-2",
                     )
                     v3.VBtn(
@@ -619,7 +613,7 @@ class VisfemApp(TrameApp):
                     v3.VDivider(classes="my-4")
 
                     # SPP FEMVis section
-                    v3.VListSubheader("SPP FEMVis")
+                    v3.VListSubheader("SPP FEMVis", style="font-size: 1rem; font-weight: 600;")
                     v3.VSelect(           # file selector (deformation / lobule / scan)
                         v_model=("spp_name",),
                         items=("spp_names",),
@@ -634,23 +628,15 @@ class VisfemApp(TrameApp):
                         hide_details=True,
                         classes="mt-2",
                     )
-                    v3.VSlider(           # timestep slider
+                    v3.VSlider(
                         v_model=("spp_step",),
                         min=0,
                         max=("spp_num_steps - 1",),
                         step=1,
-                        label="Step",
+                        label=("'Step (t=' + spp_time_label + ')'",),
                         thumb_label=True,
                         density="compact",
                         hide_details=True,
-                        classes="mt-2",
-                    )
-                    v3.VTextField(        # readonly display of the actual time value
-                        model_value=("spp_time_label",),
-                        label="Time",
-                        density="compact",
-                        hide_details=True,
-                        readonly=True,
                         classes="mt-2",
                     )
                     v3.VBtn(
@@ -664,7 +650,7 @@ class VisfemApp(TrameApp):
                     v3.VDivider(classes="my-4")
 
                     # IRCADb section (patient-level loading; organ list auto-discovered)
-                    v3.VListSubheader("3D-IRCADb-01")
+                    v3.VListSubheader("3D-IRCADb-01", style="font-size: 1rem; font-weight: 600;")
                     v3.VSelect(
                         v_model=("patient_name",),
                         items=("patient_names",),
@@ -682,7 +668,7 @@ class VisfemApp(TrameApp):
                     v3.VDivider(classes="my-4")
 
                     # Heart section
-                    v3.VListSubheader("Four-Chamber Heart")
+                    v3.VListSubheader("Four-Chamber Heart", style="font-size: 1rem; font-weight: 600;")
                     v3.VSelect(
                         v_model=("heart_render_mode",),
                         items=("heart_render_modes",),

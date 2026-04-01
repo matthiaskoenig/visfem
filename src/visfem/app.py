@@ -52,6 +52,9 @@ _ORGAN_COLORS = [
     "#808000", "#ff00cc", "#000075", "#a9a9a9", "#ffffff",
 ]
 
+# Organs rendered as ghost shell at very low opacity (like pericardium in heart)
+_IRCADB_SKIN_ORGANS: frozenset[str] = frozenset({"skin"})
+
 # ---- Heart dataset ----
 HEART_DIR   = _DATA_BASE / "heart"
 HEART_MESH_PATH = HEART_DIR / "M.vtu"
@@ -274,8 +277,12 @@ class VisfemApp(TrameApp):
             self.ctrl.view_push_camera()
         self.ctrl.view_update()
 
-    def _redraw_ircadb(self, patient_name: str, opacity: float = 0.5) -> None:
-        """Load all organ meshes for a patient and render as a single merged actor."""
+    def _redraw_ircadb(self, patient_name: str) -> None:
+        """Load all organ meshes for a patient and render as two actors.
+
+        Skin is rendered as a ghost shell at very low opacity; all other organs
+        are rendered at higher opacity so internal structures are visible.
+        """
         if not patient_name:
             return
         try:
@@ -286,9 +293,11 @@ class VisfemApp(TrameApp):
         organs = _ircadb_organ_names(patient)
         self.plotter.clear()
 
-        # Stamp region_id on each submesh so colors survive merging
-        parts: list[pv.DataSet] = []
-        colors: list[str] = []
+        # Separate skin (ghost shell) from all other organs
+        organ_parts: list[pv.DataSet] = []
+        organ_colors: list[str] = []
+        skin_parts: list[pv.DataSet] = []
+        skin_colors: list[str] = []
         for i, organ in enumerate(organs):
             vtk_path = _ircadb_vtk_path(patient, organ)
             if not vtk_path.exists():
@@ -297,18 +306,34 @@ class VisfemApp(TrameApp):
             try:
                 mesh = load_mesh(vtk_path)
                 mesh.cell_data["region_id"] = np.full(mesh.n_cells, i, dtype=np.int32)
-                parts.append(mesh)
-                colors.append(_ORGAN_COLORS[i % len(_ORGAN_COLORS)])
+                color = _ORGAN_COLORS[i % len(_ORGAN_COLORS)]
+                if organ in _IRCADB_SKIN_ORGANS:
+                    skin_parts.append(mesh)
+                    skin_colors.append(color)
+                else:
+                    organ_parts.append(mesh)
+                    organ_colors.append(color)
             except Exception as e:
                 logger.error(f"Failed to load '{vtk_path.name}': {e}")
 
-        if parts:
-            merged = pv.merge(parts)
+        if organ_parts:
+            merged_organs = pv.merge(organ_parts)
             self.plotter.add_mesh(
-                merged,
+                merged_organs,
                 scalars="region_id",
-                cmap=colors,
-                opacity=opacity,
+                cmap=organ_colors,
+                opacity=0.8,
+                show_edges=False,
+                show_scalar_bar=False,
+                copy_mesh=False,
+            )
+        if skin_parts:
+            merged_skin = pv.merge(skin_parts)
+            self.plotter.add_mesh(
+                merged_skin,
+                scalars="region_id",
+                cmap=skin_colors,
+                opacity=0.08,
                 show_edges=False,
                 show_scalar_bar=False,
                 copy_mesh=False,
@@ -359,7 +384,6 @@ class VisfemApp(TrameApp):
             ]
 
         elif render_mode == "Mesh (by region)":
-            # Mesh (by region) - merge all regions into one actor
             # Pericardium rendered separately at low opacity so it stays as a ghost shell
             try:
                 mesh = load_mesh(HEART_MESH_PATH)
@@ -686,7 +710,7 @@ class VisfemApp(TrameApp):
                         )
                     v3.VDivider(classes="my-4")
 
-                    # IRCADb section (patient-level loading)
+                    # IRCADb section (patient-level loading; organ list auto-discovered)
                     with v3.VSheet(
                         style=("mode === 'ircadb' ? 'border-left: 3px solid #00897b; padding-left: 8px;' : 'border-left: 3px solid transparent; padding-left: 8px;'",),
                         color="transparent",

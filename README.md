@@ -37,7 +37,7 @@ To cite the software repository
 This program is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE.
----
+
 ## Funding
 Matthias König is supported by the German Research Foundation (DFG) within the Research Unit Programme FOR 5151
 "QuaLiPerF (Quantifying Liver Perfusion-Function Relationship in Complex Resection -

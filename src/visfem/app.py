@@ -89,6 +89,21 @@ _HEART_MATERIAL_COLORS: dict[int, str] = {
 }
 _HEART_PERICARDIUM_IDS: frozenset[int] = frozenset({60, 61})
 
+_HEART_MATERIAL_NAMES: dict[int, str] = {
+    30: "LV",
+    31: "RV",
+    32: "RA",
+    33: "LA",
+    34: "Pulmonary aortic valve",
+    35: "Aortic valve",
+    36: "Tricuspid valve",
+    37: "Mitral valve",
+    38: "Orifices",
+    39: "Vessels",
+    60: "Pericardium inner",
+    61: "Pericardium outer",
+}
+
 
 # ---- Helpers ----
 
@@ -198,10 +213,12 @@ class VisfemApp(TrameApp):
             # --- IRCADb state ---
             "patient_names": [f"Patient {p}" for p in IRCADB_PATIENTS],
             "patient_name": f"Patient {initial_patient}" if initial_patient else "",
+            "ircadb_legend": [],
             # --- Heart state ---
             "heart_render_mode": HEART_RENDER_MODES[0],
             "heart_render_modes": HEART_RENDER_MODES,
             "heart_show_fibers": False,
+            "heart_legend": [],
             # --- WebXR state ---
             "xr_active": False,  # toggled by VtkWebXRHelper enter/exit callbacks
         })
@@ -295,6 +312,12 @@ class VisfemApp(TrameApp):
                 show_scalar_bar=False,
                 copy_mesh=False,
             )
+
+        self.state.ircadb_legend = [
+            {"name": organ, "color": _ORGAN_COLORS[i % len(_ORGAN_COLORS)]}
+            for i, organ in enumerate(organs)
+        ]
+
         self.plotter.reset_camera()
         self.ctrl.view_push_camera()
         self.ctrl.view_update()
@@ -309,6 +332,7 @@ class VisfemApp(TrameApp):
                 return
             surf = cast(pv.DataSet, pv.read(str(HEART_EPICARD)))
             self.plotter.add_mesh(surf, color="#f4a261", show_edges=False, copy_mesh=False)
+            self.state.heart_legend = [{"name": "Epicardium", "color": "#f4a261"}]
 
         elif render_mode == "Cavities":
             # Merge all cavity STL surfaces into one actor
@@ -336,6 +360,10 @@ class VisfemApp(TrameApp):
                     show_scalar_bar=False,
                     copy_mesh=False,
                 )
+            self.state.heart_legend = [
+                {"name": label, "color": color}
+                for label, color in HEART_CAVITY_COLORS.items()
+            ]
 
         else:
             # Mesh (by region) - merge all regions into one actor
@@ -403,6 +431,11 @@ class VisfemApp(TrameApp):
                 centers["Fiber"] = mesh.cell_data["Fiber"][idx]
                 glyphs = centers.glyph(orient="Fiber", scale=False, factor=1.5)
                 self.plotter.add_mesh(glyphs, color="#ffffff", name="heart_fibers", copy_mesh=False)
+
+            self.state.heart_legend = [
+                {"name": _HEART_MATERIAL_NAMES[mid], "color": color}
+                for mid, color in _HEART_MATERIAL_COLORS.items()
+            ]
 
         self.plotter.reset_camera()
         self.ctrl.view_push_camera()
@@ -591,7 +624,7 @@ class VisfemApp(TrameApp):
                         hide_details=True,
                         classes="mt-2",
                     )
-                    v3.VSlider(
+                    v3.VSlider(           # timestep slider with time value in label
                         v_model=("conv_step",),
                         min=1,
                         max=("conv_num_steps - 1",),
@@ -628,7 +661,7 @@ class VisfemApp(TrameApp):
                         hide_details=True,
                         classes="mt-2",
                     )
-                    v3.VSlider(
+                    v3.VSlider(           # timestep slider with time value in label
                         v_model=("spp_step",),
                         min=0,
                         max=("spp_num_steps - 1",),
@@ -665,6 +698,16 @@ class VisfemApp(TrameApp):
                         classes="mt-3",
                         click=self.activate_ircadb,
                     )
+                    # Organ color legend - only visible in ircadb mode
+                    with v3.VContainer(classes="pa-0 mt-2", v_if="mode === 'ircadb'"):
+                        with v3.VRow(
+                            v_for=("item in ircadb_legend",),
+                            no_gutters=True,
+                            align="center",
+                            classes="mb-1",
+                        ):
+                            v3.VIcon("mdi-square", color=("item.color",), size="small")
+                            v3.VLabel("{{ item.name }}", classes="ml-2 text-caption")
                     v3.VDivider(classes="my-4")
 
                     # Heart section
@@ -692,6 +735,16 @@ class VisfemApp(TrameApp):
                         classes="mt-3",
                         click=self.activate_heart,
                     )
+                    # Region color legend - only visible in heart mode
+                    with v3.VContainer(classes="pa-0 mt-2", v_if="mode === 'heart'"):
+                        with v3.VRow(
+                            v_for=("item in heart_legend",),
+                            no_gutters=True,
+                            align="center",
+                            classes="mb-1",
+                        ):
+                            v3.VIcon("mdi-square", color=("item.color",), size="small")
+                            v3.VLabel("{{ item.name }}", classes="ml-2 text-caption")
 
             # --- Top toolbar: camera reset, VR toggle ---
             with self.ui.toolbar:

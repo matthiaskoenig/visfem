@@ -134,6 +134,15 @@ def _format_time(t: float) -> str:
         return f"{t:.3e}"
     return f"{t:.4g}"
 
+_ORGAN_NAME_SPLITS = ("left", "right", "small", "large", "portal", "surrenal", "vena", "venous", "biliary")
+def _format_organ_name(name: str) -> str:
+    """Insert a space before known prefix words squished into organ names."""
+    lower = name.lower()
+    for prefix in _ORGAN_NAME_SPLITS:
+        if lower.startswith(prefix) and len(name) > len(prefix):
+            return name[:len(prefix)] + " " + name[len(prefix):]
+    return name
+
 
 # ---- App ----
 
@@ -341,7 +350,7 @@ class VisfemApp(TrameApp):
             )
 
         self.state.ircadb_legend = [
-            {"name": organ, "color": _ORGAN_COLORS[i % len(_ORGAN_COLORS)]}
+            {"name": _format_organ_name(organ), "color": _ORGAN_COLORS[i % len(_ORGAN_COLORS)]}
             for i, organ in enumerate(organs)
         ]
 
@@ -620,9 +629,24 @@ class VisfemApp(TrameApp):
     def _build_ui(self) -> None:
         """Construct the full Trame/Vuetify3 UI: drawer controls, toolbar, and VTK viewport."""
         with SinglePageWithDrawerLayout(self.server, theme="dark", title="") as self.ui:
+            # Quest suspends the tab during XR, dropping the WebSocket; reload on session end to restore app state
+            html.Script("""
+                (function() {
+                    if (!navigator.xr) return;
+                    const _orig = navigator.xr.requestSession.bind(navigator.xr);
+                    navigator.xr.requestSession = function(mode, options) {
+                        return _orig(mode, options).then(function(session) {
+                            session.addEventListener('end', function() {
+                                window.location.reload();
+                            });
+                            return session;
+                        });
+                    };
+                })();
+            """)
             self.ui.title.hide()
             with self.ui.toolbar:
-                v3.VIcon("mdi-vector-triangle", color="#00897b", classes="mr-2") # pictograms from: https://pictogrammers.com/
+                v3.VIcon("mdi-vector-triangle", color="#00897b", classes="mr-2")
                 html.Span("VisFEM", style="font-size: 1.3rem; font-weight: 600;")
                 v3.VSpacer()
             # --- Left drawer: dataset selector panels ---
@@ -637,13 +661,13 @@ class VisfemApp(TrameApp):
                         classes="mb-2",
                     ):
                         v3.VListSubheader("Liver Lobule", style="font-size: 1rem; font-weight: 600;")
-                        v3.VSelect(           # mesh resolution
+                        v3.VSelect(
                             v_model=("conv_name",),
                             items=("conv_names",),
                             density="compact",
                             hide_details=True,
                         )
-                        v3.VSelect(           # scalar/vector field to color by
+                        v3.VSelect(
                             v_model=("conv_field",),
                             items=("conv_fields",),
                             label="Field",
@@ -651,7 +675,7 @@ class VisfemApp(TrameApp):
                             hide_details=True,
                             classes="mt-2",
                         )
-                        v3.VSlider(           # timestep slider with time value in label
+                        v3.VSlider(
                             v_model=("conv_step",),
                             min=1,
                             max=("conv_num_steps - 1",),
@@ -675,13 +699,13 @@ class VisfemApp(TrameApp):
                         classes="mb-2",
                     ):
                         v3.VListSubheader("SPP SimLivA", style="font-size: 1rem; font-weight: 600;")
-                        v3.VSelect(           # file selector (deformation / lobule / scan)
+                        v3.VSelect(
                             v_model=("spp_name",),
                             items=("spp_names",),
                             density="compact",
                             hide_details=True,
                         )
-                        v3.VSelect(           # scalar/vector field
+                        v3.VSelect(
                             v_model=("spp_field",),
                             items=("spp_fields",),
                             label="Field",
@@ -689,7 +713,7 @@ class VisfemApp(TrameApp):
                             hide_details=True,
                             classes="mt-2",
                         )
-                        v3.VSlider(           # timestep slider with time value in label
+                        v3.VSlider(
                             v_model=("spp_step",),
                             min=0,
                             max=("spp_num_steps - 1",),
@@ -723,16 +747,6 @@ class VisfemApp(TrameApp):
                             with v3.Template(v_slot_activator="{ props }"):
                                 v3.VBtn("Load", block=True, color="#00897b", density="compact", classes="mt-3",
                                         click=self.activate_ircadb, v_bind="props")
-                        # Organ color legend - only visible in ircadb mode
-                        with v3.VContainer(classes="pa-0 mt-2", v_if="mode === 'ircadb'"):
-                            with v3.VRow(
-                                v_for=("item in ircadb_legend",),
-                                no_gutters=True,
-                                align="center",
-                                classes="mb-1",
-                            ):
-                                v3.VIcon("mdi-square", color=("item.color",), size="small")
-                                v3.VLabel("{{ item.name }}", classes="ml-2 text-caption")
                     v3.VDivider(classes="my-4")
 
                     # Heart section
@@ -761,16 +775,6 @@ class VisfemApp(TrameApp):
                             with v3.Template(v_slot_activator="{ props }"):
                                 v3.VBtn("Load", block=True, color="#00897b", density="compact", classes="mt-3",
                                         click=self.activate_heart, v_bind="props")
-                        # Region color legend - only visible in heart mode
-                        with v3.VContainer(classes="pa-0 mt-2", v_if="mode === 'heart'"):
-                            with v3.VRow(
-                                v_for=("item in heart_legend",),
-                                no_gutters=True,
-                                align="center",
-                                classes="mb-1",
-                            ):
-                                v3.VIcon("mdi-square", color=("item.color",), size="small")
-                                v3.VLabel("{{ item.name }}", classes="ml-2 text-caption")
 
             # --- Top toolbar: camera reset, VR toggle ---
             with self.ui.toolbar:
@@ -783,9 +787,9 @@ class VisfemApp(TrameApp):
                     with v3.Template(v_slot_activator="{ props }"):
                         v3.VBtn(icon="mdi-virtual-reality", click=self.toggle_xr, v_bind="props")
 
-            # --- Main content: VTK render viewport with embedded WebXR helper ---
+            # --- Main content: VTK render viewport with right-side legend overlay ---
             with self.ui.content:
-                with v3.VContainer(fluid=True, classes="pa-0 fill-height"):
+                with v3.VContainer(fluid=True, classes="pa-0 fill-height", style="position: relative;"):
                     with VtkLocalView(self.plotter.render_window) as view:
                         # Register view controls so other methods can push updates
                         self.ctrl.reset_camera = view.reset_camera
@@ -799,6 +803,42 @@ class VisfemApp(TrameApp):
                         )
                         self.ctrl.start_xr = webxr_helper.start_xr
                         self.ctrl.stop_xr = webxr_helper.stop_xr
+
+                    # Right-side legend overlay - only visible when ircadb or heart has a loaded legend
+                    with v3.VCard(
+                        v_if="(mode === 'ircadb' && ircadb_legend.length > 0) || (mode === 'heart' && heart_legend.length > 0)",
+                        style=(
+                            "position: absolute; top: 12px; right: 12px; "
+                            "max-height: calc(100% - 24px); overflow-y: auto; "
+                            "background: rgba(30,30,30,0.85); backdrop-filter: blur(4px); "
+                            "min-width: 160px; max-width: 220px; z-index: 10;"
+                        ),
+                        elevation=4,
+                        rounded=True,
+                    ):
+                        with v3.VCardTitle(style="font-size: 0.75rem; padding: 8px 12px 4px; opacity: 0.7;"):
+                            html.Span("Legend")
+                        with v3.VCardText(style="padding: 4px 12px 8px;"):
+                            # IRCADb organ legend
+                            with v3.VContainer(classes="pa-0", v_if="mode === 'ircadb'"):
+                                with v3.VRow(
+                                    v_for=("item in ircadb_legend",),
+                                    no_gutters=True,
+                                    align="center",
+                                    classes="mb-1",
+                                ):
+                                    v3.VIcon("mdi-square", color=("item.color",), size="x-small")
+                                    v3.VLabel("{{ item.name }}", classes="ml-2 text-caption")
+                            # Heart region legend
+                            with v3.VContainer(classes="pa-0", v_if="mode === 'heart'"):
+                                with v3.VRow(
+                                    v_for=("item in heart_legend",),
+                                    no_gutters=True,
+                                    align="center",
+                                    classes="mb-1",
+                                ):
+                                    v3.VIcon("mdi-square", color=("item.color",), size="x-small")
+                                    v3.VLabel("{{ item.name }}", classes="ml-2 text-caption")
 
 
 def main() -> None:

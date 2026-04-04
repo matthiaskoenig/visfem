@@ -57,7 +57,7 @@ _ORGAN_COLORS = [
 _IRCADB_SKIN_ORGANS: frozenset[str] = frozenset({"skin"})
 
 # ---- Heart dataset ----
-HEART_DIR   = _DATA_BASE / "heart"
+HEART_DIR       = _DATA_BASE / "heart"
 HEART_MESH_PATH = HEART_DIR / "M.vtu"
 
 HEART_CAVITY_SURFACES: dict[str, Path] = {
@@ -67,28 +67,28 @@ HEART_CAVITY_SURFACES: dict[str, Path] = {
     "RA cavity": HEART_DIR / "Surfaces" / "cavityRA.stl",
 }
 HEART_CAVITY_COLORS: dict[str, str] = {
-    "LV cavity": "#c0152a",   # deep red
-    "RV cavity": "#e8603c",   # burnt orange
-    "LA cavity": "#ff6b9d",   # light pink
-    "RA cavity": "#d45087",   # raspberry
+    "LV cavity": "#c0152a",
+    "RV cavity": "#e8603c",
+    "LA cavity": "#ff6b9d",
+    "RA cavity": "#d45087",
 }
 
 HEART_RENDER_MODES = ["Mesh (by region)", "Cavities"]
 
 # MaterialID -> color; pericardium IDs rendered semi-transparent in _redraw_heart
 _HEART_MATERIAL_COLORS: dict[int, str] = {
-    30: "#c0152a",   # LV - deep red
-    31: "#e8603c",   # RV - burnt orange
-    32: "#d45087",   # RA - raspberry
-    33: "#f4a261",   # LA - warm peach
-    34: "#9b2d7f",   # pulmonary aortic valve - deep purple
-    35: "#c77dff",   # aortic valve - violet
-    36: "#e63e8c",   # tricuspid valve - hot pink
-    37: "#ff6b9d",   # mitral valve - light pink
-    38: "#ffb347",   # orifices - amber
-    39: "#4363d8",   # vessels - blue (small region)
-    60: "#f9c0c0",   # pericardium inner - pale rose (semi-transparent)
-    61: "#ffe0d0",   # pericardium outer - blush (semi-transparent)
+    30: "#c0152a",
+    31: "#e8603c",
+    32: "#d45087",
+    33: "#f4a261",
+    34: "#9b2d7f",
+    35: "#c77dff",
+    36: "#e63e8c",
+    37: "#ff6b9d",
+    38: "#ffb347",
+    39: "#4363d8",
+    60: "#f9c0c0",
+    61: "#ffe0d0",
 }
 _HEART_PERICARDIUM_IDS: frozenset[int] = frozenset({60, 61})
 
@@ -134,7 +134,9 @@ def _format_time(t: float) -> str:
         return f"{t:.3e}"
     return f"{t:.4g}"
 
+
 _ORGAN_NAME_SPLITS = ("left", "right", "small", "large", "portal", "surrenal", "vena", "venous", "biliary")
+
 def _format_organ_name(name: str) -> str:
     """Insert a space before known prefix words squished into organ names."""
     lower = name.lower()
@@ -193,7 +195,7 @@ class VisfemApp(TrameApp):
         # Build the plotter and load the first convergence mesh to show on startup
         self.plotter = pv.Plotter(off_screen=True, theme=pv.themes.DarkTheme())
         self.plotter.enable_depth_peeling(number_of_peels=4)
-        self.pvmesh = load_mesh(CONVERGENCE_FILES[initial_conv_name], step=1)
+        self.pvmesh = load_mesh(CONVERGENCE_FILES[initial_conv_name], step=0)
         self.plotter.add_mesh(
             self.pvmesh,
             scalars=initial_conv_fields[0] if initial_conv_fields else None,
@@ -211,10 +213,10 @@ class VisfemApp(TrameApp):
             "conv_name": initial_conv_name,
             "conv_fields": initial_conv_fields,
             "conv_field": initial_conv_fields[0] if initial_conv_fields else None,
-            "conv_step": 1,
+            "conv_step": 0,
             "conv_num_steps": initial_conv_meta["n_steps"],
             "conv_times": initial_conv_times,
-            "conv_time_label": _format_time(initial_conv_times[1] if len(initial_conv_times) > 1 else 0),
+            "conv_time_label": _format_time(initial_conv_times[0] if initial_conv_times else 0),
             # --- SPP state ---
             "spp_names": spp_names,
             "spp_name": initial_spp_name,
@@ -235,6 +237,7 @@ class VisfemApp(TrameApp):
             "heart_legend": [],
             # --- WebXR state ---
             "xr_active": False,  # toggled by VtkWebXRHelper enter/exit callbacks
+            "xr_context_restored": 0,
         })
 
     def _reset_xr_state(self, **_: object) -> None:
@@ -245,6 +248,24 @@ class VisfemApp(TrameApp):
     # Each helper clears the plotter, loads the requested mesh, and pushes
     # the updated render to the browser via ctrl.view_update().
 
+    def _render_field_mesh(self, path: Path, field: str | None, step: int, reset_cam: bool = True) -> bool:
+        """Load a mesh, replace the scene, and push to the browser.
+
+        Returns False and logs an error if loading fails.
+        """
+        try:
+            self.pvmesh = load_mesh(path, step=step)
+        except Exception as e:
+            logger.error(f"Failed to load '{path.name}' step {step}: {e}")
+            return False
+        self.plotter.clear()
+        self.plotter.add_mesh(self.pvmesh, scalars=field, show_edges=True, edge_color="#000000", copy_mesh=False)
+        if reset_cam:
+            self.plotter.reset_camera()
+            self.ctrl.view_push_camera()
+        self.ctrl.view_update()
+        return True
+
     def _redraw_convergence(self, name: str, field: str | None, step: int, reset_cam: bool = True) -> None:
         """Load and render a convergence mesh at the given step and field."""
         path = CONVERGENCE_FILES.get(name)
@@ -252,19 +273,8 @@ class VisfemApp(TrameApp):
             logger.error(f"Convergence file not found: {path}")
             return
         meta = self._convergence_meta[name]
-        step = max(1, min(step, meta["n_steps"] - 1))
-        try:
-            new_mesh = load_mesh(path, step=step)
-        except Exception as e:
-            logger.error(f"Failed to load '{path.name}' step {step}: {e}")
-            return
-        self.plotter.clear()
-        self.pvmesh = new_mesh
-        self.plotter.add_mesh(self.pvmesh, scalars=field, show_edges=True, edge_color="#000000", copy_mesh=False)
-        if reset_cam:
-            self.plotter.reset_camera()
-            self.ctrl.view_push_camera()
-        self.ctrl.view_update()
+        step = max(0, min(step, meta["n_steps"] - 1))
+        self._render_field_mesh(path, field, step, reset_cam)
 
     def _redraw_spp(self, name: str, field: str | None, step: int, reset_cam: bool = True) -> None:
         """Load and render an SPP SimLivA mesh at the given step and field."""
@@ -274,18 +284,26 @@ class VisfemApp(TrameApp):
             return
         meta = self._spp_meta[name]
         step = max(0, min(step, meta["n_steps"] - 1))
-        try:
-            new_mesh = load_mesh(path, step=step)
-        except Exception as e:
-            logger.error(f"Failed to load '{path.name}' step {step}: {e}")
+        self._render_field_mesh(path, field, step, reset_cam)
+
+    def _sync_xdmf_state(self, prefix: str, meta_dict: dict[str, MeshMetadata], redraw: object) -> None:
+        """Sync state variables from metadata and trigger a redraw."""
+        name = getattr(self.state, f"{prefix}_name")
+        meta = meta_dict.get(name)
+        if meta is None:
             return
-        self.plotter.clear()
-        self.pvmesh = new_mesh
-        self.plotter.add_mesh(self.pvmesh, scalars=field, show_edges=True, edge_color="#000000", copy_mesh=False)
-        if reset_cam:
-            self.plotter.reset_camera()
-            self.ctrl.view_push_camera()
-        self.ctrl.view_update()
+        step = max(0, min(int(getattr(self.state, f"{prefix}_step")), meta["n_steps"] - 1))
+        fields = _all_fields(meta)
+        current_field = getattr(self.state, f"{prefix}_field")
+        self.state.update({
+            f"{prefix}_num_steps":  meta["n_steps"],
+            f"{prefix}_times":      meta["times"],
+            f"{prefix}_step":       step,
+            f"{prefix}_time_label": _format_time(meta["times"][step]),
+            f"{prefix}_fields":     fields,
+            f"{prefix}_field":      current_field if current_field in fields else (fields[0] if fields else None),
+        })
+        redraw(name, getattr(self.state, f"{prefix}_field"), step)
 
     def _redraw_ircadb(self, patient_name: str) -> None:
         """Load all organ meshes for a patient and render as two actors.
@@ -475,38 +493,12 @@ class VisfemApp(TrameApp):
     def activate_convergence(self) -> None:
         """Switch to convergence mode and redraw with current UI state."""
         self.state.mode = "convergence"
-        name = self.state.conv_name
-        meta = self._convergence_meta.get(name)
-        if meta is None:
-            return
-        self.state.conv_num_steps = meta["n_steps"]
-        self.state.conv_times = meta["times"]
-        step = max(1, min(int(self.state.conv_step), meta["n_steps"] - 1))
-        self.state.conv_step = step
-        self.state.conv_time_label = _format_time(meta["times"][step])
-        fields = _all_fields(meta)
-        self.state.conv_fields = fields
-        current = self.state.conv_field
-        self.state.conv_field = current if current in fields else (fields[0] if fields else None)
-        self._redraw_convergence(name, self.state.conv_field, step)
+        self._sync_xdmf_state("conv", self._convergence_meta, self._redraw_convergence)
 
     def activate_spp(self) -> None:
         """Switch to SPP mode and redraw with current UI state."""
         self.state.mode = "spp"
-        name = self.state.spp_name
-        meta = self._spp_meta.get(name)
-        if meta is None:
-            return
-        self.state.spp_num_steps = meta["n_steps"]
-        self.state.spp_times = meta["times"]
-        step = max(0, min(int(self.state.spp_step), meta["n_steps"] - 1))
-        self.state.spp_step = step
-        self.state.spp_time_label = _format_time(meta["times"][step])
-        fields = _all_fields(meta)
-        self.state.spp_fields = fields
-        current = self.state.spp_field
-        self.state.spp_field = current if current in fields else (fields[0] if fields else None)
-        self._redraw_spp(name, self.state.spp_field, step)
+        self._sync_xdmf_state("spp", self._spp_meta, self._redraw_spp)
 
     def activate_ircadb(self) -> None:
         """Switch to IRCADb mode and redraw the selected patient."""
@@ -545,20 +537,7 @@ class VisfemApp(TrameApp):
         """Update field list, step bounds, and redraw when the resolution is changed."""
         if self.state.mode != "convergence":
             return
-        name = self.state.conv_name
-        meta = self._convergence_meta.get(name)
-        if meta is None:
-            return
-        self.state.conv_num_steps = meta["n_steps"]
-        self.state.conv_times = meta["times"]
-        step = max(1, min(int(self.state.conv_step), meta["n_steps"] - 1))
-        self.state.conv_step = step
-        self.state.conv_time_label = _format_time(meta["times"][step])
-        fields = _all_fields(meta)
-        self.state.conv_fields = fields
-        current = self.state.conv_field
-        self.state.conv_field = current if current in fields else (fields[0] if fields else None)
-        self._redraw_convergence(name, self.state.conv_field, step)
+        self._sync_xdmf_state("conv", self._convergence_meta, self._redraw_convergence)
 
     @change("conv_field", "conv_step")
     def _on_conv_field_or_step_change(self, **_: object) -> None:
@@ -576,20 +555,7 @@ class VisfemApp(TrameApp):
         """Update field list, step bounds, and redraw when the SPP file is changed."""
         if self.state.mode != "spp":
             return
-        name = self.state.spp_name
-        meta = self._spp_meta.get(name)
-        if meta is None:
-            return
-        self.state.spp_num_steps = meta["n_steps"]
-        self.state.spp_times = meta["times"]
-        step = max(0, min(int(self.state.spp_step), meta["n_steps"] - 1))
-        self.state.spp_step = step
-        self.state.spp_time_label = _format_time(meta["times"][step])
-        fields = _all_fields(meta)
-        self.state.spp_fields = fields
-        current = self.state.spp_field
-        self.state.spp_field = current if current in fields else (fields[0] if fields else None)
-        self._redraw_spp(name, self.state.spp_field, step)
+        self._sync_xdmf_state("spp", self._spp_meta, self._redraw_spp)
 
     @change("spp_field", "spp_step")
     def _on_spp_field_or_step_change(self, **_: object) -> None:
@@ -629,21 +595,6 @@ class VisfemApp(TrameApp):
     def _build_ui(self) -> None:
         """Construct the full Trame/Vuetify3 UI: drawer controls, toolbar, and VTK viewport."""
         with SinglePageWithDrawerLayout(self.server, theme="dark", title="") as self.ui:
-            # Quest suspends the tab during XR, dropping the WebSocket; reload on session end to restore app state
-            html.Script("""
-                (function() {
-                    if (!navigator.xr) return;
-                    const _orig = navigator.xr.requestSession.bind(navigator.xr);
-                    navigator.xr.requestSession = function(mode, options) {
-                        return _orig(mode, options).then(function(session) {
-                            session.addEventListener('end', function() {
-                                window.location.reload();
-                            });
-                            return session;
-                        });
-                    };
-                })();
-            """)
             self.ui.title.hide()
             with self.ui.toolbar:
                 v3.VIcon("mdi-vector-triangle", color="#00897b", classes="mr-2")
@@ -677,7 +628,7 @@ class VisfemApp(TrameApp):
                         )
                         v3.VSlider(
                             v_model=("conv_step",),
-                            min=1,
+                            min=0,
                             max=("conv_num_steps - 1",),
                             step=1,
                             label=("'Step (t=' + conv_time_label + ')'",),

@@ -1,4 +1,8 @@
-"""Mesh loading utilities for FEM simulation data."""
+"""Mesh loading utilities for FEM simulation data.
+
+    load_mesh(path, step)  -> pv.DataSet
+    get_metadata(path)     -> MeshMetadata
+"""
 
 import json
 import logging
@@ -15,9 +19,11 @@ import pyvista as pv
 from visfem.log import get_logger
 
 
+# ---- Types ----
+
 class FieldInfo(TypedDict):
-    center: str
-    shape: list[int]
+    center: str       # "point" or "cell"
+    shape: list[int]  # [1] for scalar, [3] for vector, [3, 3] for tensor
 
 
 class MeshMetadata(TypedDict):
@@ -33,12 +39,7 @@ class MeshMetadata(TypedDict):
 logger: logging.Logger = get_logger(__name__)
 
 
-def _require(element: ET.Element | None, tag: str, context: str) -> ET.Element:
-    """Return element, raising ValueError if None."""
-    if element is None:
-        raise ValueError(f"Missing required XML element <{tag}> in {context}")
-    return element
-
+# ---- Constants ----
 
 # File extensions that PyVista can read natively
 _PYVISTA_NATIVE: frozenset[str] = frozenset(
@@ -46,14 +47,9 @@ _PYVISTA_NATIVE: frozenset[str] = frozenset(
 )
 
 # File extensions that may contain time-series data
-_XDMF_TIMESERIES: frozenset[str] = frozenset({".xdmf", ".xmf"})
+_XDMF_EXTENSIONS: frozenset[str] = frozenset({".xdmf", ".xmf"})
 
-# Patch meshio XDMF type map to include PolyLine (missing by default)
-if "PolyLine" not in _xdmf_common.xdmf_to_meshio_type:
-    _xdmf_common.xdmf_to_meshio_type["PolyLine"] = "line"
-    _xdmf_common.meshio_to_xdmf_type["line"] = ("PolyLine",)
-
-# Geometric dimension per meshio cell type
+# Geometric dimension per meshio cell type; used to drop boundary marker cells
 _CELL_DIM: dict[str, int] = {
     "vertex": 0,
     "line": 1, "line3": 1, "line4": 1,
@@ -65,7 +61,7 @@ _CELL_DIM: dict[str, int] = {
     "pyramid": 3, "pyramid13": 3, "pyramid14": 3,
 }
 
-# XDMF topology type names mapped to meshio cell type names
+# XDMF TopologyType names -> meshio cell type names
 _XDMF_TO_MESHIO_CELLTYPE: dict[str, str] = {
     "polyline": "line",
     "triangle": "triangle",
@@ -76,12 +72,26 @@ _XDMF_TO_MESHIO_CELLTYPE: dict[str, str] = {
     "pyramid": "pyramid",
 }
 
+# Patch: meshio XDMF type map is missing PolyLine (present in convergence_sixth files)
+if "PolyLine" not in _xdmf_common.xdmf_to_meshio_type:
+    _xdmf_common.xdmf_to_meshio_type["PolyLine"] = "line"
+    _xdmf_common.meshio_to_xdmf_type["line"] = ("PolyLine",)
+
+
+# ---- Internal utilities ----
+
+def _require(element: ET.Element | None, tag: str, context: str) -> ET.Element:
+    """Return element or raise ValueError if None."""
+    if element is None:
+        raise ValueError(f"Missing required XML element <{tag}> in {context}")
+    return element
+
 
 def _filter_to_max_dim_cells(cells: list) -> list:
-    """Return only the cell blocks with the highest geometric dimension.
+    """Return only the highest-dimensional cell blocks from a mixed-topology list.
 
-    Drops lower-dimensional boundary marker cells (e.g., PolyLine)
-    that would otherwise cause pv.from_meshio() to crash.
+    Drops lower-dimensional boundary markers (e.g. PolyLine alongside tetra)
+    that would otherwise crash pv.from_meshio().
     """
     if not cells:
         return cells
@@ -93,23 +103,25 @@ def _filter_to_max_dim_cells(cells: list) -> list:
     return filtered
 
 
-def _detect_format(path: Path) -> str:
-    """Return a format string for the given mesh file.
+# ---- Format detection ----
 
-    Possible values: fenics_xdmf, timeseries_xdmf, pyvista_native, meshio_fallback.
+def _detect_format(path: Path) -> str:
+    """Return a format string for the given file path.
+
+    Returns one of: fenics_xdmf, timeseries_xdmf, pyvista_native, meshio_fallback.
     """
     suffix = path.suffix.lower()
     if suffix in _PYVISTA_NATIVE:
         return "pyvista_native"
-    if suffix in _XDMF_TIMESERIES:
+    if suffix in _XDMF_EXTENSIONS:
         return _detect_xdmf_subtype(path)
     return "meshio_fallback"
 
 
 def _detect_xdmf_subtype(path: Path) -> str:
-    """Distinguish FEniCS XDMF from meshio time-series XDMF by counting Temporal Collections.
+    """Distinguish FEniCS-style from meshio-style XDMF by counting Temporal Collections.
 
-    FEniCS writes one Temporal Collection per field.
+    FEniCS writes one Temporal Collection per field (N collections).
     Meshio writes one Temporal Collection containing all fields per timestep.
     """
     tree = ET.parse(path)
@@ -122,17 +134,18 @@ def _detect_xdmf_subtype(path: Path) -> str:
     ]
     if len(temporal_collections) > 1:
         return "fenics_xdmf"
-    elif len(temporal_collections) == 1:
+    if len(temporal_collections) == 1:
         return "timeseries_xdmf"
-    else:
-        # No temporal collections, assume static FEniCS mesh
-        return "fenics_xdmf"
+    # No temporal collections: static FEniCS geometry-only file
+    return "fenics_xdmf"
 
+
+# ---- Metadata extraction ----
 
 def get_metadata(path: Path) -> MeshMetadata:
-    """Return a metadata descriptor for any supported mesh file.
+    """Return a format-agnostic metadata descriptor for any supported mesh file.
 
-    The result is cached as a .meta.json sidecar next to the source file.
+    Caches the result as a .meta.json sidecar next to the source file.
     Delete the sidecar to force regeneration.
     """
     sidecar = path.with_suffix(".meta.json")
@@ -153,7 +166,10 @@ def get_metadata(path: Path) -> MeshMetadata:
 
 
 def _metadata_timeseries_xdmf(path: Path, fmt: str) -> MeshMetadata:
-    """Extract metadata from a meshio-style XDMF time series."""
+    """Extract metadata from a meshio-style XDMF time series.
+
+    Reads all steps to collect timestamps; field shapes are taken from step 0.
+    """
     with meshio.xdmf.TimeSeriesReader(path) as reader:
         points, cells = reader.read_points_cells()
         num_steps = reader.num_steps
@@ -162,6 +178,7 @@ def _metadata_timeseries_xdmf(path: Path, fmt: str) -> MeshMetadata:
         for step in range(num_steps):
             t, point_data, cell_data = reader.read_data(step)
             times.append(float(t))
+            # Collect field shapes from the first step only
             if not fields:
                 for name, arr in point_data.items():
                     fields[name] = {"center": "point", "shape": list(arr.shape[1:] or [1])}
@@ -179,12 +196,16 @@ def _metadata_timeseries_xdmf(path: Path, fmt: str) -> MeshMetadata:
 
 
 def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
-    """Extract metadata from a FEniCS-style XDMF file via h5py."""
+    """Extract metadata from a FEniCS-style XDMF file via h5py.
+
+    Reads the base Uniform grid for geometry dimensions, then iterates
+    Temporal Collections to collect timestamps and per-field shapes.
+    """
     tree = ET.parse(path)
     domain = _require(tree.getroot().find("Domain"), "Domain", path.name)
 
-    # Geometry and topology dimensions live in the first Uniform grid
-    uniform = next(g for g in domain.findall("Grid") if g.get("GridType") == "Uniform")
+    # Geometry and topology live in the first Uniform grid
+    uniform       = next(g for g in domain.findall("Grid") if g.get("GridType") == "Uniform")
     topology_elem = _require(uniform.find("Topology"), "Topology", path.name)
     topo_item     = _require(topology_elem.find("DataItem"), "DataItem", path.name)
     geo_item      = _require(
@@ -204,7 +225,7 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
             field_name = collection.get("Name")
             if field_name is None:
                 continue
-            # Collect time values from the first field collection only
+            # Timestamps are identical across all fields; read from the first collection only
             if not times:
                 for child in collection.findall("Grid"):
                     t_elem = child.find("Time")
@@ -212,7 +233,7 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
                         value = t_elem.get("Value")
                         if value is not None:
                             times.append(float(value))
-            # Read center and shape from the first timestep of this field
+            # Read center and array shape from step 0 of this field
             first_child = collection.find("Grid")
             if first_child is not None:
                 attr = first_child.find("Attribute")
@@ -239,7 +260,7 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
 
 
 def _metadata_static(path: Path, fmt: str) -> MeshMetadata:
-    """Extract metadata from a static mesh file."""
+    """Extract metadata from a static (non-time-series) mesh file."""
     mesh = cast(
         pv.DataSet,
         pv.read(str(path))
@@ -248,7 +269,7 @@ def _metadata_static(path: Path, fmt: str) -> MeshMetadata:
     )
 
     def _field_shape(arr: np.ndarray) -> list[int]:
-        """Return shape descriptor: [1] for scalars, [n] for n-component vectors/tensors."""
+        """Return [1] for scalar arrays, [n] for vector/tensor arrays."""
         return list(arr.shape[1:]) if arr.ndim > 1 else [1]
 
     return {
@@ -267,10 +288,13 @@ def _metadata_static(path: Path, fmt: str) -> MeshMetadata:
     }
 
 
-def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
-    """Load one time step from a FEniCS XDMF file.
+# ---- Mesh loaders ----
 
-    Reads geometry from HDF5 once, then attaches all fields at the given step.
+def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
+    """Load one timestep from a FEniCS-style XDMF file.
+
+    Reads geometry from HDF5, builds the base mesh, then attaches all
+    field arrays at the requested step.
     """
     tree = ET.parse(path)
     domain = _require(tree.getroot().find("Domain"), "Domain", path.name)
@@ -285,30 +309,27 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
     )
     topo_type_raw = topology_elem.get("TopologyType", "").lower()
     topo_type     = _XDMF_TO_MESHIO_CELLTYPE.get(topo_type_raw, topo_type_raw)
-
-    h5_file = path.parent / (path.stem + ".h5")
+    h5_file       = path.parent / (path.stem + ".h5")
 
     with h5py.File(str(h5_file), "r") as f:
         points_2d    = f[(geo_item.text  or "").strip().split(":/")[1]][:]
         connectivity = f[(topo_item.text or "").strip().split(":/")[1]][:]
 
-        # FEniCS often writes 2D coordinates only; pad z column with zeros
+        # FEniCS 2D meshes have no z column; pad with zeros for PyVista
         if points_2d.shape[1] == 2:
             points = np.column_stack([points_2d, np.zeros(len(points_2d))])
         else:
             points = points_2d
 
-        # Build the base mesh without any field data first
-        cells = [meshio.CellBlock(topo_type, connectivity)]
-        cells = _filter_to_max_dim_cells(cells)
+        # Build the base mesh (geometry only, no fields yet)
+        cells  = _filter_to_max_dim_cells([meshio.CellBlock(topo_type, connectivity)])
         pvmesh = pv.from_meshio(meshio.Mesh(points=points, cells=cells))
 
-        # Each Temporal Collection is one field; attach all at the requested step
+        # Each Temporal Collection is one field; attach all fields at the requested step
         temporal_grids = [
             g for g in domain.findall("Grid")
             if g.get("CollectionType") == "Temporal"
         ]
-
         for collection in temporal_grids:
             field_name = collection.get("Name")
             if field_name is None:
@@ -330,7 +351,7 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
             hdf5_key = (data_item.text or "").strip().split(":/")[1]
             try:
                 arr = f[hdf5_key][:]
-                # Squeeze trailing size-1 dim so scalar fields have shape (n,) not (n, 1)
+                # Squeeze trailing size-1 dim: (n, 1) -> (n,) for scalars
                 if arr.ndim > 1 and arr.shape[-1] == 1:
                     arr = arr.squeeze(-1)
                 if center == "node":
@@ -349,13 +370,13 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
 
 
 def _load_timeseries_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
-    """Load one time step from a meshio XDMF time series."""
+    """Load one timestep from a meshio-style XDMF time series."""
     with meshio.xdmf.TimeSeriesReader(path) as reader:
         logger.debug(f"Loading '{path.name}' ({reader.num_steps} steps)")
         points, cells = reader.read_points_cells()
         t, point_data, cell_data = reader.read_data(step)
         cells = _filter_to_max_dim_cells(cells)
-        mesh = meshio.Mesh(
+        mesh  = meshio.Mesh(
             points=points,
             cells=cells,
             point_data=point_data,
@@ -365,7 +386,7 @@ def _load_timeseries_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
 
 
 def _load_static(path: Path) -> pv.DataSet:
-    """Load a static mesh file via PyVista or meshio fallback."""
+    """Load a static mesh via PyVista (native formats) or meshio (fallback)."""
     if path.suffix.lower() in _PYVISTA_NATIVE:
         logger.debug(f"[pyvista] loading '{path.name}'")
         return cast(pv.DataSet, pv.read(str(path)))
@@ -373,10 +394,13 @@ def _load_static(path: Path) -> pv.DataSet:
     return pv.from_meshio(meshio.read(str(path)))
 
 
+# --------
+
 def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     """Load any supported mesh file and return a PyVista dataset.
 
-    All fields at the given step are attached to the returned mesh.
+    Dispatches to the correct private loader based on detected format.
+    All fields at the given timestep are attached to the returned mesh.
     """
     fmt = _detect_format(path)
     logger.debug(f"Loading '{path.name}' as '{fmt}' step {step}")
@@ -385,35 +409,3 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     if fmt == "timeseries_xdmf":
         return _load_timeseries_xdmf(path, step)
     return _load_static(path)
-
-
-if __name__ == "__main__":
-    # convergence_sixth (XDMF time-series, 3D wedge mesh)
-    DATA_DIR = Path(__file__).parents[3] / "visfem_data" / "convergence_sixth" / "xdmf"
-    OUTPUT_DIR = Path(__file__).parents[3] / "visfem_results"
-    OUTPUT_DIR.mkdir(exist_ok=True)
-    MESH_FILES = [
-        DATA_DIR / "lobule_sixth_00005.xdmf",
-        DATA_DIR / "lobule_sixth_000025.xdmf",
-        DATA_DIR / "lobule_sixth_0000125.xdmf",
-        DATA_DIR / "lobule_sixth_00000625.xdmf",
-    ]
-    STEP = 150
-    FIELD = None
-    # get_metadata(MESH_FILES[1])
-    # load_mesh(MESH_FILES[1], step=STEP)
-
-    # 3D-IRCADb-01 (static VTK surface meshes)
-    IRCADB_DIR = Path(__file__).parents[3] / "visfem_data" / "3Dircadb1"
-    PATIENT_NR = 2
-    ORGAN = "liver"
-    # get_metadata(IRCADB_DIR / f"3Dircadb1.{PATIENT_NR}" / "MESHES_VTK" / f"{ORGAN}.vtk")
-    # load_mesh(IRCADB_DIR / f"3Dircadb1.{PATIENT_NR}" / "MESHES_VTK" / f"{ORGAN}.vtk")
-
-    # 08_SPP_FEMVis (FEniCS XDMF, 2D meshes)
-    SPP_DIR = Path(__file__).parents[3] / "visfem_data" / "08_SPP_FEMVis"
-    # get_metadata(SPP_DIR / "deformation" / "deformation.xdmf")
-    # get_metadata(SPP_DIR / "lobule" / "lobule_spt_p1.xdmf")
-    # get_metadata(SPP_DIR / "lobule" / "lobule_spt_p6.xdmf")
-    # get_metadata(SPP_DIR / "scan" / "scan_64_p1.xdmf")
-    # load_mesh(SPP_DIR / "lobule" / "lobule_spt_p1.xdmf", step=0)

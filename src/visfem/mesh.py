@@ -26,12 +26,12 @@ class FieldInfo(TypedDict):
 
 
 class MeshMetadata(TypedDict):
-    format: str
-    n_steps: int
-    times: list[float]
+    format: str             # one of: fenics_xdmf, timeseries_xdmf, pyvista_native, meshio_fallback
+    n_steps: int            # 1 for static datasets
+    times: list[float]      # simulation timestamps; empty for static datasets
     n_points: int
     n_cells: int
-    cell_types: list[str]
+    cell_types: list[str]   # e.g. ["triangle"] or ["tetra"]
     fields: dict[str, FieldInfo]
 
 
@@ -221,6 +221,7 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
     """
     domain, topology_elem, topo_item, geo_item = _parse_xdmf_base_grid(path)
 
+    # Dimensions attribute is "n_rows n_cols"; first token is the count
     n_points  = int((geo_item.get("Dimensions") or "").split()[0])
     n_cells   = int((topo_item.get("Dimensions") or "").split()[0])
     cell_type = topology_elem.get("TopologyType", "unknown").lower()
@@ -251,6 +252,7 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
                     center = "point" if center == "node" else "cell"
                     data_item = attr.find("DataItem")
                     if data_item is not None:
+                        # DataItem text is "filename.h5:/path/to/dataset"; take the dataset path
                         hdf5_key = (data_item.text or "").strip().split(":/")[1]
                         try:
                             shape = list(hdf5[hdf5_key].shape[1:] or [1])
@@ -270,6 +272,7 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
 
 def _metadata_static(path: Path, fmt: str) -> MeshMetadata:
     """Extract metadata from a static (non-time-series) mesh file."""
+    # cast needed because pv.read() return type is not narrowed by PyVista's stubs
     mesh = cast(
         pv.DataSet,
         pv.read(str(path))
@@ -312,6 +315,7 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
     h5_file       = path.parent / (path.stem + ".h5")
 
     with h5py.File(str(h5_file), "r") as hdf5:
+        # DataItem text is "filename.h5:/path/to/dataset"; take the dataset path
         points_2d    = hdf5[(geo_item.text  or "").strip().split(":/")[1]][:]
         connectivity = hdf5[(topo_item.text or "").strip().split(":/")[1]][:]
 
@@ -348,12 +352,14 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
             if data_item is None:
                 continue
             center   = attr.get("Center", "Node").lower()
+            # DataItem text is "filename.h5:/path/to/dataset"; take the dataset path
             hdf5_key = (data_item.text or "").strip().split(":/")[1]
             try:
                 field_array = hdf5[hdf5_key][:]
                 # Squeeze trailing size-1 dim: (n, 1) -> (n,) for scalars
                 if field_array.ndim > 1 and field_array.shape[-1] == 1:
                     field_array = field_array.squeeze(-1)
+                # XDMF uses "Node" for point-centered data, "Cell" for cell-centered
                 if center == "node":
                     pvmesh.point_data[field_name] = field_array
                 else:

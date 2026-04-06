@@ -1,4 +1,4 @@
-"""visfem - Python utilities for metadata."""
+"""VisFEM: Web visualization of FEM models."""
 
 from pathlib import Path
 

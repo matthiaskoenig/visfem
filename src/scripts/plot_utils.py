@@ -1,7 +1,4 @@
-"""Shared plotting utilities for FEM visualization scripts.
-
-Works with any dataset supported by visfem.mesh.load_mesh() and get_metadata().
-"""
+"""Shared plotting utilities for FEM visualization scripts."""
 
 from pathlib import Path
 
@@ -18,26 +15,27 @@ def animate_field(path: Path, field: str, output_path: Path, every_nth: int = 1)
 
     # Fix colormap range from step 0 so colors stay consistent across frames
     first_mesh = load_mesh(path, step=0)
-    arr = first_mesh.point_data.get(field)
-    if arr is None:
-        arr = first_mesh.cell_data.get(field)
-    if arr is None:
+    field_array = first_mesh.point_data.get(field)
+    if field_array is None:
+        field_array = first_mesh.cell_data.get(field)
+    if field_array is None:
         print(f"Field '{field}' not found. Available: "
               f"{list(first_mesh.point_data.keys()) + list(first_mesh.cell_data.keys())}")
         return
-    clim = [float(arr.min()), float(arr.max())]
+    # color_range locks the colormap min/max across all frames for consistent comparison
+    color_range = [float(field_array.min()), float(field_array.max())]
 
     plotter = pv.Plotter(off_screen=True)
     plotter.open_gif(str(output_path))
 
     for step in steps:
-        pvmesh = load_mesh(path, step=step)
-        t = meta["times"][step]
+        step_mesh = load_mesh(path, step=step)
+        timestamp = meta["times"][step]
         plotter.clear()
-        plotter.add_mesh(pvmesh, scalars=field, clim=clim, show_edges=False)
-        plotter.add_title(f"{path.stem}  {field}  t={t:.4g}", font_size=9)
+        plotter.add_mesh(step_mesh, scalars=field, clim=color_range, show_edges=False)
+        plotter.add_title(f"{path.stem}  {field}  t={timestamp:.4g}", font_size=9)
         plotter.write_frame()
-        print(f"  step {step}/{meta['n_steps'] - 1}  t={t:.4g}")
+        print(f"  step {step}/{meta['n_steps'] - 1}  t={timestamp:.4g}")
 
     plotter.close()
     print(f"Saved: {output_path}")
@@ -50,27 +48,29 @@ def preview_field_animation(path: Path, field: str, every_nth: int = 1) -> None:
 
     # Fix colormap range from step 0 so colors stay consistent across frames
     first_mesh = load_mesh(path, step=0)
-    arr = first_mesh.point_data.get(field)
-    if arr is None:
-        arr = first_mesh.cell_data.get(field)
-    if arr is None:
+    field_array = first_mesh.point_data.get(field)
+    if field_array is None:
+        field_array = first_mesh.cell_data.get(field)
+    if field_array is None:
         print(f"Field '{field}' not found.")
         return
-    clim = [float(arr.min()), float(arr.max())]
+    # color_range locks the colormap min/max across all frames for consistent comparison
+    color_range = [float(field_array.min()), float(field_array.max())]
 
-    # Open the window with the first frame, then update in place
+    # auto_close=False keeps the window alive after show(); interactive_update=True
+    # allows plotter.update() to refresh the render without blocking
     plotter = pv.Plotter()
-    pvmesh = load_mesh(path, step=steps[0])
-    plotter.add_mesh(pvmesh, scalars=field, clim=clim, show_edges=False)
+    step_mesh = load_mesh(path, step=steps[0])
+    plotter.add_mesh(step_mesh, scalars=field, clim=color_range, show_edges=False)
     plotter.show(auto_close=False, interactive_update=True)
 
     for step in steps:
-        pvmesh = load_mesh(path, step=step)
-        t = meta["times"][step]
+        step_mesh = load_mesh(path, step=step)
+        timestamp = meta["times"][step]
         plotter.clear()
-        plotter.add_mesh(pvmesh, scalars=field, clim=clim, show_edges=False)
-        plotter.add_title(f"{path.stem}  {field}  t={t:.4g}", font_size=9)
+        plotter.add_mesh(step_mesh, scalars=field, clim=color_range, show_edges=False)
+        plotter.add_title(f"{path.stem}  {field}  t={timestamp:.4g}", font_size=9)
         plotter.update()
-        print(f"  step {step}  t={t:.4g}")
+        print(f"  step {step}  t={timestamp:.4g}")
 
     plotter.show()

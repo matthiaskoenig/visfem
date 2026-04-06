@@ -12,7 +12,8 @@ import pyvista as pv
 from visfem.mesh import get_metadata, load_mesh
 
 
-# Paths
+# ---- Paths ----
+
 IRCADB_DIR = Path.home() / "Projects" / "VisFEM_project" / "visfem_data" / "3Dircadb1"
 PATIENTS = list(range(1, 21))
 
@@ -27,23 +28,24 @@ def get_organ_names(patient: int) -> list[str]:
     return sorted(f.stem for f in _vtk_dir(patient).glob("*.vtk"))
 
 
-# Inspection
+# ---- Inspection ----
 
 def print_organ_inventory() -> None:
     """Print which organs are available across all 20 patients."""
     all_organs: set[str] = set()
     patient_organs: dict[int, list[str]] = {}
 
-    for p in PATIENTS:
-        organs = get_organ_names(p)
-        patient_organs[p] = organs
+    for patient in PATIENTS:
+        organs = get_organ_names(patient)
+        patient_organs[patient] = organs
         all_organs.update(organs)
 
+    # Sort for stable, readable display order (sets are unordered)
     all_organs_sorted = sorted(all_organs)
     print(f"\n{'Organ':<30} {'Patients available'}")
     print("=" * 60)
     for organ in all_organs_sorted:
-        available = [str(p) for p in PATIENTS if organ in patient_organs[p]]
+        available = [str(patient) for patient in PATIENTS if organ in patient_organs[patient]]
         print(f"{organ:<30} {', '.join(available)}")
 
     print(f"\nTotal unique organs across all patients: {len(all_organs_sorted)}")
@@ -71,11 +73,11 @@ def generate_metadata(patient: int) -> None:
 
 def generate_all_metadata() -> None:
     """Generate metadata for all organs across all 20 patients."""
-    for p in PATIENTS:
-        generate_metadata(p)
+    for patient in PATIENTS:
+        generate_metadata(patient)
 
 
-# Visualization
+# ---- Visualization ----
 
 def plot_organ(patient: int, organ: str) -> None:
     """Load and display a single organ mesh."""
@@ -89,19 +91,20 @@ def plot_organ(patient: int, organ: str) -> None:
 
 def plot_organs_combined(patient: int, organs: list[str], opacity: float = 1.0) -> None:
     """Render a list of organs for one patient in a single scene with distinct colors."""
+    # Cycles if more organs than colors
     colors = [
         "red", "blue", "green", "orange", "purple",
         "cyan", "magenta", "yellow", "brown", "pink",
     ]
     plotter = pv.Plotter()
 
-    for i, organ in enumerate(organs):
+    for organ_idx, organ in enumerate(organs):
         path = _vtk_dir(patient) / f"{organ}.vtk"
         if not path.exists():
             print(f"  WARNING: {organ} not found for patient {patient}, skipping.")
             continue
         mesh = load_mesh(path)
-        plotter.add_mesh(mesh, color=colors[i % len(colors)], opacity=opacity, label=organ)
+        plotter.add_mesh(mesh, color=colors[organ_idx % len(colors)], opacity=opacity, label=organ)
         print(f"  {organ}: {mesh.n_points} pts, {mesh.n_cells} cells")
 
     plotter.add_legend()

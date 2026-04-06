@@ -1,16 +1,19 @@
 """Trame web application for FEM mesh visualization."""
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
+
 import numpy as np
 import pyvista as pv
 from trame.app import TrameApp
 from trame.decorators import change
 from trame.ui.vuetify3 import SinglePageWithDrawerLayout
+from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 from trame.widgets.vtk import VtkLocalView, VtkWebXRHelper
-from trame.widgets import html
+
 from visfem.log import get_logger
-from visfem.mesh import get_metadata, load_mesh, MeshMetadata
+from visfem.mesh import MeshMetadata, get_metadata, load_mesh
 
 logger = get_logger(__name__)
 
@@ -126,16 +129,17 @@ def _all_fields(meta: MeshMetadata) -> list[str]:
     return list(meta["fields"].keys())
 
 
-def _format_time(t: float) -> str:
+def _format_time(time_value: float) -> str:
     """Format a time value compactly for display."""
-    if t == 0.0:
+    if time_value == 0.0:
         return "0"
-    if abs(t) >= 1000 or (abs(t) < 0.01 and t != 0):
-        return f"{t:.3e}"
-    return f"{t:.4g}"
+    if abs(time_value) >= 1000 or (abs(time_value) < 0.01 and time_value != 0):
+        return f"{time_value:.3e}"
+    return f"{time_value:.4g}"
 
 
 _ORGAN_NAME_SPLITS = ("left", "right", "small", "large", "portal", "surrenal", "vena", "venous", "biliary")
+
 
 def _format_organ_name(name: str) -> str:
     """Insert a space before known prefix words squished into organ names."""
@@ -194,6 +198,7 @@ class VisfemApp(TrameApp):
 
         # Build the plotter and load the first convergence mesh to show on startup
         self.plotter = pv.Plotter(off_screen=True, theme=pv.themes.DarkTheme())
+        # Depth peeling enables correct transparency rendering for overlapping meshes
         self.plotter.enable_depth_peeling(number_of_peels=4)
         self.pvmesh = load_mesh(CONVERGENCE_FILES[initial_conv_name], step=0)
         self.plotter.add_mesh(
@@ -286,7 +291,7 @@ class VisfemApp(TrameApp):
         step = max(0, min(step, meta["n_steps"] - 1))
         self._render_field_mesh(path, field, step, reset_cam)
 
-    def _sync_xdmf_state(self, prefix: str, meta_dict: dict[str, MeshMetadata], redraw: object) -> None:
+    def _sync_xdmf_state(self, prefix: str, meta_dict: dict[str, MeshMetadata], redraw: Callable) -> None:
         """Sync state variables from metadata and trigger a redraw."""
         name = getattr(self.state, f"{prefix}_name")
         meta = meta_dict.get(name)
@@ -301,6 +306,7 @@ class VisfemApp(TrameApp):
             f"{prefix}_step":       step,
             f"{prefix}_time_label": _format_time(meta["times"][step]),
             f"{prefix}_fields":     fields,
+            # Keep current field selection if still valid, otherwise fall back to first
             f"{prefix}_field":      current_field if current_field in fields else (fields[0] if fields else None),
         })
         redraw(name, getattr(self.state, f"{prefix}_field"), step)
@@ -333,6 +339,8 @@ class VisfemApp(TrameApp):
                 continue
             try:
                 mesh = load_mesh(vtk_path)
+                # region_id is an integer per-cell label; required so pv.merge
+                # can map per-organ colors via cmap after merging into one actor
                 mesh.cell_data["region_id"] = np.full(mesh.n_cells, i, dtype=np.int32)
                 color = _ORGAN_COLORS[i % len(_ORGAN_COLORS)]
                 if organ in _IRCADB_SKIN_ORGANS:
@@ -390,6 +398,7 @@ class VisfemApp(TrameApp):
                     continue
                 try:
                     mesh = cast(pv.DataSet, pv.read(str(path)))
+                    # region_id needed so cmap maps per-cavity colors after pv.merge
                     mesh.cell_data["region_id"] = np.full(mesh.n_cells, i, dtype=np.int32)
                     parts.append(mesh)
                     colors.append(HEART_CAVITY_COLORS[label])
@@ -418,7 +427,7 @@ class VisfemApp(TrameApp):
             except Exception as e:
                 logger.error(f"Failed to load heart mesh: {e}")
                 return
-            mat = mesh.cell_data["Material"]
+            material_ids = mesh.cell_data["Material"]
 
             # Opaque chambers: one merged actor
             opaque_parts: list[pv.DataSet] = []
@@ -427,12 +436,13 @@ class VisfemApp(TrameApp):
                 (mid, c) for mid, c in _HEART_MATERIAL_COLORS.items()
                 if mid not in _HEART_PERICARDIUM_IDS
             ):
-                mask = mat == mat_id
+                mask = material_ids == mat_id
                 if not mask.any():
                     continue
-                sub = mesh.extract_cells(np.where(mask)[0])
-                sub.cell_data["region_id"] = np.full(sub.n_cells, i, dtype=np.int32)
-                opaque_parts.append(sub)
+                submesh = mesh.extract_cells(np.where(mask)[0])
+                # region_id needed so cmap maps per-material colors after pv.merge
+                submesh.cell_data["region_id"] = np.full(submesh.n_cells, i, dtype=np.int32)
+                opaque_parts.append(submesh)
                 opaque_colors.append(color)
             if opaque_parts:
                 merged_opaque = pv.merge(opaque_parts)
@@ -450,12 +460,12 @@ class VisfemApp(TrameApp):
             peri_parts: list[pv.DataSet] = []
             peri_colors: list[str] = []
             for i, mat_id in enumerate(_HEART_PERICARDIUM_IDS):
-                mask = mat == mat_id
+                mask = material_ids == mat_id
                 if not mask.any():
                     continue
-                sub = mesh.extract_cells(np.where(mask)[0])
-                sub.cell_data["region_id"] = np.full(sub.n_cells, i, dtype=np.int32)
-                peri_parts.append(sub)
+                submesh = mesh.extract_cells(np.where(mask)[0])
+                submesh.cell_data["region_id"] = np.full(submesh.n_cells, i, dtype=np.int32)
+                peri_parts.append(submesh)
                 peri_colors.append(_HEART_MATERIAL_COLORS[mat_id])
             if peri_parts:
                 merged_peri = pv.merge(peri_parts)
@@ -471,10 +481,11 @@ class VisfemApp(TrameApp):
 
             # Fiber glyphs as a single actor on top if requested
             if show_fibers:
+                # Every 10th cell sampled for performance; full mesh is ~129k cells
                 subsample = 10
-                idx = np.arange(0, mesh.n_cells, subsample)
-                centers = mesh.extract_cells(idx).cell_centers()
-                centers["Fiber"] = mesh.cell_data["Fiber"][idx]
+                fiber_idx = np.arange(0, mesh.n_cells, subsample)
+                centers = mesh.extract_cells(fiber_idx).cell_centers()
+                centers["Fiber"] = mesh.cell_data["Fiber"][fiber_idx]
                 glyphs = centers.glyph(orient="Fiber", scale=False, factor=1.5)
                 self.plotter.add_mesh(glyphs, color="#ffffff", name="heart_fibers", copy_mesh=False)
 

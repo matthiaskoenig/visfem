@@ -13,3 +13,4 @@ src/visfem.egg-info/
 wheels
 __pycache__
 .pytest_cache
+data

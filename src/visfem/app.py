@@ -339,14 +339,15 @@ class VisfemApp(TrameApp):
                 continue
             try:
                 mesh = load_mesh(vtk_path)
-                # region_id is an integer per-cell label; required so pv.merge
-                # can map per-organ colors via cmap after merging into one actor
-                mesh.cell_data["region_id"] = np.full(mesh.n_cells, i, dtype=np.int32)
                 color = _ORGAN_COLORS[i % len(_ORGAN_COLORS)]
                 if organ in _IRCADB_SKIN_ORGANS:
+                    region_id = len(skin_parts)
+                    mesh.cell_data["region_id"] = np.full(mesh.n_cells, region_id, dtype=np.int32)
                     skin_parts.append(mesh)
                     skin_colors.append(color)
                 else:
+                    region_id = len(organ_parts)
+                    mesh.cell_data["region_id"] = np.full(mesh.n_cells, region_id, dtype=np.int32)
                     organ_parts.append(mesh)
                     organ_colors.append(color)
             except Exception as e:

@@ -18,7 +18,7 @@ uv pip install visfem
 ```bash
 # install core dependencies
 uv sync
-# install dev dependencies
+# inst[uv.lock](uv.lock)all dev dependencies
 uv pip install -r pyproject.toml --extra dev
 uv tool install tox --with tox-uv
 ```

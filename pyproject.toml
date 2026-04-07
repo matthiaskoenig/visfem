@@ -64,3 +64,6 @@ Download = "https://pypi.org/project/visfem"
 
 [tool.hatch.version]
 path = "./src/visfem/__init__.py"
+
+[project.scripts]
+visfem = "visfem.app:main"

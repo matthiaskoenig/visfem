@@ -1,4 +1,4 @@
-"""Shared plotting utilities for FEM visualization scripts."""
+"""Shared plotting utilities for FEM visualization exploration."""
 
 from pathlib import Path
 

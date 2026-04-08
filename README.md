@@ -1,4 +1,4 @@
-![visfem logo](./docs/images/favicon_new/visfem-100x100.png)
+![visfem logo](docs/images/favicon/visfem-100x100.png)
 
 # VisFEM: Web visualization of FEM models
 [![GitHub Actions CI/CD Status](https://github.com/matthiaskoenig/visfem/workflows/CI-CD/badge.svg)](https://github.com/matthiaskoenig/visfem/actions/workflows/main.yml)

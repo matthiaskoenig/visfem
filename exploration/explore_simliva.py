@@ -185,10 +185,10 @@ if __name__ == "__main__":
     OUTPUT_DIR = Path.home() / "Projects" / "VisFEM_project" / "visfem_results"
 
     # Inspection
-    # print_metadata_all()
-    # print_mesh_at_step(LOBULE_P1, step=STEP)
-    # print_mesh_at_step(DEFORMATION, step=STEP)
-    # print_mesh_at_step(SCAN, step=STEP)
+    print_metadata_all()
+    print_mesh_at_step(LOBULE_P1, step=STEP)
+    print_mesh_at_step(DEFORMATION, step=STEP)
+    print_mesh_at_step(SCAN, step=STEP)
 
     # Single field
     # plot_field_at_step(LOBULE_P1, field=FIELD, step=STEP)

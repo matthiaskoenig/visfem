@@ -196,9 +196,9 @@ if __name__ == "__main__":
     STEPS = [0, 100, 200, 400, 500, 600, 700, 800]
 
     # Inspection
-    # print_metadata_all()
-    # print_mesh_at_step("medium_coarse", step=STEP)
-    # print_mesh_at_step("fine", step=STEP)
+    print_metadata_all()
+    print_mesh_at_step("medium_coarse", step=STEP)
+    print_mesh_at_step("fine", step=STEP)
 
     # Single field
     # plot_field_at_step("medium_coarse", field=FIELD, step=STEP)

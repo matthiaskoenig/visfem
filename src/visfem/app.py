@@ -13,7 +13,9 @@ from trame.widgets import vuetify3 as v3
 from trame.widgets.vtk import VtkLocalView, VtkWebXRHelper
 
 from visfem.log import get_logger
-from visfem.mesh import MeshMetadata, get_metadata, load_mesh
+from visfem.log import get_logger  # noqa: F811 placeholder
+from visfem.mesh import get_metadata, load_mesh
+from visfem.models import MeshMetadata
 
 logger = get_logger(__name__)
 
@@ -29,8 +31,8 @@ HEART_MESH_PATH = HEART_DIR / "M.vtu"
 HEART_EPICARD   = HEART_DIR / "surfaces" / "epicard.stl"
 
 # ---- Dynamic dataset discovery ----
-# Labels are derived from file stems
-# XDMF files are only included when a matching .h5 exists next to them
+# Labels are derived from file stems; no filenames hardcoded.
+# XDMF files are only included when a matching .h5 exists next to them.
 
 def _discover_xdmf(directory: Path) -> dict[str, Path]:
     """Return stem→path for all .xdmf files in directory that have a matching .h5."""
@@ -133,7 +135,7 @@ def _ircadb_organ_names(patient: int) -> list[str]:
 
 def _all_fields(meta: MeshMetadata) -> list[str]:
     """Return all field names from metadata, including vectors."""
-    return list(meta["fields"].keys())
+    return list(meta.fields.keys())
 
 
 def _format_time(time_value: float) -> str:
@@ -192,14 +194,14 @@ class VisfemApp(TrameApp):
         initial_conv_name = conv_names[0]
         initial_conv_meta = self._convergence_meta[initial_conv_name]
         initial_conv_fields = _all_fields(initial_conv_meta)
-        initial_conv_times = initial_conv_meta["times"]
+        initial_conv_times = initial_conv_meta.times
 
         # --- SPP initial values ---
         spp_names = list(SPP_FILES.keys())
         initial_spp_name = spp_names[0]
         initial_spp_meta = self._spp_meta[initial_spp_name]
         initial_spp_fields = _all_fields(initial_spp_meta)
-        initial_spp_times = initial_spp_meta["times"]
+        initial_spp_times = initial_spp_meta.times
 
         initial_patient = IRCADB_PATIENTS[0] if IRCADB_PATIENTS else None
 
@@ -226,7 +228,7 @@ class VisfemApp(TrameApp):
             "conv_fields": initial_conv_fields,
             "conv_field": initial_conv_fields[0] if initial_conv_fields else None,
             "conv_step": 0,
-            "conv_num_steps": initial_conv_meta["n_steps"],
+            "conv_num_steps": initial_conv_meta.n_steps,
             "conv_times": initial_conv_times,
             "conv_time_label": _format_time(initial_conv_times[0] if initial_conv_times else 0),
             # --- SPP state ---
@@ -235,7 +237,7 @@ class VisfemApp(TrameApp):
             "spp_fields": initial_spp_fields,
             "spp_field": initial_spp_fields[0] if initial_spp_fields else None,
             "spp_step": 0,
-            "spp_num_steps": initial_spp_meta["n_steps"],
+            "spp_num_steps": initial_spp_meta.n_steps,
             "spp_times": initial_spp_times,
             "spp_time_label": _format_time(initial_spp_times[0] if initial_spp_times else 0),
             # --- IRCADb state ---
@@ -285,7 +287,7 @@ class VisfemApp(TrameApp):
             logger.error(f"Convergence file not found: {path}")
             return
         meta = self._convergence_meta[name]
-        step = max(0, min(step, meta["n_steps"] - 1))
+        step = max(0, min(step, meta.n_steps - 1))
         self._render_field_mesh(path, field, step, reset_cam)
 
     def _redraw_spp(self, name: str, field: str | None, step: int, reset_cam: bool = True) -> None:
@@ -295,7 +297,7 @@ class VisfemApp(TrameApp):
             logger.error(f"SPP file not found: {path}")
             return
         meta = self._spp_meta[name]
-        step = max(0, min(step, meta["n_steps"] - 1))
+        step = max(0, min(step, meta.n_steps - 1))
         self._render_field_mesh(path, field, step, reset_cam)
 
     def _sync_xdmf_state(self, prefix: str, meta_dict: dict[str, MeshMetadata], redraw: Callable) -> None:
@@ -304,14 +306,14 @@ class VisfemApp(TrameApp):
         meta = meta_dict.get(name)
         if meta is None:
             return
-        step = max(0, min(int(getattr(self.state, f"{prefix}_step")), meta["n_steps"] - 1))
+        step = max(0, min(int(getattr(self.state, f"{prefix}_step")), meta.n_steps - 1))
         fields = _all_fields(meta)
         current_field = getattr(self.state, f"{prefix}_field")
         self.state.update({
-            f"{prefix}_num_steps":  meta["n_steps"],
-            f"{prefix}_times":      meta["times"],
+            f"{prefix}_num_steps":  meta.n_steps,
+            f"{prefix}_times":      meta.times,
             f"{prefix}_step":       step,
-            f"{prefix}_time_label": _format_time(meta["times"][step]),
+            f"{prefix}_time_label": _format_time(meta.times[step]),
             f"{prefix}_fields":     fields,
             # Keep current field selection if still valid, otherwise fall back to first
             f"{prefix}_field":      current_field if current_field in fields else (fields[0] if fields else None),
@@ -565,8 +567,8 @@ class VisfemApp(TrameApp):
             return
         step = int(self.state.conv_step)
         meta = self._convergence_meta.get(self.state.conv_name)
-        if meta and step < len(meta["times"]):
-            self.state.conv_time_label = _format_time(meta["times"][step])
+        if meta and step < len(meta.times):
+            self.state.conv_time_label = _format_time(meta.times[step])
         self._redraw_convergence(self.state.conv_name, self.state.conv_field, step, reset_cam=False)
 
     @change("spp_name")
@@ -583,8 +585,8 @@ class VisfemApp(TrameApp):
             return
         step = int(self.state.spp_step)
         meta = self._spp_meta.get(self.state.spp_name)
-        if meta and step < len(meta["times"]):
-            self.state.spp_time_label = _format_time(meta["times"][step])
+        if meta and step < len(meta.times):
+            self.state.spp_time_label = _format_time(meta.times[step])
         self._redraw_spp(self.state.spp_name, self.state.spp_field, step, reset_cam=False)
 
     @change("patient_name")

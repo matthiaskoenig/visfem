@@ -4,10 +4,9 @@ load_mesh(path, step)  -> pv.DataSet
 get_metadata(path)     -> MeshMetadata
 """
 
-import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import cast, TypedDict
+from typing import cast
 
 import h5py
 import meshio
@@ -16,23 +15,7 @@ import numpy as np
 import pyvista as pv
 
 from visfem.log import get_logger
-
-
-# ---- Types ----
-
-class FieldInfo(TypedDict):
-    center: str       # "point" or "cell"
-    shape: list[int]  # [1] for scalar, [3] for vector, [3, 3] for tensor
-
-
-class MeshMetadata(TypedDict):
-    format: str             # one of: fenics_xdmf, timeseries_xdmf, pyvista_native, meshio_fallback
-    n_steps: int            # 1 for static datasets
-    times: list[float]      # simulation timestamps; empty for static datasets
-    n_points: int
-    n_cells: int
-    cell_types: list[str]   # e.g. ["triangle"] or ["tetra"]
-    fields: dict[str, FieldInfo]
+from visfem.models import MESH_METADATA_HASH, MeshMetadata
 
 
 logger = get_logger(__name__)
@@ -71,7 +54,7 @@ _XDMF_TO_MESHIO_CELLTYPE: dict[str, str] = {
     "pyramid": "pyramid",
 }
 
-# Patch: meshio XDMF type map is missing PolyLine (present in convergence_sixth files)
+# Patch: meshio XDMF type map is missing PolyLine
 if "PolyLine" not in _xdmf_common.xdmf_to_meshio_type:
     _xdmf_common.xdmf_to_meshio_type["PolyLine"] = "line"
     _xdmf_common.meshio_to_xdmf_type["line"] = ("PolyLine",)
@@ -164,26 +147,37 @@ def get_metadata(path: Path) -> MeshMetadata:
     """Return a format-agnostic metadata descriptor for any supported mesh file.
 
     Caches the result as a .meta.json sidecar next to the source file.
-    Delete the sidecar to force regeneration.
+    The sidecar is automatically regenerated if the MeshMetadata schema
+    has changed since it was written (detected via schema_hash).
     """
     sidecar = path.with_suffix(".meta.json")
+
     if sidecar.exists():
-        logger.debug(f"Loading cached metadata from '{sidecar.name}'")
-        return cast(MeshMetadata, json.loads(sidecar.read_text()))
+        try:
+            cached = MeshMetadata.model_validate_json(sidecar.read_text())
+            if cached.schema_hash == MESH_METADATA_HASH:
+                logger.debug(f"Cache hit: '{sidecar.name}'")
+                return cached
+            logger.debug(f"Schema changed, regenerating '{sidecar.name}'")
+        except (ValueError, KeyError):
+            logger.debug(f"Invalid sidecar, regenerating '{sidecar.name}'")
+
     logger.debug(f"Computing metadata for '{path.name}'")
     fmt = _detect_format(path)
     if fmt == "fenics_xdmf":
-        meta = _metadata_fenics_xdmf(path, fmt)
+        raw = _metadata_fenics_xdmf(path, fmt)
     elif fmt == "timeseries_xdmf":
-        meta = _metadata_timeseries_xdmf(path, fmt)
+        raw = _metadata_timeseries_xdmf(path, fmt)
     else:
-        meta = _metadata_static(path, fmt)
-    sidecar.write_text(json.dumps(meta, indent=2))
+        raw = _metadata_static(path, fmt)
+
+    meta = MeshMetadata.model_validate({**raw, "schema_hash": MESH_METADATA_HASH})
+    sidecar.write_text(meta.model_dump_json(indent=2))
     logger.debug(f"Cached metadata to '{sidecar.name}'")
     return meta
 
 
-def _metadata_timeseries_xdmf(path: Path, fmt: str) -> MeshMetadata:
+def _metadata_timeseries_xdmf(path: Path, fmt: str) -> dict:
     """Extract metadata from a meshio-style XDMF time series.
 
     Reads all steps to collect timestamps; field shapes are taken from step 0.
@@ -192,14 +186,14 @@ def _metadata_timeseries_xdmf(path: Path, fmt: str) -> MeshMetadata:
         points, cells = reader.read_points_cells()
         num_steps = reader.num_steps
         times: list[float] = []
-        fields: dict[str, FieldInfo] = {}
+        fields: dict[str, dict] = {}
         for step in range(num_steps):
             timestamp, point_data, cell_data = reader.read_data(step)
             times.append(float(timestamp))
             # Collect field shapes from the first step only
             if not fields:
-                for name, field_array in point_data.items():
-                    fields[name] = {"center": "point", "shape": list(field_array.shape[1:] or [1])}
+                for name, arr in point_data.items():
+                    fields[name] = {"center": "point", "shape": list(arr.shape[1:] or [1])}
                 for name, blocks in cell_data.items():
                     fields[name] = {"center": "cell", "shape": list(blocks[0].shape[1:] or [1])}
     return {
@@ -213,7 +207,7 @@ def _metadata_timeseries_xdmf(path: Path, fmt: str) -> MeshMetadata:
     }
 
 
-def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
+def _metadata_fenics_xdmf(path: Path, fmt: str) -> dict:
     """Extract metadata from a FEniCS-style XDMF file via h5py.
 
     Reads the base Uniform grid for geometry dimensions, then iterates
@@ -226,7 +220,7 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
     n_cells   = int((topo_item.get("Dimensions") or "").split()[0])
     cell_type = topology_elem.get("TopologyType", "unknown").lower()
 
-    fields: dict[str, FieldInfo] = {}
+    fields: dict[str, dict] = {}
     times: list[float] = []
     temporal_grids = [g for g in domain.findall("Grid") if g.get("CollectionType") == "Temporal"]
 
@@ -270,9 +264,8 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> MeshMetadata:
     }
 
 
-def _metadata_static(path: Path, fmt: str) -> MeshMetadata:
+def _metadata_static(path: Path, fmt: str) -> dict:
     """Extract metadata from a static (non-time-series) mesh file."""
-    # cast needed because pv.read() return type is not narrowed by PyVista's stubs
     mesh = cast(
         pv.DataSet,
         pv.read(str(path))
@@ -280,9 +273,9 @@ def _metadata_static(path: Path, fmt: str) -> MeshMetadata:
         else pv.from_meshio(meshio.read(str(path))),
     )
 
-    def _field_shape(field_array: np.ndarray) -> list[int]:
+    def _field_shape(arr: np.ndarray) -> list[int]:
         """Return [1] for scalar arrays, [n] for vector/tensor arrays."""
-        return list(field_array.shape[1:]) if field_array.ndim > 1 else [1]
+        return list(arr.shape[1:]) if arr.ndim > 1 else [1]
 
     return {
         "format": fmt,
@@ -290,12 +283,12 @@ def _metadata_static(path: Path, fmt: str) -> MeshMetadata:
         "times": [],
         "n_points": mesh.n_points,
         "n_cells": mesh.n_cells,
-        "cell_types": [str(cell_type.name).lower() for cell_type in mesh.distinct_cell_types],
+        "cell_types": [str(ct.name).lower() for ct in mesh.distinct_cell_types],
         "fields": {
-            **{name: {"center": "point", "shape": _field_shape(field_array)}
-               for name, field_array in mesh.point_data.items()},
-            **{name: {"center": "cell", "shape": _field_shape(field_array)}
-               for name, field_array in mesh.cell_data.items()},
+            **{name: {"center": "point", "shape": _field_shape(arr)}
+               for name, arr in mesh.point_data.items()},
+            **{name: {"center": "cell", "shape": _field_shape(arr)}
+               for name, arr in mesh.cell_data.items()},
         },
     }
 
@@ -399,8 +392,6 @@ def _load_static(path: Path) -> pv.DataSet:
     logger.debug(f"[meshio] loading '{path.name}'")
     return pv.from_meshio(meshio.read(str(path)))
 
-
-# --------
 
 def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     """Load any supported mesh file and return a PyVista dataset.

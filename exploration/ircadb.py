@@ -1,7 +1,7 @@
 """Exploratory script for the 3D-IRCADb-01 dataset.
 
 Static VTK surface meshes of segmented organs, 20 patients.
-Structure: 3Dircadb1.{1..20}/MESHES_VTK/*.vtk
+Structure: patient_01/ .. patient_20/*.vtk
 Run sections by uncommenting the relevant call at the bottom.
 """
 
@@ -14,24 +14,30 @@ from visfem.mesh import get_metadata, load_mesh
 
 # ---- Paths ----
 
-IRCADB_DIR = Path.home() / "Projects" / "VisFEM_project" / "visfem_data" / "3Dircadb1"
-PATIENTS = list(range(1, 21))
+_DATA_BASE = Path(__file__).parents[1] / "data" / "fem_data"
+IRCADB_DIR = _DATA_BASE / "ircadb"
+
+PATIENTS: list[int] = sorted(
+    int(d.name.split("_")[-1])
+    for d in IRCADB_DIR.glob("patient_*")
+    if d.is_dir()
+)
 
 
-def _vtk_dir(patient: int) -> Path:
-    """Return the MESHES_VTK directory for a given patient number."""
-    return IRCADB_DIR / f"3Dircadb1.{patient}" / "MESHES_VTK"
+def _patient_dir(patient: int) -> Path:
+    """Return the directory for a given patient number."""
+    return IRCADB_DIR / f"patient_{patient:02d}"
 
 
 def get_organ_names(patient: int) -> list[str]:
     """Return sorted organ names available for a given patient."""
-    return sorted(f.stem for f in _vtk_dir(patient).glob("*.vtk"))
+    return sorted(f.stem for f in _patient_dir(patient).glob("*.vtk"))
 
 
 # ---- Inspection ----
 
 def print_organ_inventory() -> None:
-    """Print which organs are available across all 20 patients."""
+    """Print which organs are available across all patients."""
     all_organs: set[str] = set()
     patient_organs: dict[int, list[str]] = {}
 
@@ -40,12 +46,11 @@ def print_organ_inventory() -> None:
         patient_organs[patient] = organs
         all_organs.update(organs)
 
-    # Sort for stable, readable display order (sets are unordered)
     all_organs_sorted = sorted(all_organs)
     print(f"\n{'Organ':<30} {'Patients available'}")
     print("=" * 60)
     for organ in all_organs_sorted:
-        available = [str(patient) for patient in PATIENTS if organ in patient_organs[patient]]
+        available = [str(p) for p in PATIENTS if organ in patient_organs[p]]
         print(f"{organ:<30} {', '.join(available)}")
 
     print(f"\nTotal unique organs across all patients: {len(all_organs_sorted)}")
@@ -57,7 +62,7 @@ def print_patient_summary(patient: int) -> None:
     organs = get_organ_names(patient)
     print(f"\nPatient {patient} ({len(organs)} organs):")
     for organ in organs:
-        mesh = load_mesh(_vtk_dir(patient) / f"{organ}.vtk")
+        mesh = load_mesh(_patient_dir(patient) / f"{organ}.vtk")
         print(f"  {organ:<25} {mesh.n_points:>6} pts  {mesh.n_cells:>6} cells")
 
 
@@ -66,13 +71,13 @@ def generate_metadata(patient: int) -> None:
     organs = get_organ_names(patient)
     print(f"\nGenerating metadata for patient {patient}...")
     for organ in organs:
-        meta = get_metadata(_vtk_dir(patient) / f"{organ}.vtk")
+        meta = get_metadata(_patient_dir(patient) / f"{organ}.vtk")
         print(f"  {organ}: {meta['n_points']} pts, {meta['n_cells']} cells, "
               f"cell_types: {meta['cell_types']}")
 
 
 def generate_all_metadata() -> None:
-    """Generate metadata for all organs across all 20 patients."""
+    """Generate metadata for all organs across all patients."""
     for patient in PATIENTS:
         generate_metadata(patient)
 
@@ -81,7 +86,7 @@ def generate_all_metadata() -> None:
 
 def plot_organ(patient: int, organ: str) -> None:
     """Load and display a single organ mesh."""
-    mesh = load_mesh(_vtk_dir(patient) / f"{organ}.vtk")
+    mesh = load_mesh(_patient_dir(patient) / f"{organ}.vtk")
     print(f"Patient {patient}  {organ}: {mesh.n_points} pts, {mesh.n_cells} cells")
     plotter = pv.Plotter()
     plotter.add_mesh(mesh, show_edges=True)
@@ -91,7 +96,6 @@ def plot_organ(patient: int, organ: str) -> None:
 
 def plot_organs_combined(patient: int, organs: list[str], opacity: float = 1.0) -> None:
     """Render a list of organs for one patient in a single scene with distinct colors."""
-    # Cycles if more organs than colors
     colors = [
         "red", "blue", "green", "orange", "purple",
         "cyan", "magenta", "yellow", "brown", "pink",
@@ -99,7 +103,7 @@ def plot_organs_combined(patient: int, organs: list[str], opacity: float = 1.0) 
     plotter = pv.Plotter()
 
     for organ_idx, organ in enumerate(organs):
-        path = _vtk_dir(patient) / f"{organ}.vtk"
+        path = _patient_dir(patient) / f"{organ}.vtk"
         if not path.exists():
             print(f"  WARNING: {organ} not found for patient {patient}, skipping.")
             continue
@@ -124,10 +128,10 @@ if __name__ == "__main__":
     ORGAN = "liver"  # use print_organ_inventory() or print_patient_summary() to see available organs
 
     # Inspection
-    # print_organ_inventory()
+    print_organ_inventory()
     # print_patient_summary(PATIENT)
     # generate_metadata(PATIENT)
-    # generate_all_metadata()
+    generate_all_metadata()
 
     # Single organ
     # plot_organ(PATIENT, ORGAN)

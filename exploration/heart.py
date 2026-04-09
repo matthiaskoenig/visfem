@@ -15,22 +15,14 @@ from visfem.mesh import get_metadata, load_mesh
 
 # ---- Paths ----
 
-HEART_DIR   = Path.home() / "Projects" / "VisFEM_project" / "visfem_data" / "heart"
+_DATA_BASE  = Path(__file__).parents[1] / "data" / "fem_data"
+HEART_DIR   = _DATA_BASE / "heart"
 MESH_PATH   = HEART_DIR / "M.vtu"
-SURFACE_DIR = HEART_DIR / "Surfaces"
+EP_MESH_PATH = HEART_DIR / "EP.vtu"
+SURFACE_DIR = HEART_DIR / "surfaces"
 
-# STL surface files
-SURFACES = {
-    "cavity_lv":    SURFACE_DIR / "cavityLV.stl",
-    "cavity_rv":    SURFACE_DIR / "cavityRV.stl",
-    "cavity_la":    SURFACE_DIR / "cavityLA.stl",
-    "cavity_ra":    SURFACE_DIR / "cavityRA.stl",
-    "epicard":      SURFACE_DIR / "epicard.stl",
-    "outer_peri":   SURFACE_DIR / "outerPeri.stl",
-    "outer_trunks": SURFACE_DIR / "outerTrunks.stl",
-    "master":       SURFACE_DIR / "master.stl",
-    "slave":        SURFACE_DIR / "slave.stl",
-}
+# STL surface files — discovered dynamically from surfaces/
+SURFACES: dict[str, Path] = {p.stem: p for p in sorted(SURFACE_DIR.glob("*.stl"))}
 
 # MaterialID -> anatomical structure name (from LabelIDs.txt)
 MATERIAL_NAMES: dict[int, str] = {
@@ -63,8 +55,6 @@ _MATERIAL_COLORS: dict[int, str] = {
     60: "#f9c0c0",   # pericardium inner
     61: "#ffe0d0",   # pericardium outer
 }
-
-EP_MESH_PATH = HEART_DIR / "EP.vtu"
 
 # EP MaterialID -> anatomical structure name (from LabelIDs.txt)
 EP_MATERIAL_NAMES: dict[int, str] = {
@@ -205,15 +195,15 @@ def plot_surface(name: str) -> None:
 def plot_cavities_combined(opacity: float = 0.6) -> None:
     """Render all four cavity STL surfaces in one scene."""
     cavity_colors = {
-        "cavity_lv": "#e6194b",
-        "cavity_rv": "#4363d8",
-        "cavity_la": "#f58231",
-        "cavity_ra": "#3cb44b",
+        "cavityLV": "#e6194b",
+        "cavityRV": "#4363d8",
+        "cavityLA": "#f58231",
+        "cavityRA": "#3cb44b",
     }
     plotter = pv.Plotter()
     for name, color in cavity_colors.items():
-        path = SURFACES[name]
-        if path.exists():
+        path = SURFACES.get(name)
+        if path and path.exists():
             mesh = cast(pv.DataSet, pv.read(str(path)))
             plotter.add_mesh(mesh, color=color, opacity=opacity, label=name)
     plotter.add_legend(bcolor="black", border=False)
@@ -311,7 +301,7 @@ if __name__ == "__main__":
     SURFACE = "epicard"
 
     # M.vtu inspection
-    # print_metadata()
+    print_metadata()
     # print_material_distribution()
     # print_surface_summary()
 

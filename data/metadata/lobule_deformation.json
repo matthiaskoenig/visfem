@@ -7,7 +7,13 @@
     "University of Leipzig Medical Center"
   ],
   "biological_scale": "tissue",
-  "organ_system": ["liver"],
+  "organ_system": [
+    "liver"
+  ],
   "description": "Liver lobule mechanical deformation simulation (SimLivA) on a 2D quadrilateral FEniCS mesh.",
-  "mesh_format": "XDMF+HDF5"
+  "mesh_format": "XDMF+HDF5",
+  "references": [
+    "https://doi.org/10.1101/2024.03.26.586870",
+    "https://doi.org/10.5281/zenodo.10853538"
+  ]
 }

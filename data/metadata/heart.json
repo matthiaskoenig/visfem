@@ -4,7 +4,13 @@
     "Karlsruhe Institute of Technology (KIT)"
   ],
   "biological_scale": "organ",
-  "organ_system": ["heart"],
+  "organ_system": [
+    "heart"
+  ],
   "description": "Four-chamber human heart model for cardiac electrophysiology and mechanics simulations, including fiber orientation and 12 material regions.",
-  "mesh_format": "VTU"
+  "mesh_format": "VTU",
+  "references": [
+    "https://doi.org/10.5281/zenodo.10526554",
+    "https://doi.org/10.1113/JP285022"
+  ]
 }

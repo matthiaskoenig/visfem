@@ -4,7 +4,18 @@
     "IRCAD, Strasbourg, France"
   ],
   "biological_scale": "organ_system",
-  "organ_system": ["liver", "lung", "kidney", "bone", "vasculature", "abdominal"],
+  "organ_system": [
+    "liver",
+    "lung",
+    "kidney",
+    "bone",
+    "vasculature",
+    "abdominal"
+  ],
   "description": "3D-IRCADb-01: CT-segmented surface meshes from 20 patients (10 women, 10 men), hepatic tumours in 75% of cases, covering up to 47 organ types per patient.",
-  "mesh_format": "VTK"
+  "mesh_format": "VTK",
+  "references": [
+    "https://www.ircad.fr/research/data-sets/liver-segmentation-3d-ircadb-01/",
+    "Soler et al. 3D image reconstruction for comparison of algorithm database. IRCAD, Strasbourg, France, Tech. Rep (2010)"
+  ]
 }

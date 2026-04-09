@@ -7,7 +7,13 @@
     "University of Leipzig Medical Center"
   ],
   "biological_scale": "tissue",
-  "organ_system": ["liver"],
+  "organ_system": [
+    "liver"
+  ],
   "description": "Liver lobule perfusion simulated with a triphasic porous media model (SimLivA). Four mesh resolutions of the same wedge geometry for convergence analysis.",
-  "mesh_format": "XDMF+HDF5"
+  "mesh_format": "XDMF+HDF5",
+  "references": [
+    "https://doi.org/10.1101/2024.03.26.586870",
+    "https://doi.org/10.5281/zenodo.10853538"
+  ]
 }

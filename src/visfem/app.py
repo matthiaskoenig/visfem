@@ -18,33 +18,42 @@ from visfem.mesh import MeshMetadata, get_metadata, load_mesh
 logger = get_logger(__name__)
 
 # ---- Dataset paths ----
-# Base directory for all datasets, three levels up from the package root
-_DATA_BASE = Path(__file__).parents[3] / "visfem_data"
+# Base directory for all datasets
+_DATA_BASE      = Path(__file__).parents[2] / "data" / "fem_data"
+CONVERGENCE_DIR = _DATA_BASE / "simliva" / "lobule_convergence"
+PERFUSION_DIR   = _DATA_BASE / "simliva" / "lobule_perfusion"
+DEFORMATION_DIR = _DATA_BASE / "simliva" / "lobule_deformation"
+IRCADB_DIR      = _DATA_BASE / "ircadb"
+HEART_DIR       = _DATA_BASE / "heart"
+HEART_MESH_PATH = HEART_DIR / "M.vtu"
+HEART_EPICARD   = HEART_DIR / "surfaces" / "epicard.stl"
 
-DATA_DIR   = _DATA_BASE / "convergence_sixth" / "xdmf"
-SPP_DIR    = _DATA_BASE / "08_SPP_FEMVis"
-IRCADB_DIR = _DATA_BASE / "3Dircadb1"
+# ---- Dynamic dataset discovery ----
+# Labels are derived from file stems
+# XDMF files are only included when a matching .h5 exists next to them
 
-# Four mesh resolutions of the same liver lobule geometry (timeseries XDMF)
-CONVERGENCE_FILES = {
-    "Coarse (00005)":         DATA_DIR / "lobule_sixth_00005.xdmf",
-    "Medium-coarse (000025)": DATA_DIR / "lobule_sixth_000025.xdmf",
-    "Medium-fine (0000125)":  DATA_DIR / "lobule_sixth_0000125.xdmf",
-    "Fine (00000625)":        DATA_DIR / "lobule_sixth_00000625.xdmf",
+def _discover_xdmf(directory: Path) -> dict[str, Path]:
+    """Return stem→path for all .xdmf files in directory that have a matching .h5."""
+    return {
+        p.stem: p
+        for p in sorted(directory.glob("*.xdmf"))
+        if p.with_suffix(".h5").exists()
+    }
+
+
+# Timeseries XDMF meshes for liver lobule convergence study
+CONVERGENCE_FILES: dict[str, Path] = _discover_xdmf(CONVERGENCE_DIR)
+
+# SPP SimLivA: deformation and perfusion files merged into one flat dict
+SPP_FILES: dict[str, Path] = {
+    **_discover_xdmf(DEFORMATION_DIR),
+    **_discover_xdmf(PERFUSION_DIR),
 }
 
-# Four FEniCS XDMF files: 2D deformation, lobule (p1/p6), and scan meshes
-SPP_FILES = {
-    "Deformation": SPP_DIR / "deformation" / "deformation.xdmf",
-    "Lobule p1":   SPP_DIR / "lobule" / "lobule_spt_p1.xdmf",
-    "Lobule p6":   SPP_DIR / "lobule" / "lobule_spt_p6.xdmf",
-    "Scan 64 p1":  SPP_DIR / "scan" / "scan_64_p1.xdmf",
-}
-
-# Discover available patient subdirectories (3Dircadb1.1, .2, ...) at startup
+# IRCADb: discover patient dirs by glob, parse index from folder name
 IRCADB_PATIENTS: list[int] = sorted(
-    int(d.name.split(".")[-1])
-    for d in IRCADB_DIR.glob("3Dircadb1.*")
+    int(d.name.split("_")[-1])
+    for d in IRCADB_DIR.glob("patient_*")
     if d.is_dir()
 )
 
@@ -60,14 +69,12 @@ _ORGAN_COLORS = [
 _IRCADB_SKIN_ORGANS: frozenset[str] = frozenset({"skin"})
 
 # ---- Heart dataset ----
-HEART_DIR       = _DATA_BASE / "heart"
-HEART_MESH_PATH = HEART_DIR / "M.vtu"
 
 HEART_CAVITY_SURFACES: dict[str, Path] = {
-    "LV cavity": HEART_DIR / "Surfaces" / "cavityLV.stl",
-    "RV cavity": HEART_DIR / "Surfaces" / "cavityRV.stl",
-    "LA cavity": HEART_DIR / "Surfaces" / "cavityLA.stl",
-    "RA cavity": HEART_DIR / "Surfaces" / "cavityRA.stl",
+    "LV cavity": HEART_DIR / "surfaces" / "cavityLV.stl",
+    "RV cavity": HEART_DIR / "surfaces" / "cavityRV.stl",
+    "LA cavity": HEART_DIR / "surfaces" / "cavityLA.stl",
+    "RA cavity": HEART_DIR / "surfaces" / "cavityRA.stl",
 }
 HEART_CAVITY_COLORS: dict[str, str] = {
     "LV cavity": "#c0152a",
@@ -115,12 +122,12 @@ _HEART_MATERIAL_NAMES: dict[int, str] = {
 
 def _ircadb_vtk_path(patient: int, organ: str) -> Path:
     """Return the VTK file path for a given patient and organ name."""
-    return IRCADB_DIR / f"3Dircadb1.{patient}" / "MESHES_VTK" / f"{organ}.vtk"
+    return IRCADB_DIR / f"patient_{patient:02d}" / f"{organ}.vtk"
 
 
 def _ircadb_organ_names(patient: int) -> list[str]:
     """Return sorted list of organ names available for a patient."""
-    vtk_dir = IRCADB_DIR / f"3Dircadb1.{patient}" / "MESHES_VTK"
+    vtk_dir = IRCADB_DIR / f"patient_{patient:02d}"
     return sorted(f.stem for f in vtk_dir.glob("*.vtk"))
 
 
@@ -643,7 +650,6 @@ class VisfemApp(TrameApp):
                             min=0,
                             max=("conv_num_steps - 1",),
                             step=1,
-                            # label=("'Step (t=' + conv_time_label + ')'",),
                             thumb_label=True,
                             density="compact",
                             hide_details=True,
@@ -681,7 +687,6 @@ class VisfemApp(TrameApp):
                             min=0,
                             max=("spp_num_steps - 1",),
                             step=1,
-                            # label=("'Step (t=' + spp_time_label + ')'",),
                             thumb_label=True,
                             density="compact",
                             hide_details=True,

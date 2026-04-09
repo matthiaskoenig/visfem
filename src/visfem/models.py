@@ -75,4 +75,4 @@ class ProjectMetadata(BaseModel):
     organ_system: list[OrganSystem]  # list because multi-system datasets (e.g. IRCADb)
     description: str = Field(max_length=500)
     mesh_format: str                 # e.g. "VTK", "XDMF+HDF5", "VTU"
-    doi: str | None = None           # e.g. "https://doi.org/10.xxxx/xxxxx"
+    references: list[str] = []       # DOIs, URLs, or citations

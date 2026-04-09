@@ -12,7 +12,6 @@ from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 from trame.widgets.vtk import VtkLocalView, VtkWebXRHelper
 
-from visfem.log import get_logger
 from visfem.log import get_logger  # noqa: F811 placeholder
 from visfem.mesh import get_metadata, load_mesh
 from visfem.models import MeshMetadata

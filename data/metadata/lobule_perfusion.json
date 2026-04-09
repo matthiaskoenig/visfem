@@ -10,7 +10,7 @@
   "organ_system": [
     "liver"
   ],
-  "description": "Liver lobule perfusion simulations (SimLivA) at two polynomial orders (p1, p6) and one scan-resolution mesh, using FEniCS on 2D triangular elements.",
+  "description": "2D FEniCS simulations of hepatic lobule perfusion and drug metabolism (SPT model) at two polynomial orders (p1, p6) and a scan-based mesh (scan_64). Fields include pressure, substrate, product, necrosis, and protein zonation.",
   "mesh_format": "XDMF+HDF5",
   "references": [
     "https://doi.org/10.1101/2024.03.26.586870",

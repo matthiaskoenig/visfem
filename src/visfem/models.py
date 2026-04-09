@@ -1,10 +1,12 @@
 """Pydantic models for mesh and project metadata validation.
 
-Two metadata types:
+Two distinct metadata types:
   MeshMetadata     -- auto-generated from mesh files, cached as .meta.json sidecars
   ProjectMetadata  -- hand-authored per dataset, stored in data/metadata/*.json
 """
 
+import hashlib
+import json
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
@@ -25,9 +27,11 @@ class MeshMetadata(BaseModel):
     """Auto-generated metadata for a single mesh file.
 
     Cached as a .meta.json sidecar next to the source file.
-    Delete the sidecar to force regeneration.
+    Sidecars are automatically invalidated and regenerated when the
+    schema changes, detected via schema_hash.
     """
-    format: str           # fenics_xdmf | timeseries_xdmf | pyvista_native | meshio_fallback (see mesh.py)
+    schema_hash: str = ""
+    format: str           # fenics_xdmf | timeseries_xdmf | pyvista_native | meshio_fallback
     n_steps: int = Field(ge=1)
     times: list[float]    # empty for static datasets
     n_points: int = Field(ge=0)
@@ -35,7 +39,26 @@ class MeshMetadata(BaseModel):
     cell_types: list[str]
     fields: dict[str, FieldInfo]
     bounds: tuple[float, float, float, float, float, float] | None = None
-    # xmin, xmax, ymin, ymax, zmin, zmax; None if not precomputed
+    # xmin, xmax, ymin, ymax, zmin, zmax -- None if not precomputed
+
+
+def compute_mesh_metadata_hash() -> str:
+    """
+    Return an 8-char hash of MeshMetadata field names and types.
+    Changes automatically whenever fields are added, removed, or retyped.
+    """
+    fields = {
+        name: str(field.annotation)
+        for name, field in MeshMetadata.model_fields.items()
+        if name != "schema_hash"
+    }
+    return hashlib.md5(
+        json.dumps(fields, sort_keys=True).encode()
+    ).hexdigest()[:8]
+
+
+# Computed once at import time; used by mesh.py for sidecar validation
+MESH_METADATA_HASH: str = compute_mesh_metadata_hash()
 
 
 # ===========================================================================

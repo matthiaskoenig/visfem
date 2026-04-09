@@ -1,16 +1,18 @@
 {
   "pi": "Christian Wieners, Axel Loewe",
   "institution": [
-    "Karlsruhe Institute of Technology (KIT)"
+    "Karlsruhe Institute of Technology, Institute of Biomedical Engineering (KIT IBT)",
+    "Karlsruhe Institute of Technology, Institute of Applied and Numerical Mathematics (KIT IANM)",
   ],
   "biological_scale": "organ",
   "organ_system": [
     "heart"
   ],
-  "description": "Four-chamber human heart model for cardiac electrophysiology and mechanics simulations, including fiber orientation and 12 material regions.",
+  "description": "Four-chamber human heart model segmented from MRI of a healthy volunteer. Mechanical mesh and electrophysiology mesh. Fully coupled multi-physics model: electrophysiology, mechanics, and closed-loop circulation.",
   "mesh_format": "VTU",
   "references": [
     "https://doi.org/10.5281/zenodo.10526554",
-    "https://doi.org/10.1113/JP285022"
+    "https://doi.org/10.1113/JP285022",
+    "https://doi.org/10.3390/math9111247"
   ]
 }

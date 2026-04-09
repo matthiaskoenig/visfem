@@ -1,0 +1,13 @@
+{
+  "pi": "Uta Dahmen, Matthias König, Tim Ricken, Hans-Michael Tautenhahn",
+  "institution": [
+    "Jena University Hospital",
+    "Humboldt-Universität zu Berlin",
+    "University of Stuttgart",
+    "University of Leipzig Medical Center"
+  ],
+  "biological_scale": "tissue",
+  "organ_system": ["liver"],
+  "description": "Liver lobule perfusion simulated with a triphasic porous media model (SimLivA). Four mesh resolutions of the same wedge geometry for convergence analysis.",
+  "mesh_format": "XDMF+HDF5"
+}

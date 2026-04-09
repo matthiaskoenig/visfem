@@ -1,0 +1,13 @@
+{
+  "pi": "Uta Dahmen, Matthias König, Tim Ricken, Hans-Michael Tautenhahn",
+  "institution": [
+    "Jena University Hospital",
+    "Humboldt-Universität zu Berlin",
+    "University of Stuttgart",
+    "University of Leipzig Medical Center"
+  ],
+  "biological_scale": "tissue",
+  "organ_system": ["liver"],
+  "description": "Liver lobule mechanical deformation simulation (SimLivA) on a 2D quadrilateral FEniCS mesh.",
+  "mesh_format": "XDMF+HDF5"
+}

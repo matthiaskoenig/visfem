@@ -1,0 +1,10 @@
+{
+  "pi": "Christian Wieners, Axel Loewe",
+  "institution": [
+    "Karlsruhe Institute of Technology (KIT)"
+  ],
+  "biological_scale": "organ",
+  "organ_system": ["heart"],
+  "description": "Four-chamber human heart model for cardiac electrophysiology and mechanics simulations, including fiber orientation and 12 material regions.",
+  "mesh_format": "VTU"
+}

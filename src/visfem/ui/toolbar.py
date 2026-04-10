@@ -5,7 +5,6 @@ from trame.widgets import vuetify3 as v3
 
 def build_toolbar(
     toggle_theme: object,
-    reset_camera: object,
     toggle_xr: object,
 ) -> None:
     """Build the main toolbar with theme, camera, screenshot and VR buttons."""
@@ -23,12 +22,6 @@ def build_toolbar(
                 icon=("dark_mode ? 'mdi-weather-sunny' : 'mdi-weather-night'",),
                 variant="text", density="compact",
                 click=toggle_theme, v_bind="props", classes="ml-3",
-            )
-    with v3.VTooltip(text="Reset camera", location="bottom"):
-        with v3.Template(v_slot_activator="{ props }"):
-            v3.VBtn(
-                icon="mdi-crop-free", variant="text", density="compact",
-                click=reset_camera, v_bind="props", classes="ml-3",
             )
     with v3.VTooltip(text="Screenshot", location="bottom"):
         with v3.Template(v_slot_activator="{ props }"):

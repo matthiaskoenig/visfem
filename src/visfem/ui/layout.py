@@ -5,7 +5,7 @@ from trame.widgets import vuetify3 as v3
 from trame.widgets.vtk import VtkLocalView, VtkWebXRHelper
 
 from visfem.models import ProjectMetadata
-from visfem.ui.controls_panel import build_controls_panel
+from visfem.ui.controls_bar import build_controls_bar
 from visfem.ui.dataset_panel import build_dataset_panel
 from visfem.ui.toolbar import build_toolbar
 from visfem.ui.info_panel import build_info_panel
@@ -33,7 +33,7 @@ def build_ui(
 
         with layout.toolbar as toolbar:
             toolbar.density = "compact"
-            build_toolbar(on_toggle_theme, on_reset_camera, on_toggle_xr)
+            build_toolbar(on_toggle_theme, on_toggle_xr)
 
         with layout.content:
             with v3.VContainer(fluid=True, classes="pa-0 fill-height", style="position: relative;"):
@@ -53,7 +53,7 @@ def build_ui(
                     organ_groups, ircadb_patients,
                     on_select_dataset, on_select_xdmf, on_select_patient,
                 )
-                build_controls_panel()
+                build_controls_bar(on_reset_camera)
                 build_info_panel()
 
     return layout

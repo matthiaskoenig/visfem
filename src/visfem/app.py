@@ -68,7 +68,6 @@ class VisfemApp(TrameApp):
             "active_patient": None,
             "active_xdmf": None,
             "panel_datasets_open": True,
-            "panel_controls_open": True,
             "legend_items": [],
             "ctrl_opacity": 0.8,
             "active_meta": None,

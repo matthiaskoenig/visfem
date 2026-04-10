@@ -182,7 +182,7 @@ class VisfemApp(TrameApp):
 
     # ---- XR ----
 
-    def _reset_xr_state(self, **_: object) -> None:
+    def _reset_xr_state(self, **kwargs: object) -> None:
         """Reset XR state on client reconnect."""
         self.state.xr_active = False
 

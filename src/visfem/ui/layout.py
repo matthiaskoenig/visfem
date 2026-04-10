@@ -1,0 +1,57 @@
+"""Top-level UI assembly for VisFEM."""
+import pyvista as pv
+from trame.ui.vuetify3 import SinglePageLayout
+from trame.widgets import vuetify3 as v3
+from trame.widgets.vtk import VtkLocalView, VtkWebXRHelper
+
+from visfem.models import ProjectMetadata
+from visfem.ui.controls_panel import build_controls_panel
+from visfem.ui.dataset_panel import build_dataset_panel
+from visfem.ui.toolbar import build_toolbar
+
+
+def build_ui(
+    server: object,
+    plotter: pv.Plotter,
+    ctrl: object,
+    organ_groups: dict[str, list[tuple[str, ProjectMetadata]]],
+    ircadb_patients: list[int],
+    on_select_dataset: object,
+    on_select_xdmf: object,
+    on_select_patient: object,
+    on_toggle_theme: object,
+    on_reset_camera: object,
+    on_toggle_xr: object,
+    on_enter_xr: object,
+    on_exit_xr: object,
+) -> SinglePageLayout:
+    """Assemble the full SinglePageLayout and return it."""
+    with SinglePageLayout(server, theme=("dark_mode ? 'dark' : 'light'",)) as layout:
+        layout.title.hide()
+        layout.icon.hide()
+
+        with layout.toolbar as toolbar:
+            toolbar.density = "compact"
+            build_toolbar(on_toggle_theme, on_reset_camera, on_toggle_xr)
+
+        with layout.content:
+            with v3.VContainer(fluid=True, classes="pa-0 fill-height", style="position: relative;"):
+                with VtkLocalView(plotter.render_window) as view:
+                    ctrl.reset_camera = view.reset_camera  # type: ignore[attr-defined]
+                    ctrl.view_push_camera = view.push_camera  # type: ignore[attr-defined]
+                    ctrl.view_update = view.update  # type: ignore[attr-defined]
+                    webxr_helper = VtkWebXRHelper(
+                        draw_controllers_ray=True,
+                        enter_xr=(on_enter_xr,),
+                        exit_xr=(on_exit_xr,),
+                    )
+                    ctrl.start_xr = webxr_helper.start_xr  # type: ignore[attr-defined]
+                    ctrl.stop_xr = webxr_helper.stop_xr  # type: ignore[attr-defined]
+
+                build_dataset_panel(
+                    organ_groups, ircadb_patients,
+                    on_select_dataset, on_select_xdmf, on_select_patient,
+                )
+                build_controls_panel()
+
+    return layout

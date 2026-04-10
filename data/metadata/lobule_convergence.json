@@ -1,4 +1,6 @@
 {
+  "data_path": "simliva/lobule_convergence",
+  "labels_file": null,
   "name": "Lobule Convergence Study",
   "pi": "Uta Dahmen, Matthias König, Tim Ricken, Hans-Michael Tautenhahn",
   "institution": [

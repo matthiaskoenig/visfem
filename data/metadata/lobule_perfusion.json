@@ -1,4 +1,6 @@
 {
+  "data_path": "simliva/lobule_perfusion",
+  "labels_file": null,
   "name": "Lobule Perfusion",
   "pi": "Uta Dahmen, Matthias König, Tim Ricken, Hans-Michael Tautenhahn",
   "institution": [

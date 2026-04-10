@@ -1,4 +1,6 @@
 {
+  "data_path": "simliva/lobule_deformation",
+  "labels_file": null,
   "name": "Lobule Deformation",
   "pi": "Uta Dahmen, Matthias König, Tim Ricken, Hans-Michael Tautenhahn",
   "institution": [

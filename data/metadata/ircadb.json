@@ -1,4 +1,6 @@
 {
+  "data_path": "ircadb",
+  "labels_file": null,
   "name": "3D-IRCADb-01",
   "pi": "Luc Soler",
   "institution": [

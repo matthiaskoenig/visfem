@@ -406,3 +406,46 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     if fmt == "timeseries_xdmf":
         return _load_timeseries_xdmf(path, step)
     return _load_static(path)
+
+def parse_labels_file(path: Path) -> dict[str, dict[int, str]]:
+    """Parse a LabelIDs.txt file into per-mesh material ID → name mappings.
+
+    Returns dict keyed by mesh filename (e.g. 'M.vtu'), each value
+    is a dict of MaterialID -> anatomical name. When multiple anatomical
+    structures share a MaterialID, names are joined with ' / '.
+    """
+    import re
+
+    # Accumulate all names per material ID before joining
+    raw: dict[str, dict[int, list[str]]] = {}
+    current_mesh: str | None = None
+
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if "Array explanation" in line:
+            current_mesh = line.split()[0]
+            raw[current_mesh] = {}
+            continue
+        if "Anatomical Structure" in line or current_mesh is None:
+            continue
+
+        parts = re.split(r"\t+", line)
+        if len(parts) < 3:
+            continue
+
+        name = parts[0].strip()
+        for mid_str in parts[2].strip().split(","):
+            mid_str = mid_str.strip()
+            if mid_str.isdigit():
+                mid = int(mid_str)
+                raw[current_mesh].setdefault(mid, [])
+                if name not in raw[current_mesh][mid]:
+                    raw[current_mesh][mid].append(name)
+
+    # Join multiple names per material ID
+    return {
+        mesh: {mid: " / ".join(names) for mid, names in ids.items()}
+        for mesh, ids in raw.items()
+    }

@@ -92,6 +92,8 @@ class ProjectMetadata(BaseModel):
     Hand-authored descriptor for a dataset, stored in data/metadata/*.json.
     Captures scientific context for UI display.
     """
+    data_path: str
+    labels_file: str | None = None
     name: str
     pi: str
     institution: list[str]

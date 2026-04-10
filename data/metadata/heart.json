@@ -1,4 +1,6 @@
 {
+  "data_path": "heart",
+  "labels_file": "LabelIDs.txt",
   "name": "Four-Chamber Heart",
   "pi": "Christian Wieners, Axel Loewe",
   "institution": [

@@ -205,7 +205,7 @@ class VisfemApp(TrameApp):
     # ---- Reactive callbacks ----
 
     @change("ctrl_opacity")
-    def _on_opacity_change(self, ctrl_opacity, **_: object) -> None:
+    def _on_opacity_change(self, ctrl_opacity: float, **_: object) -> None:
         """Apply opacity to all actors when slider changes."""
         if self.state.active_dataset is None:
             return

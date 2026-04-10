@@ -1,10 +1,11 @@
 """Dataset selection handlers for VisFEM."""
 import pyvista as pv
+from typing import Any
 
-from visfem.engine.discovery import dataset_dir, discover_xdmf
 from visfem.engine.scene import clear_scene, redraw_heart, redraw_ircadb, redraw_xdmf
 from visfem.log import get_logger
 from visfem.models import MeshMetadata, ProjectMetadata
+from visfem.engine.discovery import dataset_dir, discover_xdmf, meta_to_state
 
 logger = get_logger(__name__)
 
@@ -12,7 +13,7 @@ logger = get_logger(__name__)
 def select_dataset(
     plotter: pv.Plotter,
     ctrl: object,
-    state: object,
+    state: Any,
     project_metadata: dict[str, ProjectMetadata],
     xdmf_meta: dict[str, MeshMetadata],
     key: str,
@@ -28,21 +29,27 @@ def select_dataset(
         ddir = dataset_dir(meta)
         xdmf_files = discover_xdmf(ddir)
         if key == "heart":
-            state.legend_items = redraw_heart(  # type: ignore[attr-defined]
+            legend, stats = redraw_heart(
                 plotter, ctrl, meta, ddir,
-                dark_mode=state.dark_mode,  # type: ignore[attr-defined]
-                opacity=state.ctrl_opacity,  # type: ignore[attr-defined]
+                dark_mode=state.dark_mode,
+                opacity=state.ctrl_opacity,
             )
+            state.legend_items = legend
+            state.mesh_stats = stats
         elif key == "ircadb":
-            state.legend_items = []  # type: ignore[attr-defined]
-            clear_scene(plotter, state.dark_mode)  # type: ignore[attr-defined]
+            state.legend_items = []
+            state.mesh_stats = None
+            clear_scene(plotter, state.dark_mode)
         elif xdmf_files:
             first_path = next(iter(xdmf_files.values()))
-            state.legend_items = redraw_xdmf(  # type: ignore[attr-defined]
+            legend, stats = redraw_xdmf(
                 plotter, ctrl, first_path, xdmf_meta,
-                dark_mode=state.dark_mode,  # type: ignore[attr-defined]
-                opacity=state.ctrl_opacity,  # type: ignore[attr-defined]
+                dark_mode=state.dark_mode,
+                opacity=state.ctrl_opacity,
             )
+            state.legend_items = legend
+            state.mesh_stats = stats
+        state.active_meta = meta_to_state(meta)
     finally:
         state.trame__busy = False  # type: ignore[attr-defined]
 
@@ -50,7 +57,7 @@ def select_dataset(
 def select_xdmf(
     plotter: pv.Plotter,
     ctrl: object,
-    state: object,
+    state: Any,
     project_metadata: dict[str, ProjectMetadata],
     xdmf_meta: dict[str, MeshMetadata],
     key: str,
@@ -68,11 +75,14 @@ def select_xdmf(
         if path is None:
             logger.error(f"XDMF file not found: {stem} in {key}")
             return
-        state.legend_items = redraw_xdmf(  # type: ignore[attr-defined]
+        legend, stats = redraw_xdmf(
             plotter, ctrl, path, xdmf_meta,
-            dark_mode=state.dark_mode,  # type: ignore[attr-defined]
-            opacity=state.ctrl_opacity,  # type: ignore[attr-defined]
+            dark_mode=state.dark_mode,
+            opacity=state.ctrl_opacity,
         )
+        state.legend_items = legend
+        state.mesh_stats = stats
+        state.active_meta = meta_to_state(project_metadata[key])
     finally:
         state.trame__busy = False  # type: ignore[attr-defined]
 
@@ -80,7 +90,7 @@ def select_xdmf(
 def select_patient(
     plotter: pv.Plotter,
     ctrl: object,
-    state: object,
+    state: Any,
     project_metadata: dict[str, ProjectMetadata],
     patient: int,
 ) -> None:
@@ -93,10 +103,13 @@ def select_patient(
     try:
         ircadb_meta = project_metadata["ircadb"]
         patient_dir = dataset_dir(ircadb_meta) / f"patient_{patient:02d}"
-        state.legend_items = redraw_ircadb(  # type: ignore[attr-defined]
+        legend, stats = redraw_ircadb(
             plotter, ctrl, patient_dir,
-            dark_mode=state.dark_mode,  # type: ignore[attr-defined]
-            opacity=state.ctrl_opacity,  # type: ignore[attr-defined]
+            dark_mode=state.dark_mode,
+            opacity=state.ctrl_opacity,
         )
+        state.legend_items = legend
+        state.mesh_stats = stats
+        state.active_meta = meta_to_state(project_metadata["ircadb"])
     finally:
         state.trame__busy = False  # type: ignore[attr-defined]

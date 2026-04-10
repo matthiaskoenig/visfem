@@ -71,6 +71,9 @@ class VisfemApp(TrameApp):
             "panel_controls_open": True,
             "legend_items": [],
             "ctrl_opacity": 0.8,
+            "active_meta": None,
+            "mesh_stats": None,
+            "panel_info_open": True,
         })
 
     # ---- Theme ----

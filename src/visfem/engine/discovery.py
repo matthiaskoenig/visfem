@@ -71,3 +71,17 @@ def group_by_organ_system(
 def dataset_dir(meta: ProjectMetadata) -> Path:
     """Resolve the filesystem directory for a dataset from its metadata."""
     return DATA_BASE / meta.data_path
+
+def meta_to_state(meta: ProjectMetadata) -> dict[str, object]:
+    """Serialize a ProjectMetadata instance to a plain dict for Trame state."""
+    return {
+        "name": meta.name,
+        "pi": meta.pi,
+        "institution": meta.institution,
+        "biological_scale": meta.biological_scale.value.replace("_", " ").title(),
+        "organ_system": [s.value.replace("_", " ").title() for s in meta.organ_system],
+        "description": meta.description,
+        "mesh_format": meta.mesh_format,
+        "ref_urls": [r for r in meta.references if r.startswith("http")],
+        "ref_texts": [r for r in meta.references if not r.startswith("http")],
+    }

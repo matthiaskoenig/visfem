@@ -8,6 +8,7 @@ from visfem.models import ProjectMetadata
 from visfem.ui.controls_panel import build_controls_panel
 from visfem.ui.dataset_panel import build_dataset_panel
 from visfem.ui.toolbar import build_toolbar
+from visfem.ui.info_panel import build_info_panel
 
 
 def build_ui(
@@ -37,21 +38,22 @@ def build_ui(
         with layout.content:
             with v3.VContainer(fluid=True, classes="pa-0 fill-height", style="position: relative;"):
                 with VtkLocalView(plotter.render_window) as view:
-                    ctrl.reset_camera = view.reset_camera  # type: ignore[attr-defined]
-                    ctrl.view_push_camera = view.push_camera  # type: ignore[attr-defined]
-                    ctrl.view_update = view.update  # type: ignore[attr-defined]
+                    ctrl.reset_camera = view.reset_camera  
+                    ctrl.view_push_camera = view.push_camera  
+                    ctrl.view_update = view.update  
                     webxr_helper = VtkWebXRHelper(
                         draw_controllers_ray=True,
                         enter_xr=(on_enter_xr,),
                         exit_xr=(on_exit_xr,),
                     )
-                    ctrl.start_xr = webxr_helper.start_xr  # type: ignore[attr-defined]
-                    ctrl.stop_xr = webxr_helper.stop_xr  # type: ignore[attr-defined]
+                    ctrl.start_xr = webxr_helper.start_xr  
+                    ctrl.stop_xr = webxr_helper.stop_xr  
 
                 build_dataset_panel(
                     organ_groups, ircadb_patients,
                     on_select_dataset, on_select_xdmf, on_select_patient,
                 )
                 build_controls_panel()
+                build_info_panel()
 
     return layout

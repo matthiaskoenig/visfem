@@ -56,7 +56,7 @@ def redraw_xdmf(
     xdmf_meta: dict[str, MeshMetadata],
     dark_mode: bool,
     opacity: float,
-) -> list[dict[str, str]]:
+) -> tuple[list[dict[str, str]], dict[str, int] | None]:
     """Load and render the first step of an XDMF mesh.
 
     Returns legend_items (empty for XDMF datasets).
@@ -66,7 +66,7 @@ def redraw_xdmf(
         mesh = load_mesh(path, step=0)
     except Exception as e:
         logger.error(f"Failed to load '{path.name}': {e}")
-        return []
+        return [], None
 
     mesh_meta = xdmf_meta.get(path.stem)
     field = next(iter(mesh_meta.fields), None) if mesh_meta else None
@@ -82,7 +82,8 @@ def redraw_xdmf(
     )
     apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl)
-    return []
+    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+    return [], stats
 
 
 def redraw_ircadb(
@@ -91,7 +92,7 @@ def redraw_ircadb(
     patient_dir: Path,
     dark_mode: bool,
     opacity: float,
-) -> list[dict[str, str]]:
+) -> tuple[list[dict[str, str]], dict[str, int] | None]:
     """Load all organ meshes for a patient and render as one merged actor.
 
     Returns legend_items for the loaded organs.
@@ -117,9 +118,11 @@ def redraw_ircadb(
 
     n = len(parts)
     colors = region_colors(n, COLORS_PAIRED)
+    stats: dict[str, int] | None = None
     if parts:
+        merged = pv.merge(parts)
         plotter.add_mesh(
-            pv.merge(parts),
+            merged,
             scalars="region_id",
             cmap=colors,
             clim=[0, max(n - 1, 1)],
@@ -130,12 +133,14 @@ def redraw_ircadb(
             copy_mesh=True,
             interpolate_before_map=False,
         )
+        stats = {"n_cells": merged.n_cells, "n_points": merged.n_points}
     apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl)
-    return [
+    legend = [
         {"name": format_organ_name(organ), "color": colors[i]}
         for i, organ in enumerate(loaded_organs)
     ]
+    return legend, stats
 
 
 def redraw_heart(
@@ -145,7 +150,7 @@ def redraw_heart(
     dataset_dir: Path,
     dark_mode: bool,
     opacity: float,
-) -> list[dict[str, str]]:
+) -> tuple[list[dict[str, str]], dict[str, int] | None]:
     """Render the heart mesh colored by material region.
 
     Returns legend_items for the material regions.
@@ -153,7 +158,7 @@ def redraw_heart(
     mesh_path = dataset_dir / "M.vtu"
     if not mesh_path.exists():
         logger.error(f"Heart mesh not found: {mesh_path}")
-        return []
+        return [], None
 
     label_map: dict[int, str] = {}
     if meta.labels_file:
@@ -165,7 +170,7 @@ def redraw_heart(
         mesh = load_mesh(mesh_path)
     except Exception as e:
         logger.error(f"Failed to load heart mesh: {e}")
-        return []
+        return [], None
 
     material_ids = mesh.cell_data["Material"].astype(int)
     unique_ids: list[int] = sorted(int(v) for v in np.unique(material_ids))
@@ -190,7 +195,9 @@ def redraw_heart(
     )
     apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl)
-    return [
+    legend = [
         {"name": label_map.get(mid, f"Region {mid}"), "color": colors[i]}
         for i, mid in enumerate(unique_ids)
     ]
+    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+    return legend, stats

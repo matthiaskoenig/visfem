@@ -1,4 +1,6 @@
 """Top-level UI assembly for VisFEM."""
+from typing import Any
+
 import pyvista as pv
 from trame.ui.vuetify3 import SinglePageLayout
 from trame.widgets import vuetify3 as v3
@@ -14,7 +16,7 @@ from visfem.ui.info_panel import build_info_panel
 def build_ui(
     server: object,
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: Any,
     organ_groups: dict[str, list[tuple[str, ProjectMetadata]]],
     ircadb_patients: list[int],
     on_select_dataset: object,
@@ -25,8 +27,6 @@ def build_ui(
     on_toggle_xr: object,
     on_enter_xr: object,
     on_exit_xr: object,
-    on_sync_camera: object,
-    on_camera_sync: object,
 ) -> SinglePageLayout:
     """Assemble the full SinglePageLayout and return it."""
     with SinglePageLayout(server, theme=("dark_mode ? 'dark' : 'light'",)) as layout:

@@ -50,6 +50,8 @@ class VisfemApp(TrameApp):
             on_toggle_xr=self.toggle_xr,
             on_enter_xr=self._on_enter_xr,
             on_exit_xr=self._on_exit_xr,
+            on_sync_camera=self.sync_camera,
+            on_camera_sync=self._on_camera_sync,
         )
         self.ctrl.on_client_connected.add(self._reset_xr_state)
 
@@ -148,6 +150,24 @@ class VisfemApp(TrameApp):
             self.plotter, self.ctrl, self.state,
             self._project_metadata, patient,
         )
+
+    def sync_camera(self, camera: dict) -> None:
+        """Sync client camera state to server plotter."""
+        cam = self.plotter.camera
+        cam.SetPosition(*camera["position"])
+        cam.SetFocalPoint(*camera["focalPoint"])
+        cam.SetViewUp(*camera["viewUp"])
+        cam.SetParallelProjection(camera["parallelProjection"])
+        cam.SetParallelScale(camera["parallelScale"])
+        cam.SetViewAngle(camera["viewAngle"])
+        self.plotter.renderer.ResetCameraClippingRange()
+
+    def _on_camera_sync(self, **kwargs: object) -> None:
+        """Keep server camera in sync with client on every interaction."""
+        self.plotter.camera.position = kwargs["position"]
+        self.plotter.camera.focal_point = kwargs["focalPoint"]
+        self.plotter.camera.up = kwargs["viewUp"]
+        self.plotter.renderer.ResetCameraClippingRange()
 
 
 def main() -> None:

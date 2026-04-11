@@ -25,6 +25,8 @@ def build_ui(
     on_toggle_xr: object,
     on_enter_xr: object,
     on_exit_xr: object,
+    on_sync_camera: object,
+    on_camera_sync: object,
 ) -> SinglePageLayout:
     """Assemble the full SinglePageLayout and return it."""
     with SinglePageLayout(server, theme=("dark_mode ? 'dark' : 'light'",)) as layout:
@@ -37,7 +39,7 @@ def build_ui(
 
         with layout.content:
             with v3.VContainer(fluid=True, classes="pa-0 fill-height", style="position: relative;"):
-                with VtkLocalView(plotter.render_window) as view:
+                with VtkLocalView(plotter.render_window, ref="view", camera="camera") as view:
                     ctrl.reset_camera = view.reset_camera  
                     ctrl.view_push_camera = view.push_camera  
                     ctrl.view_update = view.update  

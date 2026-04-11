@@ -23,12 +23,13 @@ def build_toolbar(
                 variant="text", density="compact",
                 click=toggle_theme, v_bind="props", classes="ml-3",
             )
-    with v3.VTooltip(text="Screenshot", location="bottom"):
-        with v3.Template(v_slot_activator="{ props }"):
-            v3.VBtn(
-                icon="mdi-camera", variant="text", density="compact",
-                v_bind="props", classes="ml-3",
-            )
+    # with v3.VTooltip(text="Screenshot", location="bottom"):
+    #     with v3.Template(v_slot_activator="{ props }"):
+    #         v3.VBtn(
+    #             icon="mdi-camera", variant="text", density="compact",
+    #             click="utils.download('visfem.png', trigger('screenshot'), 'image/png')",
+    #             v_bind="props", classes="ml-3",
+    #         )
     with v3.VTooltip(text="Toggle VR", location="bottom"):
         with v3.Template(v_slot_activator="{ props }"):
             v3.VBtn(

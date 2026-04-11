@@ -50,8 +50,6 @@ class VisfemApp(TrameApp):
             on_toggle_xr=self.toggle_xr,
             on_enter_xr=self._on_enter_xr,
             on_exit_xr=self._on_exit_xr,
-            on_sync_camera=self.sync_camera,
-            on_camera_sync=self._on_camera_sync,
         )
         self.ctrl.on_client_connected.add(self._reset_xr_state)
 

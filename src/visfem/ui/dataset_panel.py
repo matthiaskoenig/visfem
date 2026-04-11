@@ -22,7 +22,7 @@ def build_dataset_panel(
         "'position:absolute; top:12px; left:12px; width:270px; z-index:10; "
         "background:rgba(240,244,244,0.92); backdrop-filter:blur(8px); "
         "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(0,0,0,0.08);'"
-    ,)
+    )
     with v3.VCard(style=panel_style, elevation=6, rounded="lg"):
         with v3.VCardTitle(
             style="font-size: 0.85rem; padding: 8px 12px; cursor: pointer; user-select: none;",

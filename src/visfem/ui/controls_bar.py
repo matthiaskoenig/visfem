@@ -42,7 +42,7 @@ def build_controls_bar(on_reset_camera: object) -> None:
         with v3.VTooltip(text="Reset camera", location="bottom"):
             with v3.Template(v_slot_activator="{ props }"):
                 v3.VBtn(
-                    icon="mdi-crop-free",
+                    icon="mdi-camera-retake-outline",
                     variant="text", density="compact", size="small",
                     click=on_reset_camera, v_bind="props",
                 )

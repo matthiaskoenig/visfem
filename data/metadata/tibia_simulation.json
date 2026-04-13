@@ -1,0 +1,19 @@
+{
+  "data_path": "tibia",
+  "labels_file": null,
+  "name": "Tibia Fracture (Simulation)",
+  "pi": "Annchristin Andres, Michael Roland, Stefan Diebels",
+  "institution": [
+    "Saarland University, Applied Mechanics, Biomechanics"
+  ],
+  "biological_scale": "organ",
+  "organ_system": [
+    "bone",
+    "musculoskeletal"
+  ],
+  "description": "FE simulation results for tibial shaft non-union (Use Case 1). Fields include von Mises stress, full stress/strain tensors, and mechanobiological healing window (Claes criterion, 5 zones: too much movement to bone resorption). Solver: Abaqus Standard.",
+  "mesh_format": "VTK",
+  "references": [
+    "https://doi.org/10.1038/s41598-025-04792-w"
+  ]
+}

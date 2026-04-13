@@ -270,3 +270,115 @@ def redraw_heart_ep(
     ]
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
     return legend, stats
+
+
+
+def redraw_tibia_mesh(
+    plotter: pv.Plotter,
+    ctrl: object,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+) -> tuple[list[dict[str, str]], dict[str, int] | None]:
+    """Render Tibia_Mesh.vtk colored by PartId region."""
+    mesh_path = dataset_dir / "Tibia_Mesh.vtk"
+    if not mesh_path.exists():
+        logger.error(f"Tibia mesh not found: {mesh_path}")
+        return [], None
+
+    part_names: dict[int, str] = {
+        1: "Bone",
+        2: "Fracture / Callus",
+        3: "Implant screws",
+    }
+
+    try:
+        mesh = load_mesh(mesh_path)
+    except Exception as e:
+        logger.error(f"Failed to load tibia mesh: {e}")
+        return [], None
+
+    part_ids = mesh.cell_data["PartId"].astype(int)
+    unique_ids: list[int] = sorted(int(v) for v in np.unique(part_ids))
+    mesh.cell_data["region_id"] = np.array(
+        [{pid: i for i, pid in enumerate(unique_ids)}[pid] for pid in part_ids],
+        dtype=np.int32,
+    )
+    colors = region_colors(len(unique_ids), COLORS_PAIRED)
+
+    clear_scene(plotter, dark_mode)
+    plotter.add_mesh(
+        mesh,
+        scalars="region_id",
+        cmap=colors,
+        clim=[0, len(unique_ids) - 1],
+        n_colors=len(unique_ids),
+        opacity=opacity,
+        show_edges=False,
+        show_scalar_bar=False,
+        copy_mesh=True,
+        interpolate_before_map=False,
+    )
+    apply_opacity(plotter, opacity)
+    push_scene(plotter, ctrl)
+
+    legend = [
+        {"name": part_names.get(pid, f"Part {pid}"), "color": colors[i]}
+        for i, pid in enumerate(unique_ids)
+    ]
+    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+    return legend, stats
+
+
+# Claes healing window zone labels
+_CLAES_LABELS: dict[int, str] = {
+    1: "Too much movement",
+    2: "Transition (excess)",
+    3: "Perfect healing window",
+    4: "Transition (lazy)",
+    5: "Bone resorption",
+}
+
+# Clinically meaningful colors: red=bad, yellow=transition, green=good, grey=lazy/resorption
+_CLAES_COLORS: list[str] = ["#d62728", "#ff7f0e", "#2ca02c", "#bcbd22", "#7f7f7f"]
+
+
+def redraw_tibia_simulation(
+    plotter: pv.Plotter,
+    ctrl: object,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+) -> tuple[list[dict[str, str]], dict[str, int] | None]:
+    """Render Tibia_Simulation.vtk colored by vonMises_stress."""
+    sim_path = dataset_dir / "Tibia_Simulation.vtk"
+    if not sim_path.exists():
+        logger.error(f"Tibia simulation not found: {sim_path}")
+        return [], None
+
+    try:
+        mesh = load_mesh(sim_path)
+    except Exception as e:
+        logger.error(f"Failed to load tibia simulation: {e}")
+        return [], None
+
+    # Clamp colormap to 95th percentile to avoid outliers washing out the range
+    stress = mesh.cell_data["vonMises_stress"]
+    clim = [float(stress.min()), float(np.percentile(stress, 95))]
+
+    clear_scene(plotter, dark_mode)
+    plotter.add_mesh(
+        mesh,
+        scalars="vonMises_stress",
+        cmap="turbo",
+        clim=clim,
+        opacity=opacity,
+        show_edges=False,
+        show_scalar_bar=False,
+        copy_mesh=True,
+    )
+    apply_opacity(plotter, opacity)
+    push_scene(plotter, ctrl)
+
+    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+    return [], stats

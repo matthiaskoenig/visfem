@@ -2,7 +2,10 @@
 import pyvista as pv
 from typing import Any
 
-from visfem.engine.scene import clear_scene, redraw_heart, redraw_heart_ep, redraw_ircadb, redraw_xdmf
+from visfem.engine.scene import (
+    clear_scene, redraw_heart, redraw_heart_ep,
+    redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
+)
 from visfem.log import get_logger
 from visfem.models import MeshMetadata, ProjectMetadata
 from visfem.engine.discovery import dataset_dir, discover_xdmf, meta_to_state
@@ -22,7 +25,7 @@ def select_dataset(
     state.active_dataset = key  # type: ignore[attr-defined]
     state.active_patient = None  # type: ignore[attr-defined]
     state.active_xdmf = None  # type: ignore[attr-defined]
-    state.ctrl_opacity = 0.8  # type: ignore[attr-defined]
+    opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
     state.trame__busy = True  # type: ignore[attr-defined]
     try:
         meta = project_metadata[key]
@@ -32,7 +35,23 @@ def select_dataset(
             legend, stats = redraw_heart(
                 plotter, ctrl, meta, ddir,
                 dark_mode=state.dark_mode,
-                opacity=state.ctrl_opacity,
+                opacity=opacity,
+            )
+            state.legend_items = legend
+            state.mesh_stats = stats
+        elif key == "tibia_mesh":
+            legend, stats = redraw_tibia_mesh(
+                plotter, ctrl, ddir,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
+            )
+            state.legend_items = legend
+            state.mesh_stats = stats
+        elif key == "tibia_simulation":
+            legend, stats = redraw_tibia_simulation(
+                plotter, ctrl, ddir,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
             )
             state.legend_items = legend
             state.mesh_stats = stats
@@ -40,7 +59,7 @@ def select_dataset(
             legend, stats = redraw_heart_ep(
                 plotter, ctrl, ddir,
                 dark_mode=state.dark_mode,
-                opacity=state.ctrl_opacity,
+                opacity=opacity,
             )
             state.legend_items = legend
             state.mesh_stats = stats
@@ -53,7 +72,7 @@ def select_dataset(
             legend, stats = redraw_xdmf(
                 plotter, ctrl, first_path, xdmf_meta,
                 dark_mode=state.dark_mode,
-                opacity=state.ctrl_opacity,
+                opacity=opacity,
             )
             state.legend_items = legend
             state.mesh_stats = stats
@@ -75,7 +94,7 @@ def select_xdmf(
     state.active_dataset = key  # type: ignore[attr-defined]
     state.active_xdmf = stem  # type: ignore[attr-defined]
     state.active_patient = None  # type: ignore[attr-defined]
-    state.ctrl_opacity = 0.8  # type: ignore[attr-defined]
+    opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
     state.trame__busy = True  # type: ignore[attr-defined]
     try:
         meta = project_metadata[key]
@@ -86,7 +105,7 @@ def select_xdmf(
         legend, stats = redraw_xdmf(
             plotter, ctrl, path, xdmf_meta,
             dark_mode=state.dark_mode,
-            opacity=state.ctrl_opacity,
+            opacity=opacity,
         )
         state.legend_items = legend
         state.mesh_stats = stats
@@ -106,7 +125,7 @@ def select_patient(
     state.active_dataset = "ircadb"  # type: ignore[attr-defined]
     state.active_patient = patient  # type: ignore[attr-defined]
     state.active_xdmf = None  # type: ignore[attr-defined]
-    state.ctrl_opacity = 0.8  # type: ignore[attr-defined]
+    opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
     state.trame__busy = True  # type: ignore[attr-defined]
     try:
         ircadb_meta = project_metadata["ircadb"]
@@ -114,7 +133,7 @@ def select_patient(
         legend, stats = redraw_ircadb(
             plotter, ctrl, patient_dir,
             dark_mode=state.dark_mode,
-            opacity=state.ctrl_opacity,
+            opacity=opacity,
         )
         state.legend_items = legend
         state.mesh_stats = stats

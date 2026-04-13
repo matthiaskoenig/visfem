@@ -80,20 +80,7 @@ def build_dataset_panel(
                                                 with v3.Template(v_slot_title=""):
                                                     html.Span(f"Patient {patient:02d}", style="font-size: 0.80rem;")
 
-                                elif key in ("heart", "heart_ep"):
-                                    with v3.VListItem(
-                                        density="compact",
-                                        active=(f"active_dataset === '{key}'",),
-                                        active_color="#00897b", rounded="lg",
-                                        click=(on_select_dataset, f"['{key}']"),
-                                        style="padding-left: 24px;",
-                                    ):
-                                        with v3.Template(v_slot_prepend=""):
-                                            v3.VIcon("mdi-circle-medium", size="x-small", style="opacity: 0.5;")
-                                        with v3.Template(v_slot_title=""):
-                                            html.Span(meta.name, style="font-size: 0.82rem; white-space: normal; word-break: break-word;")
-
-                                elif len(xdmf_files) == 1:
+                                elif len(xdmf_files) <= 1:
                                     with v3.VListItem(
                                         density="compact",
                                         active=(f"active_dataset === '{key}'",),

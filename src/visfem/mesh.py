@@ -407,12 +407,12 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
         return _load_timeseries_xdmf(path, step)
     return _load_static(path)
 
-def parse_labels_file(path: Path) -> dict[str, dict[int, str]]:
+def parse_labels_file(path: Path) -> dict[str, dict[int, list[str]]]:
     """Parse a LabelIDs.txt file into per-mesh material ID → name mappings.
 
     Returns dict keyed by mesh filename (e.g. 'M.vtu'), each value
-    is a dict of MaterialID -> anatomical name. When multiple anatomical
-    structures share a MaterialID, names are joined with ' / '.
+    is a dict of MaterialID -> list of anatomical names (multiple structures
+    can share one MaterialID).
     """
     import re
 
@@ -444,8 +444,7 @@ def parse_labels_file(path: Path) -> dict[str, dict[int, str]]:
                 if name not in raw[current_mesh][mid]:
                     raw[current_mesh][mid].append(name)
 
-    # Join multiple names per material ID
     return {
-        mesh: {mid: " / ".join(names) for mid, names in ids.items()}
+        mesh: dict(ids)
         for mesh, ids in raw.items()
     }

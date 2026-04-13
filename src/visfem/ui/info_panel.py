@@ -119,6 +119,29 @@ def build_info_panel() -> None:
                                 ):
                                     html.Div("{{ ref }}", style="font-size:0.74rem; opacity:0.75;")
 
+                    # ---- Region legend ----
+                    with html.Div(
+                        v_if="legend_items && legend_items.length > 0",
+                        style="margin-top: 10px;",
+                    ):
+                        v3.VDivider(style="margin-bottom: 8px;")
+                        _label("Regions")
+                        with html.Div(style="display: flex; flex-direction: column; gap: 5px; margin-top: 4px;"):
+                            with html.Div(
+                                v_for="item in legend_items",
+                                key="item.names[0]",
+                                style="display: flex; align-items: flex-start; gap: 6px;",
+                            ):
+                                html.Span(
+                                    style=("'width:10px; height:10px; border-radius:50%; flex-shrink:0; margin-top:3px; background:' + item.color",),
+                                )
+                                with html.Div():
+                                    with html.Div(
+                                        v_for="n in item.names",
+                                        key="n",
+                                    ):
+                                        html.Span("{{ n }}", style="font-size: 0.72rem; line-height: 1.6;")
+
 
 def _label(text: str) -> None:
     """Render a small uppercase section label."""

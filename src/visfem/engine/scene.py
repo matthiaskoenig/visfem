@@ -17,6 +17,78 @@ from visfem.models import MeshMetadata, ProjectMetadata
 logger = get_logger(__name__)
 
 
+# ---- Colormap CSS gradients (pre-built for the scalar bar HTML overlay) ----
+
+_CMAP_GRADIENTS: dict[str, str] = {
+    "turbo": (
+        "linear-gradient(to right, "
+        "#30123b 0%, #4145ab 8%, #4675ed 17%, #39a2fc 25%, "
+        "#1bcfd4 38%, #24eca6 50%, #61fc6c 62%, "
+        "#a4fc3b 70%, #f3c63a 80%, #fe9b2d 88%, "
+        "#f36315 93%, #7a0403 100%)"
+    ),
+    "viridis": (
+        "linear-gradient(to right, "
+        "#440154 0%, #3b528b 25%, #21918c 50%, #5ec962 75%, #fde725 100%)"
+    ),
+}
+
+# Human-readable labels for known field names
+_FIELD_LABELS: dict[str, str] = {
+    "vonMises_stress": "von Mises stress",
+    "vonMises_equivalent_strain": "von Mises eq. strain",
+    "octahedral_shear_strain": "octahedral shear strain",
+    "hydrostatic_strain": "hydrostatic strain",
+    "volumetric_strain": "volumetric strain",
+    "Claes_window": "healing window (Claes)",
+    "pressure": "pressure",
+    "strain": "strain",
+}
+
+# Ordered list of selectable scalar fields for the tibia simulation dataset.
+# Each entry is {name, label} as consumed by the UI field selector.
+TIBIA_SIM_FIELDS: list[dict[str, str]] = [
+    {"name": "vonMises_stress",           "label": _FIELD_LABELS["vonMises_stress"]},
+    {"name": "vonMises_equivalent_strain","label": _FIELD_LABELS["vonMises_equivalent_strain"]},
+    {"name": "octahedral_shear_strain",   "label": _FIELD_LABELS["octahedral_shear_strain"]},
+    {"name": "hydrostatic_strain",        "label": _FIELD_LABELS["hydrostatic_strain"]},
+    {"name": "volumetric_strain",         "label": _FIELD_LABELS["volumetric_strain"]},
+    {"name": "Claes_window",              "label": _FIELD_LABELS["Claes_window"]},
+]
+
+
+def field_label(name: str) -> str:
+    """Return a human-readable label for a scalar field name."""
+    return _FIELD_LABELS.get(name, name.replace("_", " "))
+
+
+def _fmt_value(v: float) -> str:
+    """Format a scalar value compactly for the scalar bar."""
+    a = abs(v)
+    if a == 0.0:
+        return "0"
+    elif a >= 1000:
+        return f"{v:.0f}"
+    elif a >= 100:
+        return f"{v:.1f}"
+    elif a >= 1:
+        return f"{v:.2f}"
+    elif a >= 0.01:
+        return f"{v:.3f}"
+    else:
+        return f"{v:.2e}"
+
+
+def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
+    """Build the scalar_bar state dict for a continuous field."""
+    return {
+        "field_label": _FIELD_LABELS.get(field, field.replace("_", " ")),
+        "min_label": _fmt_value(clim[0]),
+        "max_label": _fmt_value(clim[1]),
+        "gradient": _CMAP_GRADIENTS.get(cmap, "linear-gradient(to right, #222, #fff)"),
+    }
+
+
 # ---- Scene state ----
 
 def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
@@ -56,24 +128,28 @@ def redraw_xdmf(
     xdmf_meta: dict[str, MeshMetadata],
     dark_mode: bool,
     opacity: float,
-) -> tuple[list[dict[str, str]], dict[str, int] | None]:
+    field: str | None = None,
+) -> tuple[list[dict[str, str]], dict[str, int] | None, dict | None]:
     """Load and render the first step of an XDMF mesh.
 
-    Returns legend_items (empty for XDMF datasets).
+    If *field* is None the first scalar field from metadata is used.
+    Returns (legend_items, mesh_stats, scalar_bar_info).
     """
     clear_scene(plotter, dark_mode)
     try:
         mesh = load_mesh(path, step=0)
     except Exception as e:
         logger.error(f"Failed to load '{path.name}': {e}")
-        return [], None
+        return [], None, None
 
     mesh_meta = xdmf_meta.get(path.stem)
-    field = next(iter(mesh_meta.fields), None) if mesh_meta else None
+    if field is None:
+        field = next(iter(mesh_meta.fields), None) if mesh_meta else None
 
     plotter.add_mesh(
         mesh,
         scalars=field,
+        cmap="viridis",
         show_edges=True,
         edge_color="#000000",
         copy_mesh=True,
@@ -83,7 +159,16 @@ def redraw_xdmf(
     apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
-    return [], stats
+
+    scalar_bar: dict | None = None
+    if field:
+        try:
+            lo, hi = mesh.get_data_range(field)
+            scalar_bar = _scalar_bar_dict(field, [float(lo), float(hi)], "viridis")
+        except Exception:
+            pass
+
+    return [], stats, scalar_bar
 
 
 def redraw_ircadb(
@@ -137,7 +222,7 @@ def redraw_ircadb(
     apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl)
     legend = [
-        {"name": format_organ_name(organ), "color": colors[i]}
+        {"names": [format_organ_name(organ)], "color": colors[i]}
         for i, organ in enumerate(loaded_organs)
     ]
     return legend, stats
@@ -161,7 +246,7 @@ def redraw_heart(
         logger.error(f"Heart mesh not found: {mesh_path}")
         return [], None, None
 
-    label_map: dict[int, str] = {}
+    label_map: dict[int, list[str]] = {}
     if meta.labels_file:
         labels_path = dataset_dir / meta.labels_file
         if labels_path.exists():
@@ -214,7 +299,7 @@ def redraw_heart(
     apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl)
     legend = [
-        {"name": label_map.get(mid, f"Region {mid}"), "color": colors[i]}
+        {"names": label_map.get(mid, [f"Region {mid}"]), "color": colors[i]}
         for i, mid in enumerate(unique_ids)
     ]
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
@@ -283,7 +368,7 @@ def redraw_heart_ep(
     push_scene(plotter, ctrl)
 
     legend = [
-        {"name": ep_label_map.get(mid, f"Region {mid}"), "color": colors[i]}
+        {"names": [ep_label_map.get(mid, f"Region {mid}")], "color": colors[i]}
         for i, mid in enumerate(unique_ids)
     ]
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
@@ -341,7 +426,7 @@ def redraw_tibia_mesh(
     push_scene(plotter, ctrl)
 
     legend = [
-        {"name": part_names.get(pid, f"Part {pid}"), "color": colors[i]}
+        {"names": [part_names.get(pid, f"Part {pid}")], "color": colors[i]}
         for i, pid in enumerate(unique_ids)
     ]
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
@@ -367,36 +452,72 @@ def redraw_tibia_simulation(
     dataset_dir: Path,
     dark_mode: bool,
     opacity: float,
-) -> tuple[list[dict[str, str]], dict[str, int] | None]:
-    """Render Tibia_Simulation.vtk colored by vonMises_stress."""
+    field: str = "vonMises_stress",
+) -> tuple[list[dict[str, str]], dict[str, int] | None, dict | None]:
+    """Render Tibia_Simulation.vtk with the given scalar field.
+
+    Claes_window is rendered as a discrete categorical colormap with a legend.
+    All other fields use a continuous turbo colormap with a scalar bar.
+    Returns (legend_items, mesh_stats, scalar_bar_info).
+    """
     sim_path = dataset_dir / "Tibia_Simulation.vtk"
     if not sim_path.exists():
         logger.error(f"Tibia simulation not found: {sim_path}")
-        return [], None
+        return [], None, None
 
     try:
         mesh = load_mesh(sim_path)
     except Exception as e:
         logger.error(f"Failed to load tibia simulation: {e}")
-        return [], None
-
-    # Clamp colormap to 95th percentile to avoid outliers washing out the range
-    stress = mesh.cell_data["vonMises_stress"]
-    clim = [float(stress.min()), float(np.percentile(stress, 95))]
+        return [], None, None
 
     clear_scene(plotter, dark_mode)
-    plotter.add_mesh(
-        mesh,
-        scalars="vonMises_stress",
-        cmap="turbo",
-        clim=clim,
-        opacity=opacity,
-        show_edges=False,
-        show_scalar_bar=False,
-        copy_mesh=True,
-    )
-    apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl)
-
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
-    return [], stats
+
+    if field == "Claes_window":
+        # Categorical: map integer zone values to a discrete colormap with a legend.
+        zones = mesh.cell_data["Claes_window"].astype(int)
+        zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
+        zone_map = {z: i for i, z in enumerate(zone_ids)}
+        mesh.cell_data["_zone_id"] = np.array(
+            [zone_map[int(z)] for z in zones], dtype=np.int32
+        )
+        colors = [_CLAES_COLORS[z - 1] for z in zone_ids]
+        n = len(zone_ids)
+        plotter.add_mesh(
+            mesh,
+            scalars="_zone_id",
+            cmap=colors,
+            clim=[0, max(n - 1, 1)],
+            n_colors=n,
+            opacity=opacity,
+            show_edges=False,
+            show_scalar_bar=False,
+            copy_mesh=True,
+            interpolate_before_map=False,
+        )
+        apply_opacity(plotter, opacity)
+        push_scene(plotter, ctrl)
+        legend = [
+            {"names": [_CLAES_LABELS.get(z, f"Zone {z}")], "color": _CLAES_COLORS[z - 1]}
+            for z in zone_ids
+        ]
+        return legend, stats, None
+    else:
+        # Continuous: clamp colormap to 95th percentile to avoid outlier washout.
+        data = mesh.cell_data[field]
+        clim = [float(data.min()), float(np.percentile(data, 95))]
+        plotter.add_mesh(
+            mesh,
+            scalars=field,
+            cmap="turbo",
+            clim=clim,
+            opacity=opacity,
+            show_edges=False,
+            show_scalar_bar=False,
+            copy_mesh=True,
+        )
+        apply_opacity(plotter, opacity)
+        push_scene(plotter, ctrl)
+        scalar_bar = _scalar_bar_dict(field, clim, "turbo")
+        return [], stats, scalar_bar

@@ -8,7 +8,7 @@ from vtkmodules.vtkRenderingCore import vtkActor
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
 from visfem.engine.discovery import dataset_dir, discover_xdmf, group_by_organ_system, load_project_metadata
 from visfem.engine.scene import apply_opacity
-from visfem.engine.selection import select_dataset, select_patient, select_xdmf
+from visfem.engine.selection import select_dataset, select_patient, select_scalar_field, select_xdmf
 from visfem.log import get_logger
 from visfem.mesh import get_metadata
 from visfem.models import MeshMetadata
@@ -47,6 +47,7 @@ class VisfemApp(TrameApp):
             on_select_dataset=self.select_dataset,
             on_select_xdmf=self.select_xdmf,
             on_select_patient=self.select_patient,
+            on_select_scalar_field=self.select_scalar_field,
             on_toggle_theme=self.toggle_theme,
             on_reset_camera=self.reset_camera,
             on_toggle_xr=self.toggle_xr,
@@ -76,6 +77,9 @@ class VisfemApp(TrameApp):
             "mesh_stats": None,
             "panel_info_open": True,
             "show_fibers": False,
+            "scalar_bar": None,
+            "available_scalar_fields": [],
+            "active_scalar_field": None,
         })
 
     # ---- Theme ----
@@ -158,6 +162,13 @@ class VisfemApp(TrameApp):
         select_patient(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, patient,
+        )
+
+    def select_scalar_field(self, field: str) -> None:
+        """Re-render the current dataset with the given scalar field."""
+        select_scalar_field(
+            self.plotter, self.ctrl, self.state,
+            self._project_metadata, self._xdmf_meta, field,
         )
 
     def sync_camera(self, camera: dict) -> None:

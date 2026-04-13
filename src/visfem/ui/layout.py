@@ -11,6 +11,7 @@ from visfem.ui.controls_bar import build_controls_bar
 from visfem.ui.dataset_panel import build_dataset_panel
 from visfem.ui.toolbar import build_toolbar
 from visfem.ui.info_panel import build_info_panel
+from visfem.ui.scalar_bar import build_scalar_bar
 
 
 def build_ui(
@@ -22,6 +23,7 @@ def build_ui(
     on_select_dataset: object,
     on_select_xdmf: object,
     on_select_patient: object,
+    on_select_scalar_field: object,
     on_toggle_theme: object,
     on_reset_camera: object,
     on_toggle_xr: object,
@@ -55,7 +57,8 @@ def build_ui(
                     organ_groups, ircadb_patients,
                     on_select_dataset, on_select_xdmf, on_select_patient,
                 )
-                build_controls_bar(on_reset_camera)
+                build_controls_bar(on_reset_camera, on_select_scalar_field)
                 build_info_panel()
+                build_scalar_bar()
 
     return layout

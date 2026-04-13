@@ -21,7 +21,7 @@ def build_dataset_panel(
         ": "
         "'position:absolute; top:12px; left:12px; width:270px; z-index:10; "
         "background:rgba(240,244,244,0.92); backdrop-filter:blur(8px); "
-        "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(0,0,0,0.08);'"
+        "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(0,0,0,0.08);'",
     )
     with v3.VCard(style=panel_style, elevation=6, rounded="lg"):
         with v3.VCardTitle(
@@ -80,12 +80,12 @@ def build_dataset_panel(
                                                 with v3.Template(v_slot_title=""):
                                                     html.Span(f"Patient {patient:02d}", style="font-size: 0.80rem;")
 
-                                elif key == "heart":
+                                elif key in ("heart", "heart_ep"):
                                     with v3.VListItem(
                                         density="compact",
-                                        active=("active_dataset === 'heart'",),
+                                        active=(f"active_dataset === '{key}'",),
                                         active_color="#00897b", rounded="lg",
-                                        click=(on_select_dataset, "['heart']"),
+                                        click=(on_select_dataset, f"['{key}']"),
                                         style="padding-left: 24px;",
                                     ):
                                         with v3.Template(v_slot_prepend=""):

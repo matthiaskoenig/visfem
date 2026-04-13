@@ -201,3 +201,72 @@ def redraw_heart(
     ]
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
     return legend, stats
+
+
+def redraw_heart_ep(
+    plotter: pv.Plotter,
+    ctrl: object,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+) -> tuple[list[dict[str, str]], dict[str, int] | None]:
+    """Render the EP heart surface colored by EP material region."""
+    ep_path = dataset_dir / "surfaces" / "ep_surface.vtp"
+    if not ep_path.exists():
+        logger.error(f"EP surface not found: {ep_path}")
+        return [], None
+
+    # EP MaterialID -> name
+    ep_label_map: dict[int, str] = {
+        1:  "Ventricle endocardium",
+        2:  "Ventricle myocardium",
+        3:  "Ventricle epicardium",
+        32: "Right atrial bulk tissue",
+        33: "Left atrial bulk tissue",
+        72: "Crista terminalis",
+        73: "Sinus node",
+        74: "Pectinate muscles",
+        75: "Bachmann bundle",
+        76: "Middle posterior bridge",
+        77: "Lower posterior bridge",
+        78: "Coronary sinus bridge",
+        79: "L/R atrial appendage",
+        80: "Inferior isthmus",
+    }
+
+    try:
+        mesh = load_mesh(ep_path)
+    except Exception as e:
+        logger.error(f"Failed to load EP surface: {e}")
+        return [], None
+
+    material_ids = mesh.cell_data["Material"].astype(int)
+    unique_ids: list[int] = sorted(int(v) for v in np.unique(material_ids))
+    mesh.cell_data["region_id"] = np.array(
+        [{mid: i for i, mid in enumerate(unique_ids)}[mid] for mid in material_ids],
+        dtype=np.int32,
+    )
+    colors = region_colors(len(unique_ids), COLORS_PAIRED)
+
+    clear_scene(plotter, dark_mode)
+    plotter.add_mesh(
+        mesh,
+        scalars="region_id",
+        cmap=colors,
+        clim=[0, len(unique_ids) - 1],
+        n_colors=len(unique_ids),
+        opacity=opacity,
+        show_edges=False,
+        show_scalar_bar=False,
+        copy_mesh=True,
+        interpolate_before_map=False,
+    )
+    apply_opacity(plotter, opacity)
+    push_scene(plotter, ctrl)
+
+    legend = [
+        {"name": ep_label_map.get(mid, f"Region {mid}"), "color": colors[i]}
+        for i, mid in enumerate(unique_ids)
+    ]
+    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+    return legend, stats

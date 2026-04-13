@@ -2,7 +2,7 @@
 import pyvista as pv
 from typing import Any
 
-from visfem.engine.scene import clear_scene, redraw_heart, redraw_ircadb, redraw_xdmf
+from visfem.engine.scene import clear_scene, redraw_heart, redraw_heart_ep, redraw_ircadb, redraw_xdmf
 from visfem.log import get_logger
 from visfem.models import MeshMetadata, ProjectMetadata
 from visfem.engine.discovery import dataset_dir, discover_xdmf, meta_to_state
@@ -31,6 +31,14 @@ def select_dataset(
         if key == "heart":
             legend, stats = redraw_heart(
                 plotter, ctrl, meta, ddir,
+                dark_mode=state.dark_mode,
+                opacity=state.ctrl_opacity,
+            )
+            state.legend_items = legend
+            state.mesh_stats = stats
+        elif key == "heart_ep":
+            legend, stats = redraw_heart_ep(
+                plotter, ctrl, ddir,
                 dark_mode=state.dark_mode,
                 opacity=state.ctrl_opacity,
             )

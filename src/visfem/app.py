@@ -1,4 +1,5 @@
 """Trame web application for FEM mesh visualization."""
+import asyncio
 import pyvista as pv
 from trame.app import TrameApp
 from trame.decorators import change
@@ -23,6 +24,7 @@ class VisfemApp(TrameApp):
     def __init__(self, server: object = None) -> None:
         super().__init__(server)
         self._fiber_actor: vtkActor | None = None
+        self._autoplay_task: asyncio.Task | None = None
         self._project_metadata = load_project_metadata()
         self._organ_groups = group_by_organ_system(self._project_metadata)
         self._xdmf_meta: dict[str, MeshMetadata] = {}
@@ -49,6 +51,7 @@ class VisfemApp(TrameApp):
             on_select_patient=self.select_patient,
             on_select_scalar_field=self.select_scalar_field,
             on_select_step=self.select_step,
+            on_toggle_autoplay=self.toggle_autoplay,
             on_toggle_theme=self.toggle_theme,
             on_reset_camera=self.reset_camera,
             on_toggle_xr=self.toggle_xr,
@@ -84,6 +87,7 @@ class VisfemApp(TrameApp):
             "n_steps": 1,
             "active_step": 0,
             "step_times": [],
+            "autoplay": False,
         })
 
     # ---- Theme ----
@@ -181,6 +185,52 @@ class VisfemApp(TrameApp):
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, int(step),
         )
+
+    # ---- Autoplay ----
+
+    def toggle_autoplay(self) -> None:
+        """Start or stop automatic step playback."""
+        if self.state.autoplay:
+            self.state.autoplay = False
+            # The running task checks autoplay on each iteration and will exit.
+        else:
+            # Guard against creating a second task while one is still winding down.
+            if self._autoplay_task is not None and not self._autoplay_task.done():
+                return
+            self.state.autoplay = True
+            self._autoplay_task = asyncio.ensure_future(self._autoplay_loop())
+
+    async def _autoplay_loop(self) -> None:
+        """Async task: advance one step at a time until stopped or end.
+
+        Running inside Trame's aiohttp event loop means ctrl.view_update() and
+        state writes are in the correct context.  However, state changes made
+        inside the task are NOT automatically pushed to the client the way they
+        are after a normal RPC callback — we must use `with self.state:` to
+        explicitly flush dirty variables (active_step, scalar_bar, trame__busy,
+        …) so the slider and time label update in real time.
+        """
+        try:
+            while self.state.autoplay:
+                step = int(self.state.active_step)
+                n = int(self.state.n_steps)
+                if step >= n - 1:
+                    break
+                select_step(
+                    self.plotter, self.ctrl, self.state,
+                    self._project_metadata, self._xdmf_meta, step + 1,
+                )
+                # Flush all dirty state variables to connected clients.
+                # Without this, active_step / trame__busy etc. accumulate and
+                # are only pushed when the next WebSocket message arrives
+                # (e.g. the user clicks Stop), making the slider appear frozen.
+                with self.state:
+                    pass
+                # Yield to the event loop so Trame can send the queued messages
+                # (VTK scene + state) to the browser before the next render.
+                await asyncio.sleep(0.15)
+        finally:
+            self.state.autoplay = False
 
     def sync_camera(self, camera: dict) -> None:
         """Sync client camera state to server plotter."""

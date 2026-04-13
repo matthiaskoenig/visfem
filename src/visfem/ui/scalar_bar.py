@@ -36,7 +36,7 @@ _GRADIENT_STYLE = (
 )
 
 
-def build_scalar_bar(on_select_step: object) -> None:
+def build_scalar_bar(on_select_step: object, on_toggle_autoplay: object) -> None:
     """Build the floating overlay combining step navigation and scalar bar.
 
     Visible whenever n_steps > 1 (step navigation) or scalar_bar is set
@@ -52,6 +52,15 @@ def build_scalar_bar(on_select_step: object) -> None:
             v_if="n_steps > 1",
             style="display:flex; align-items:center; gap:4px; margin-bottom:6px;",
         ):
+            # Play / pause toggle
+            v3.VBtn(
+                icon=("autoplay ? 'mdi-pause' : 'mdi-play'",),
+                variant=("autoplay ? 'tonal' : 'text'",),
+                density="compact", size="x-small",
+                style=_BTN_STYLE,
+                click=on_toggle_autoplay,
+            )
+
             v3.VBtn(
                 icon="mdi-chevron-left",
                 variant="text", density="compact", size="x-small",

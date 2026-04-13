@@ -10,7 +10,7 @@ from visfem.mesh import get_metadata, load_mesh
 def animate_field(path: Path, field: str, output_path: Path, every_nth: int = 1) -> None:
     """Export a GIF animation of a field over all time steps."""
     meta = get_metadata(path)
-    steps = list(range(0, meta["n_steps"], every_nth))
+    steps = list(range(0, meta.n_steps, every_nth))
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Fix colormap range from step 0 so colors stay consistent across frames
@@ -30,12 +30,12 @@ def animate_field(path: Path, field: str, output_path: Path, every_nth: int = 1)
 
     for step in steps:
         step_mesh = load_mesh(path, step=step)
-        timestamp = meta["times"][step]
+        timestamp = meta.times[step]
         plotter.clear()
         plotter.add_mesh(step_mesh, scalars=field, clim=color_range, show_edges=False)
         plotter.add_title(f"{path.stem}  {field}  t={timestamp:.4g}", font_size=9)
         plotter.write_frame()
-        print(f"  step {step}/{meta['n_steps'] - 1}  t={timestamp:.4g}")
+        print(f"  step {step}/{meta.n_steps - 1}  t={timestamp:.4g}")
 
     plotter.close()
     print(f"Saved: {output_path}")
@@ -44,7 +44,7 @@ def animate_field(path: Path, field: str, output_path: Path, every_nth: int = 1)
 def preview_field_animation(path: Path, field: str, every_nth: int = 1) -> None:
     """Preview a field animation interactively in the PyVista window."""
     meta = get_metadata(path)
-    steps = list(range(0, meta["n_steps"], every_nth))
+    steps = list(range(0, meta.n_steps, every_nth))
 
     # Fix colormap range from step 0 so colors stay consistent across frames
     first_mesh = load_mesh(path, step=0)
@@ -66,7 +66,7 @@ def preview_field_animation(path: Path, field: str, every_nth: int = 1) -> None:
 
     for step in steps:
         step_mesh = load_mesh(path, step=step)
-        timestamp = meta["times"][step]
+        timestamp = meta.times[step]
         plotter.clear()
         plotter.add_mesh(step_mesh, scalars=field, clim=color_range, show_edges=False)
         plotter.add_title(f"{path.stem}  {field}  t={timestamp:.4g}", font_size=9)

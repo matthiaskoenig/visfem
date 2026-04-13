@@ -99,13 +99,13 @@ def print_metadata() -> None:
     """Print metadata summary for M.vtu."""
     meta = get_metadata(MESH_PATH)
     print("\nM.vtu")
-    print(f"  format     : {meta['format']}")
-    print(f"  n_points   : {meta['n_points']}")
-    print(f"  n_cells    : {meta['n_cells']}")
-    print(f"  cell_types : {meta['cell_types']}")
-    print(f"  fields ({len(meta['fields'])}):")
-    for name, info in meta["fields"].items():
-        print(f"    {name:<20} center={info['center']}  shape={info['shape']}")
+    print(f"  format     : {meta.format}")
+    print(f"  n_points   : {meta.n_points}")
+    print(f"  n_cells    : {meta.n_cells}")
+    print(f"  cell_types : {meta.cell_types}")
+    print(f"  fields ({len(meta.fields)}):")
+    for name, info in meta.fields.items():
+        print(f"    {name:<20} center={info.center}  shape={info.shape}")
 
 
 def print_material_distribution() -> None:
@@ -295,31 +295,77 @@ def plot_ep_single_region(mat_id: int) -> None:
     plotter.show()
 
 
+def extract_ep_surface() -> None:
+    """Extract EP.vtu outer surface and save as ep_surface.vtp.
+
+    Preserves the Material cell array for per-region coloring in the app.
+    Output: data/fem_data/heart/surfaces/ep_surface.vtp
+    Run once offline (~30-60s for 7.4M cells).
+    """
+    out_path = SURFACE_DIR / "ep_surface.vtp"
+    if out_path.exists():
+        print(f"Already exists: {out_path}")
+        return
+
+    print("Loading EP.vtu (~640MB) ...")
+    ep_mesh = pv.read(str(EP_MESH_PATH))
+    print(f"  {ep_mesh.n_points} points, {ep_mesh.n_cells} cells")
+
+    print("Extracting surface ...")
+    surface = ep_mesh.extract_surface(algorithm="dataset_surface")
+    print(f"  surface: {surface.n_points} points, {surface.n_cells} cells")
+
+    # Keep only Material (needed for coloring); drop Fiber/Sheet/Sheetnormal/Phi/Theta
+    for arr in list(surface.point_data.keys()):
+        del surface.point_data[arr]
+    for arr in list(surface.cell_data.keys()):
+        if arr != "Material":
+            del surface.cell_data[arr]
+
+    surface.save(str(out_path))
+    print(f"Saved: {out_path}  ({out_path.stat().st_size / 1e6:.1f} MB)")
+
+def print_heart_data_summary() -> None:
+    """Print a complete summary of all heart data files."""
+    import os
+
+    print("\n=== M.vtu (mechanical volumetric mesh) ===")
+    m = pv.read(str(MESH_PATH))
+    print(f"  points: {m.n_points}, cells: {m.n_cells}")
+    print("  cell types: tetra (3D volumetric)")
+    print(f"  arrays: {m.array_names}")
+    material_ids = m.cell_data["Material"].astype(int)
+    unique_ids, counts = np.unique(material_ids, return_counts=True)
+    for mid, cnt in zip(unique_ids, counts):
+        print(f"    Material {int(mid):>3}  {MATERIAL_NAMES.get(int(mid), 'unknown'):<35} {cnt:>7} cells")
+
+    print("\n=== EP.vtu (electrophysiology volumetric mesh) ===")
+    ep = pv.read(str(EP_MESH_PATH))
+    print(f"  points: {ep.n_points}, cells: {ep.n_cells}")
+    print(f"  arrays: {ep.array_names}")
+    material_ids = ep.cell_data["Material"].astype(int)
+    unique_ids, counts = np.unique(material_ids, return_counts=True)
+    for mid, cnt in zip(unique_ids, counts):
+        print(f"    Material {int(mid):>3}  {EP_MATERIAL_NAMES.get(int(mid), 'unknown'):<35} {cnt:>7} cells")
+
+    print("\n=== surfaces/ STL files (pre-extracted surfaces) ===")
+    for name, path in SURFACES.items():
+        mesh = pv.read(str(path))
+        print(f"  {name:<20} {mesh.n_points:>7} pts  {mesh.n_cells:>7} cells  arrays={mesh.array_names}")
+
+    print("\n=== ep_surface.vtp (extracted EP outer surface) ===")
+    ep_surf_path = SURFACE_DIR / "ep_surface.vtp"
+    if ep_surf_path.exists():
+        ep_surf = pv.read(str(ep_surf_path))
+        print(f"  points: {ep_surf.n_points}, cells: {ep_surf.n_cells}")
+        print(f"  arrays: {ep_surf.array_names}")
+        material_ids = ep_surf.cell_data["Material"].astype(int)
+        unique_ids, counts = np.unique(material_ids, return_counts=True)
+        for mid, cnt in zip(unique_ids, counts):
+            print(f"    Material {int(mid):>3}  {EP_MATERIAL_NAMES.get(int(mid), 'unknown'):<35} {cnt:>7} cells")
+    else:
+        print("  NOT FOUND — run extract_ep_surface() first")
+
 if __name__ == "__main__":
-    MAT_ID = 30      # M.vtu: 30=LV, 31=RV, 32=RA, 33=LA
-    EP_MAT_ID = 73   # EP.vtu: 73=sinus node, 75=Bachmann bundle, 2=myocardium
-    SURFACE = "epicard"
-
-    # M.vtu inspection
-    print_metadata()
-    # print_material_distribution()
-    # print_surface_summary()
-
-    # M.vtu visualization
-    # plot_material_colored()
-    # plot_material_colored_per_region()
-    # plot_single_material(MAT_ID)
-    # plot_single_material(MAT_ID, show_context=False)
-
-    # STL surfaces
-    # plot_surface(SURFACE)
-    # plot_cavities_combined()
-    # plot_mesh_with_surface_overlay(surface_name=SURFACE)
-
-    # M.vtu fiber vectors
-    # plot_fiber_orientation(subsample=5)
-
-    # EP.vtu
-    # print_ep_material_distribution()
-    # plot_ep_surface_per_region()
-    # plot_ep_single_region(EP_MAT_ID)
+    # extract_ep_surface()
+    print_heart_data_summary()

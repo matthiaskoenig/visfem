@@ -72,8 +72,8 @@ def generate_metadata(patient: int) -> None:
     print(f"\nGenerating metadata for patient {patient}...")
     for organ in organs:
         meta = get_metadata(_patient_dir(patient) / f"{organ}.vtk")
-        print(f"  {organ}: {meta['n_points']} pts, {meta['n_cells']} cells, "
-              f"cell_types: {meta['cell_types']}")
+        print(f"  {organ}: {meta.n_points} pts, {meta.n_cells} cells, "
+              f"cell_types: {meta.cell_types}")
 
 
 def generate_all_metadata() -> None:

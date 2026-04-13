@@ -47,15 +47,15 @@ def print_metadata_all() -> None:
     for stem, path in ALL_FILES.items():
         meta = get_metadata(path)
         print(f"\n{stem}  ({path.parent.name}/{path.name})")
-        print(f"  format     : {meta['format']}")
-        print(f"  n_steps    : {meta['n_steps']}")
-        print(f"  n_points   : {meta['n_points']}")
-        print(f"  n_cells    : {meta['n_cells']}")
-        print(f"  cell_types : {meta['cell_types']}")
-        print(f"  time range : {meta['times'][0]:.4g} to {meta['times'][-1]:.4g}")
-        print(f"  fields ({len(meta['fields'])}):")
-        for name, info in meta["fields"].items():
-            print(f"    {name:<25} center={info['center']}  shape={info['shape']}")
+        print(f"  format     : {meta.format}")
+        print(f"  n_steps    : {meta.n_steps}")
+        print(f"  n_points   : {meta.n_points}")
+        print(f"  n_cells    : {meta.n_cells}")
+        print(f"  cell_types : {meta.cell_types}")
+        print(f"  time range : {meta.times[0]:.4g} to {meta.times[-1]:.4g}")
+        print(f"  fields ({len(meta.fields)}):")
+        for name, info in meta.fields.items():
+            print(f"    {name:<25} center={info.center}  shape={info.shape}")
 
 
 def print_mesh_at_step(stem: str, step: int = 0) -> None:
@@ -63,7 +63,7 @@ def print_mesh_at_step(stem: str, step: int = 0) -> None:
     path = ALL_FILES[stem]
     meta = get_metadata(path)
     mesh = load_mesh(path, step=step)
-    timestamp = meta["times"][step]
+    timestamp = meta.times[step]
     print(f"\n{stem} step {step} (t={timestamp:.4g})")
     print(f"  n_points : {mesh.n_points}")
     print(f"  n_cells  : {mesh.n_cells}")
@@ -78,7 +78,7 @@ def plot_field_at_step(stem: str, field: str, step: int = 0) -> None:
     path = ALL_FILES[stem]
     meta = get_metadata(path)
     mesh = load_mesh(path, step=step)
-    timestamp = meta["times"][step]
+    timestamp = meta.times[step]
     plotter = pv.Plotter()
     plotter.add_mesh(mesh, scalars=field, show_edges=True)
     plotter.add_title(f"{stem}  {field}  t={timestamp:.4g}", font_size=9)
@@ -90,11 +90,11 @@ def plot_all_fields_at_step(stem: str, step: int = 0) -> None:
     path = ALL_FILES[stem]
     meta = get_metadata(path)
     mesh = load_mesh(path, step=step)
-    timestamp = meta["times"][step]
+    timestamp = meta.times[step]
 
     scalar_fields = [
-        name for name, info in meta["fields"].items()
-        if info["shape"] == [1]
+        name for name, info in meta.fields.items()
+        if info.shape == [1]
     ]
     if not scalar_fields:
         print(f"No scalar fields found in {stem} at step {step}.")
@@ -133,7 +133,7 @@ def plot_field_time_evolution(stem: str, field: str, steps: list[int]) -> None:
 
     for i, step in enumerate(steps):
         step_mesh = load_mesh(path, step=step)
-        timestamp = meta["times"][step]
+        timestamp = meta.times[step]
         row, col = i // ncols, i % ncols
         plotter.subplot(row, col)
         plotter.add_mesh(step_mesh, scalars=field, show_edges=False, clim=color_range)
@@ -152,7 +152,7 @@ def plot_deformation_vectors(field: str = "u", step: int = 0) -> None:
     path = ALL_FILES[stem]
     meta = get_metadata(path)
     mesh = load_mesh(path, step=step)
-    timestamp = meta["times"][step]
+    timestamp = meta.times[step]
 
     if field not in mesh.point_data:
         print(f"Field '{field}' not found in point data. Available: {list(mesh.point_data.keys())}")

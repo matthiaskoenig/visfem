@@ -111,11 +111,16 @@ def apply_opacity(plotter: pv.Plotter, opacity: float) -> None:
             actor.GetProperty().SetOpacity(opacity)
 
 
-def push_scene(plotter: pv.Plotter, ctrl: object) -> None:
-    """Flush VTK pipeline and push the complete scene to vtk.js."""
+def push_scene(plotter: pv.Plotter, ctrl: object, reset_camera: bool = True) -> None:
+    """Flush VTK pipeline and push the complete scene to vtk.js.
+
+    Pass reset_camera=False when navigating timesteps so the user's current
+    view is preserved between steps.
+    """
     plotter.render()
-    plotter.reset_camera()
-    ctrl.view_push_camera()  # type: ignore[attr-defined]
+    if reset_camera:
+        plotter.reset_camera()
+        ctrl.view_push_camera()  # type: ignore[attr-defined]
     ctrl.view_update()  # type: ignore[attr-defined]
 
 
@@ -129,17 +134,21 @@ def redraw_xdmf(
     dark_mode: bool,
     opacity: float,
     field: str | None = None,
+    step: int = 0,
+    reset_camera: bool = True,
 ) -> tuple[list[dict[str, str]], dict[str, int] | None, dict | None]:
-    """Load and render the first step of an XDMF mesh.
+    """Load and render one step of an XDMF mesh.
 
     If *field* is None the first scalar field from metadata is used.
+    Pass reset_camera=False when navigating timesteps to preserve the
+    user's current view.
     Returns (legend_items, mesh_stats, scalar_bar_info).
     """
     clear_scene(plotter, dark_mode)
     try:
-        mesh = load_mesh(path, step=0)
+        mesh = load_mesh(path, step=step)
     except Exception as e:
-        logger.error(f"Failed to load '{path.name}': {e}")
+        logger.error(f"Failed to load '{path.name}' step {step}: {e}")
         return [], None, None
 
     mesh_meta = xdmf_meta.get(path.stem)
@@ -157,7 +166,7 @@ def redraw_xdmf(
         opacity=opacity,
     )
     apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
 
     scalar_bar: dict | None = None

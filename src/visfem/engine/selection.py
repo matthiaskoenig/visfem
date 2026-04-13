@@ -44,6 +44,9 @@ def select_dataset(
     state.show_fibers = False  # type: ignore[attr-defined]
     state.available_scalar_fields = []  # type: ignore[attr-defined]
     state.active_scalar_field = None  # type: ignore[attr-defined]
+    state.n_steps = 1  # type: ignore[attr-defined]
+    state.active_step = 0  # type: ignore[attr-defined]
+    state.step_times = []  # type: ignore[attr-defined]
     opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
     state.trame__busy = True  # type: ignore[attr-defined]
     fiber_actor: vtkActor | None = None
@@ -98,19 +101,23 @@ def select_dataset(
             clear_scene(plotter, state.dark_mode)
         elif xdmf_files:
             first_stem, first_path = next(iter(xdmf_files.items()))
-            scalar_fields = _scalar_fields_from_meta(xdmf_meta.get(first_stem))
+            first_meta = xdmf_meta.get(first_stem)
+            scalar_fields = _scalar_fields_from_meta(first_meta)
             default_field = scalar_fields[0]["name"] if scalar_fields else None
             legend, stats, scalar_bar = redraw_xdmf(
                 plotter, ctrl, first_path, xdmf_meta,
                 dark_mode=state.dark_mode,
                 opacity=opacity,
                 field=default_field,
+                step=0,
             )
             state.legend_items = legend
             state.mesh_stats = stats
             state.scalar_bar = scalar_bar
             state.available_scalar_fields = scalar_fields  # type: ignore[attr-defined]
             state.active_scalar_field = default_field  # type: ignore[attr-defined]
+            state.n_steps = first_meta.n_steps if first_meta else 1  # type: ignore[attr-defined]
+            state.step_times = list(first_meta.times) if first_meta else []  # type: ignore[attr-defined]
         state.active_meta = meta_to_state(meta)
     finally:
         state.trame__busy = False  # type: ignore[attr-defined]
@@ -132,6 +139,9 @@ def select_xdmf(
     state.active_patient = None  # type: ignore[attr-defined]
     state.available_scalar_fields = []  # type: ignore[attr-defined]
     state.active_scalar_field = None  # type: ignore[attr-defined]
+    state.n_steps = 1  # type: ignore[attr-defined]
+    state.active_step = 0  # type: ignore[attr-defined]
+    state.step_times = []  # type: ignore[attr-defined]
     opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
     state.trame__busy = True  # type: ignore[attr-defined]
     try:
@@ -140,19 +150,23 @@ def select_xdmf(
         if path is None:
             logger.error(f"XDMF file not found: {stem} in {key}")
             return
-        scalar_fields = _scalar_fields_from_meta(xdmf_meta.get(stem))
+        stem_meta = xdmf_meta.get(stem)
+        scalar_fields = _scalar_fields_from_meta(stem_meta)
         default_field = scalar_fields[0]["name"] if scalar_fields else None
         legend, stats, scalar_bar = redraw_xdmf(
             plotter, ctrl, path, xdmf_meta,
             dark_mode=state.dark_mode,
             opacity=opacity,
             field=default_field,
+            step=0,
         )
         state.legend_items = legend
         state.mesh_stats = stats
         state.scalar_bar = scalar_bar
         state.available_scalar_fields = scalar_fields  # type: ignore[attr-defined]
         state.active_scalar_field = default_field  # type: ignore[attr-defined]
+        state.n_steps = stem_meta.n_steps if stem_meta else 1  # type: ignore[attr-defined]
+        state.step_times = list(stem_meta.times) if stem_meta else []  # type: ignore[attr-defined]
         state.active_meta = meta_to_state(project_metadata[key])
     finally:
         state.trame__busy = False  # type: ignore[attr-defined]
@@ -192,15 +206,57 @@ def select_scalar_field(
             if path is None:
                 logger.error(f"No XDMF file found for dataset '{active_dataset}'")
                 return
+            current_step: int = int(state.active_step)  # type: ignore[attr-defined]
             legend, stats, scalar_bar = redraw_xdmf(
                 plotter, ctrl, path, xdmf_meta,
                 dark_mode=state.dark_mode,
                 opacity=opacity,
                 field=field,
+                step=current_step,
+                reset_camera=False,
             )
             state.legend_items = legend
             state.mesh_stats = stats
             state.scalar_bar = scalar_bar
+    finally:
+        state.trame__busy = False  # type: ignore[attr-defined]
+
+
+def select_step(
+    plotter: pv.Plotter,
+    ctrl: object,
+    state: Any,
+    project_metadata: dict[str, ProjectMetadata],
+    xdmf_meta: dict[str, MeshMetadata],
+    step: int,
+) -> None:
+    """Navigate the current XDMF dataset to a different timestep.
+
+    Camera position is preserved — only the mesh data and scalar bar are updated.
+    """
+    state.active_step = step  # type: ignore[attr-defined]
+    opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
+    state.trame__busy = True  # type: ignore[attr-defined]
+    try:
+        active_dataset: str = state.active_dataset  # type: ignore[attr-defined]
+        meta = project_metadata[active_dataset]
+        xdmf_files = discover_xdmf(dataset_dir(meta))
+        stem: str | None = state.active_xdmf  # type: ignore[attr-defined]
+        path = xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
+        if path is None:
+            logger.error(f"No XDMF file found for dataset '{active_dataset}'")
+            return
+        field: str | None = state.active_scalar_field  # type: ignore[attr-defined]
+        _legend, stats, scalar_bar = redraw_xdmf(
+            plotter, ctrl, path, xdmf_meta,
+            dark_mode=state.dark_mode,
+            opacity=opacity,
+            field=field,
+            step=step,
+            reset_camera=False,  # preserve the user's current camera position
+        )
+        state.mesh_stats = stats
+        state.scalar_bar = scalar_bar
     finally:
         state.trame__busy = False  # type: ignore[attr-defined]
 

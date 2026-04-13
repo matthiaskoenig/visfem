@@ -24,6 +24,7 @@ def build_ui(
     on_select_xdmf: object,
     on_select_patient: object,
     on_select_scalar_field: object,
+    on_select_step: object,
     on_toggle_theme: object,
     on_reset_camera: object,
     on_toggle_xr: object,
@@ -59,6 +60,6 @@ def build_ui(
                 )
                 build_controls_bar(on_reset_camera, on_select_scalar_field)
                 build_info_panel()
-                build_scalar_bar()
+                build_scalar_bar(on_select_step)
 
     return layout

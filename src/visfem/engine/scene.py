@@ -150,15 +150,16 @@ def redraw_heart(
     dataset_dir: Path,
     dark_mode: bool,
     opacity: float,
-) -> tuple[list[dict[str, str]], dict[str, int] | None]:
+) -> tuple[list[dict[str, str]], dict[str, int] | None, vtkActor | None]:
     """Render the heart mesh colored by material region.
 
-    Returns legend_items for the material regions.
+    Returns (legend_items, mesh_stats, fiber_actor).  fiber_actor is the
+    glyph overlay added hidden; call SetVisibility(True) to show it.
     """
     mesh_path = dataset_dir / "M.vtu"
     if not mesh_path.exists():
         logger.error(f"Heart mesh not found: {mesh_path}")
-        return [], None
+        return [], None, None
 
     label_map: dict[int, str] = {}
     if meta.labels_file:
@@ -170,7 +171,7 @@ def redraw_heart(
         mesh = load_mesh(mesh_path)
     except Exception as e:
         logger.error(f"Failed to load heart mesh: {e}")
-        return [], None
+        return [], None, None
 
     material_ids = mesh.cell_data["Material"].astype(int)
     unique_ids: list[int] = sorted(int(v) for v in np.unique(material_ids))
@@ -193,6 +194,23 @@ def redraw_heart(
         copy_mesh=True,
         interpolate_before_map=False,
     )
+
+    # Build fiber glyph overlay — hidden by default, toggled via show_fibers state.
+    fiber_actor: vtkActor | None = None
+    if "Fiber" in mesh.cell_data.keys():
+        subsample = 5
+        cell_idx = np.arange(0, mesh.n_cells, subsample)
+        centers = mesh.extract_cells(cell_idx).cell_centers()
+        centers["Fiber"] = mesh.cell_data["Fiber"][cell_idx]
+        glyphs = centers.glyph(orient="Fiber", scale=False, factor=1.5)
+        fiber_actor = plotter.add_mesh(
+            glyphs,
+            color="#484848",
+            show_scalar_bar=False,
+            copy_mesh=True,
+        )
+        fiber_actor.SetVisibility(False)
+
     apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl)
     legend = [
@@ -200,7 +218,7 @@ def redraw_heart(
         for i, mid in enumerate(unique_ids)
     ]
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
-    return legend, stats
+    return legend, stats, fiber_actor
 
 
 def redraw_heart_ep(

@@ -2,19 +2,24 @@
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
-_BAR_STYLE = (
-    "dark_mode ? "
-    "'position:absolute; top:12px; left:50%; transform:translateX(-50%); "
+_BAR_BASE_DARK = (
+    "position:absolute; top:12px; left:50%; transform:translateX(-50%); "
     "z-index:10; display:flex; align-items:center; gap:8px; height:38px; "
     "background:rgba(28,35,35,0.88); backdrop-filter:blur(8px); "
     "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,0.07); "
-    "border-radius:8px; padding:0 12px; width:270px;' "
-    ": "
-    "'position:absolute; top:12px; left:50%; transform:translateX(-50%); "
+    "border-radius:8px; padding:0 12px;"
+)
+_BAR_BASE_LIGHT = (
+    "position:absolute; top:12px; left:50%; transform:translateX(-50%); "
     "z-index:10; display:flex; align-items:center; gap:8px; height:38px; "
     "background:rgba(240,244,244,0.92); backdrop-filter:blur(8px); "
     "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(0,0,0,0.08); "
-    "border-radius:8px; padding:0 12px; width:270px;'",
+    "border-radius:8px; padding:0 12px;"
+)
+# Width grows by ~70px when the fiber toggle button is present (heart dataset only).
+_BAR_STYLE = (
+    f"(dark_mode ? '{_BAR_BASE_DARK}' : '{_BAR_BASE_LIGHT}')"
+    " + ' width:' + (active_dataset === 'heart' ? '340px' : '270px') + ';'",
 )
 
 
@@ -45,4 +50,23 @@ def build_controls_bar(on_reset_camera: object) -> None:
                     icon="mdi-camera-retake-outline",
                     variant="text", density="compact", size="small",
                     click=on_reset_camera, v_bind="props",
+                )
+
+        # ---- Fiber toggle (heart dataset only) ----
+        html.Div(
+            style="width:1px; height:20px; background:rgba(255,255,255,0.12); flex-shrink:0;",
+            v_if="active_dataset === 'heart'",
+        )
+        with v3.VTooltip(
+            text=("show_fibers ? 'Hide fiber glyphs' : 'Show fiber glyphs'",),
+            location="bottom",
+            v_if="active_dataset === 'heart'",
+        ):
+            with v3.Template(v_slot_activator="{ props }"):
+                v3.VBtn(
+                    icon="mdi-grain",
+                    variant=("show_fibers ? 'tonal' : 'text'",),
+                    density="compact", size="small",
+                    click="show_fibers = !show_fibers",
+                    v_bind="props",
                 )

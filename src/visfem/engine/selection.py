@@ -1,6 +1,7 @@
 """Dataset selection handlers for VisFEM."""
 import pyvista as pv
 from typing import Any
+from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.engine.scene import (
     clear_scene, redraw_heart, redraw_heart_ep,
@@ -20,19 +21,24 @@ def select_dataset(
     project_metadata: dict[str, ProjectMetadata],
     xdmf_meta: dict[str, MeshMetadata],
     key: str,
-) -> None:
-    """Route to the correct redraw based on dataset key."""
+) -> vtkActor | None:
+    """Route to the correct redraw based on dataset key.
+
+    Returns the fiber glyph actor when key=='heart', otherwise None.
+    """
     state.active_dataset = key  # type: ignore[attr-defined]
     state.active_patient = None  # type: ignore[attr-defined]
     state.active_xdmf = None  # type: ignore[attr-defined]
+    state.show_fibers = False  # type: ignore[attr-defined]
     opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
     state.trame__busy = True  # type: ignore[attr-defined]
+    fiber_actor: vtkActor | None = None
     try:
         meta = project_metadata[key]
         ddir = dataset_dir(meta)
         xdmf_files = discover_xdmf(ddir)
         if key == "heart":
-            legend, stats = redraw_heart(
+            legend, stats, fiber_actor = redraw_heart(
                 plotter, ctrl, meta, ddir,
                 dark_mode=state.dark_mode,
                 opacity=opacity,
@@ -79,6 +85,7 @@ def select_dataset(
         state.active_meta = meta_to_state(meta)
     finally:
         state.trame__busy = False  # type: ignore[attr-defined]
+    return fiber_actor
 
 
 def select_xdmf(

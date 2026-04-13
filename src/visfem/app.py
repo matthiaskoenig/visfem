@@ -3,6 +3,7 @@ import pyvista as pv
 from trame.app import TrameApp
 from trame.decorators import change
 from trame.widgets.vtk import VtkWebXRHelper
+from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
 from visfem.engine.discovery import dataset_dir, discover_xdmf, group_by_organ_system, load_project_metadata
@@ -21,6 +22,7 @@ class VisfemApp(TrameApp):
 
     def __init__(self, server: object = None) -> None:
         super().__init__(server)
+        self._fiber_actor: vtkActor | None = None
         self._project_metadata = load_project_metadata()
         self._organ_groups = group_by_organ_system(self._project_metadata)
         self._xdmf_meta: dict[str, MeshMetadata] = {}
@@ -73,6 +75,7 @@ class VisfemApp(TrameApp):
             "active_meta": None,
             "mesh_stats": None,
             "panel_info_open": True,
+            "show_fibers": False,
         })
 
     # ---- Theme ----
@@ -126,11 +129,19 @@ class VisfemApp(TrameApp):
         apply_opacity(self.plotter, float(ctrl_opacity))
         self.ctrl.view_update()
 
+    @change("show_fibers")
+    def _on_show_fibers_change(self, show_fibers: bool, **_: object) -> None:
+        """Toggle fiber glyph actor visibility."""
+        if self._fiber_actor is None:
+            return
+        self._fiber_actor.SetVisibility(bool(show_fibers))
+        self.ctrl.view_update()
+
     # ---- Dataset selection ----
 
     def select_dataset(self, key: str) -> None:
         """Route to the correct redraw based on dataset key."""
-        select_dataset(
+        self._fiber_actor = select_dataset(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key,
         )

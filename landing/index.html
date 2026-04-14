@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VisFEM: Web Visualization of FEM Models</title>
+  <link rel="icon" type="image/png" href="../docs/images/favicon/favicon-96x96.png" />
+  <link rel="stylesheet" href="style.css" />
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-inner">
+      <div class="nav-brand">
+        <img src="../docs/images/favicon/visfem-100x100.png" alt="VisFEM logo" class="brand-icon" />
+        <span class="brand-name">VisFEM</span>
+      </div>
+      <div class="nav-links">
+        <a href="https://github.com/matthiaskoenig/visfem" target="_blank" rel="noopener" class="nav-link">
+          <svg class="gh-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.167 6.839 9.49.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.34-3.369-1.34-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+          GitHub
+        </a>
+        <a href="visfem.de" class="btn-launch btn-launch-small">Launch App</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-bg-mesh" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <div class="hero-badge">Open Source · MIT License</div>
+      <h1 class="hero-title">
+        Interactive FEM<br/>
+        <span class="accent">Visualization</span> in the Browser
+      </h1>
+      <p class="hero-subtitle">
+        VisFEM is a web-based tool for exploring Finite Element Method simulation results.
+        No installation required. Built for biomedical research.
+      </p>
+      <div class="hero-actions">
+        <a href="visfem.de" class="btn-launch">Launch App</a>
+        <a href="https://github.com/matthiaskoenig/visfem" target="_blank" rel="noopener" class="btn-secondary">
+          <svg class="gh-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.167 6.839 9.49.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.34-3.369-1.34-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+      <!-- placeholder for screenshot/demo -->
+      <div class="hero-preview">
+        <div class="preview-placeholder">
+          <img src="../docs/images/favicon/visfem-100x100.png" alt="VisFEM logo" class="preview-mesh-icon" />
+          <p class="preview-label">Preview coming soon</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- For developers -->
+  <section class="section dev-section" id="install">
+    <div class="section-inner section-inner--two-col">
+      <div class="dev-text">
+        <h2 class="section-title left">For Developers</h2>
+        <p>VisFEM is available on PyPI. Install it with pip and run the app locally or self-host it.</p>
+        <a href="https://github.com/matthiaskoenig/visfem" target="_blank" rel="noopener" class="btn-secondary mt">
+          <svg class="gh-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.167 6.839 9.49.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.34-3.369-1.34-.454-1.154-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+          Docs &amp; Source
+        </a>
+      </div>
+      <div class="code-block-wrapper">
+        <div class="code-label">Install via pip</div>
+        <pre class="code-block"><code>pip install visfem</code></pre>
+        <div class="code-label mt-sm">Run the app</div>
+        <pre class="code-block"><code>visfem</code></pre>
+        <div class="code-label mt-sm">Python API</div>
+        <pre class="code-block"><code>from visfem.app import VisfemApp
+
+app = VisfemApp()
+app.server.start()</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- Citation -->
+  <section class="section cite-section" id="cite">
+    <div class="section-inner">
+      <h2 class="section-title">How to Cite</h2>
+      <p class="cite-intro">If you use VisFEM in your research, please cite:</p>
+      <pre class="cite-block">Elias, M. &amp; König, M. (2026).
+VisFEM: Web visualization of FEM models.
+Zenodo. https://doi.org/10.5281/zenodo.19220183</pre>
+      <div class="cite-badges">
+        <a href="https://doi.org/10.5281/zenodo.19220183" target="_blank" rel="noopener" class="badge-link">
+          <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.19220183.svg" alt="DOI badge" />
+        </a>
+        <a href="https://pypi.org/project/visfem/" target="_blank" rel="noopener" class="badge-link">
+          <img src="https://img.shields.io/pypi/v/visfem.svg" alt="PyPI version badge" />
+        </a>
+        <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noopener" class="badge-link">
+          <img src="https://img.shields.io/pypi/l/visfem.svg" alt="License badge" />
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <img src="../docs/images/favicon/visfem-100x100.png" alt="VisFEM logo" class="brand-icon small" />
+        <span class="brand-name">VisFEM</span>
+      </div>
+      <p class="footer-tagline">Web visualization of FEM models</p>
+
+      <div class="footer-links">
+        <a href="https://github.com/matthiaskoenig/visfem" target="_blank" rel="noopener">GitHub</a>
+        <span class="sep">·</span>
+        <a href="https://doi.org/10.5281/zenodo.19220183" target="_blank" rel="noopener">DOI</a>
+        <span class="sep">·</span>
+        <a href="https://pypi.org/project/visfem/" target="_blank" rel="noopener">PyPI</a>
+        <span class="sep">·</span>
+        <a href="https://opensource.org/license/MIT" target="_blank" rel="noopener">MIT License</a>
+      </div>
+
+      <p class="footer-funding">
+        Funded by the German Research Foundation (DFG), FOR 5151 QuaLiPerF, grant 436883643;
+        SPP 2311 SimLivA, grant 465194077.
+      </p>
+      <p class="footer-copy">© 2026 Michelle Elias &amp; Matthias König</p>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -97,27 +97,40 @@ def build_info_panel() -> None:
                                 style="font-size: 0.76rem;",
                             )
 
-                            # ---- References ----
-                            with html.Div(style="margin-top: 10px;"):
-                                v3.VDivider(style="margin-bottom: 8px;")
-                                _label("References")
-                                with html.Div(
-                                        v_for="ref in active_meta.ref_urls",
-                                        key="ref",
-                                        style="margin-top: 4px;",
-                                ):
-                                    html.A(
-                                        "{{ ref }}",
-                                        href=("ref",),
-                                        target="_blank",
-                                        style="color:#00897b; font-size:0.74rem; word-break:break-all; text-decoration:none;",
-                                    )
-                                with html.Div(
-                                        v_for="ref in active_meta.ref_texts",
-                                        key="ref",
-                                        style="margin-top: 4px;",
-                                ):
-                                    html.Div("{{ ref }}", style="font-size:0.74rem; opacity:0.75;")
+                    # ---- References ----
+                    with html.Div(
+                        v_if="active_meta && (active_meta.ref_urls.length > 0 || active_meta.ref_texts.length > 0)",
+                        style="margin-top: 10px;",
+                    ):
+                        v3.VDivider(style="margin-bottom: 8px;")
+                        _label("References")
+                        with html.Div(
+                                v_for="ref in active_meta.ref_urls",
+                                key="ref",
+                                style="display:flex; align-items:flex-start; gap:5px; margin-top:5px;",
+                        ):
+                            v3.VIcon(
+                                icon=(
+                                    "ref.toLowerCase().includes('zenodo') ? 'mdi-database' :"
+                                    " ref.toLowerCase().includes('github') ? 'mdi-github' :"
+                                    " ref.toLowerCase().includes('doi.org') ? 'mdi-file-document-outline' :"
+                                    " 'mdi-open-in-new'",
+                                ),
+                                size="13",
+                                style="flex-shrink:0; margin-top:1px; opacity:0.5;",
+                            )
+                            html.A(
+                                "{{ ref }}",
+                                href=("ref",),
+                                target="_blank",
+                                style="color:#00897b; font-size:0.74rem; word-break:break-all; text-decoration:none;",
+                            )
+                        with html.Div(
+                                v_for="ref in active_meta.ref_texts",
+                                key="ref",
+                                style="margin-top: 4px;",
+                        ):
+                            html.Div("{{ ref }}", style="font-size:0.74rem; opacity:0.75;")
 
                     # ---- Region legend ----
                     with html.Div(

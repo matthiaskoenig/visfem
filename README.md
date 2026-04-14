@@ -23,7 +23,7 @@ pip install visfem
 ## How to cite
 To cite the software repository
 
-> Elias, M. & König, M. (2025).
+> Elias, M. & König, M. (2026).
 > *VisFEM: Web visualization of FEM models.*
 > Zenodo. [https://doi.org/10.5281/zenodo.19220183](https://doi.org/10.5281/zenodo.19220183)
 

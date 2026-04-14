@@ -1,6 +1,6 @@
 """Scene management and mesh rendering helpers."""
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
 import pyvista as pv
@@ -17,6 +17,12 @@ from visfem.mesh import load_mesh, parse_labels_file
 from visfem.models import MeshMetadata, ProjectMetadata
 
 logger = get_logger(__name__)
+
+
+class TrameCtrl(Protocol):
+    def view_push_camera(self) -> None: ...
+    def view_update(self) -> None: ...
+
 
 
 # Human-readable labels for known field names
@@ -99,7 +105,7 @@ def apply_opacity(plotter: pv.Plotter, opacity: float) -> None:
             actor.GetProperty().SetOpacity(opacity)
 
 
-def push_scene(plotter: pv.Plotter, ctrl: object, reset_camera: bool = True) -> None:
+def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) -> None:
     """Flush VTK pipeline and push the complete scene to vtk.js."""
     plotter.render()
     if reset_camera:
@@ -112,7 +118,7 @@ def push_scene(plotter: pv.Plotter, ctrl: object, reset_camera: bool = True) -> 
 
 def redraw_xdmf(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     path: Path,
     xdmf_meta: dict[str, MeshMetadata],
     dark_mode: bool,
@@ -166,7 +172,7 @@ def redraw_xdmf(
 
 def redraw_ircadb(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     patient_dir: Path,
     dark_mode: bool,
     opacity: float,
@@ -225,7 +231,7 @@ def redraw_ircadb(
 
 def redraw_heart(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     meta: ProjectMetadata,
     dataset_dir: Path,
     dark_mode: bool,
@@ -305,7 +311,7 @@ def redraw_heart(
 
 def redraw_heart_ep(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     dataset_dir: Path,
     dark_mode: bool,
     opacity: float,
@@ -377,7 +383,7 @@ def redraw_heart_ep(
 
 def redraw_tibia_mesh(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     dataset_dir: Path,
     dark_mode: bool,
     opacity: float,
@@ -446,7 +452,7 @@ _CLAES_LABELS: dict[int, str] = {
 
 def redraw_tibia_simulation(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     dataset_dir: Path,
     dark_mode: bool,
     opacity: float,

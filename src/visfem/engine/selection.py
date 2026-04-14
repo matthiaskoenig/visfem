@@ -6,7 +6,7 @@ from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.engine.palettes import CATEGORICAL_PALETTES
 from visfem.engine.scene import (
-    TIBIA_SIM_FIELDS,
+    TIBIA_SIM_FIELDS, TrameCtrl,
     clear_scene, field_label, redraw_heart, redraw_heart_ep,
     redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
 )
@@ -59,7 +59,7 @@ def _resolve_cmap(state: Any) -> str:
 
 def select_dataset(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
     xdmf_meta: dict[str, MeshMetadata],
@@ -199,7 +199,7 @@ def select_dataset(
 
 def select_xdmf(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
     xdmf_meta: dict[str, MeshMetadata],
@@ -248,7 +248,7 @@ def select_xdmf(
 
 def select_scalar_field(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
     xdmf_meta: dict[str, MeshMetadata],
@@ -300,7 +300,7 @@ def select_scalar_field(
 
 def select_step(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
     xdmf_meta: dict[str, MeshMetadata],
@@ -336,7 +336,7 @@ def select_step(
 
 def select_patient(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
     patient: int,
@@ -371,7 +371,7 @@ def select_patient(
 
 def select_color_scheme(
     plotter: pv.Plotter,
-    ctrl: object,
+    ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
     xdmf_meta: dict[str, MeshMetadata],

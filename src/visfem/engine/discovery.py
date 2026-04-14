@@ -5,8 +5,7 @@ from visfem.models import ProjectMetadata
 
 # ---- Paths ----
 
-DATA_BASE    = Path(__file__).parents[3] / "data" / "fem_data"
-METADATA_DIR = Path(__file__).parents[3] / "data" / "metadata"
+DATASETS_DIR = Path(__file__).parents[3] / "data" / "datasets"
 
 
 # ---- Discovery ----
@@ -49,9 +48,11 @@ def xdmf_display_name(stem: str) -> str:
 # ---- Metadata ----
 
 def load_project_metadata() -> dict[str, ProjectMetadata]:
-    """Load and validate all ProjectMetadata JSONs from data/metadata/."""
+    """Load and validate all ProjectMetadata JSONs from data/datasets/."""
     result: dict[str, ProjectMetadata] = {}
-    for path in sorted(METADATA_DIR.glob("*.json")):
+    for path in sorted(DATASETS_DIR.rglob("*.json")):
+        if path.name.endswith(".meta.json"):
+            continue
         result[path.stem] = ProjectMetadata.model_validate_json(path.read_text())
     return result
 
@@ -70,13 +71,13 @@ def group_by_organ_system(
 
 def dataset_dir(meta: ProjectMetadata) -> Path:
     """Resolve the filesystem directory for a dataset from its metadata."""
-    return DATA_BASE / meta.data_path
+    return DATASETS_DIR / meta.data_path
 
 
 def pvd_file_path(meta: ProjectMetadata) -> Path | None:
     """Return the PVD file path for PVD-format datasets, else None."""
     if meta.mesh_format == "PVD":
-        return DATA_BASE / meta.data_path
+        return DATASETS_DIR / meta.data_path
     return None
 
 def meta_to_state(meta: ProjectMetadata) -> dict[str, object]:

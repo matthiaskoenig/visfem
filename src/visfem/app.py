@@ -1,5 +1,7 @@
 """Trame web application for FEM mesh visualization."""
 import asyncio
+import base64
+import importlib.resources
 import pyvista as pv
 from trame.app import TrameApp
 from trame.decorators import change
@@ -66,9 +68,16 @@ class VisfemApp(TrameApp):
         self.plotter.enable_depth_peeling(number_of_peels=4)
         self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
 
+    @staticmethod
+    def _favicon_data_uri() -> str:
+        data = importlib.resources.files("visfem.assets").joinpath("favicon.png").read_bytes()
+        return f"data:image/png;base64,{base64.b64encode(data).decode()}"
+
     def _setup_state(self) -> None:
         """Initialize all Trame state variables."""
         self.state.update({
+            "trame__title": "VisFEM",
+            "trame__favicon": self._favicon_data_uri(),
             "dark_mode": True,
             "xr_active": False,
             "active_dataset": None,

@@ -28,6 +28,9 @@ _FIELD_LABELS: dict[str, str] = {
     "Claes_window": "healing window (Claes)",
     "pressure": "pressure",
     "strain": "strain",
+    "Potential":    "transmembrane potential (mV)",
+    "Calcium":      "intracellular calcium [Ca\u00b2\u207a]",
+    "ActiveStress": "active stress (Pa)",
 }
 
 # Ordered list of selectable scalar fields for the tibia simulation dataset.

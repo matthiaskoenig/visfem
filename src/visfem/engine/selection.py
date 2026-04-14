@@ -1,4 +1,5 @@
 """Dataset selection handlers for VisFEM."""
+from pathlib import Path
 import pyvista as pv
 from typing import Any
 from vtkmodules.vtkRenderingCore import vtkActor
@@ -11,7 +12,7 @@ from visfem.engine.scene import (
 )
 from visfem.log import get_logger
 from visfem.models import MeshMetadata, ProjectMetadata
-from visfem.engine.discovery import dataset_dir, discover_xdmf, meta_to_state
+from visfem.engine.discovery import dataset_dir, discover_xdmf, meta_to_state, pvd_file_path
 
 logger = get_logger(__name__)
 
@@ -31,6 +32,24 @@ def _resolve_palette(state: Any) -> list[str]:
     """Return the active categorical palette colors from state."""
     name: str = str(state.active_categorical_palette)  # type: ignore[attr-defined]
     return CATEGORICAL_PALETTES.get(name, CATEGORICAL_PALETTES["paired"])
+
+
+# Fields present in heart_iv VTUs that are not meaningful for display.
+_HEART_IV_EXCLUDED: frozenset[str] = frozenset(
+    {"Fixation", "PointID", "Material", "CellID", "f", "n", "s"}
+)
+
+
+def _timeseries_path(
+    meta: ProjectMetadata,
+    state: Any,
+    xdmf_files: dict[str, Path],
+) -> Path | None:
+    """Return the active timeseries file path for PVD or XDMF datasets."""
+    if meta.mesh_format == "PVD":
+        return pvd_file_path(meta)
+    stem: str | None = state.active_xdmf  # type: ignore[attr-defined]
+    return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
 
 
 def _resolve_cmap(state: Any) -> str:
@@ -127,6 +146,32 @@ def select_dataset(
             state.mesh_stats = None
             state.scalar_bar = None
             clear_scene(plotter, state.dark_mode)
+        elif key == "heart_iv":
+            pvd_p = pvd_file_path(meta)
+            if pvd_p is None or not pvd_p.exists():
+                logger.error(f"PVD file not found for '{key}'")
+            else:
+                pvd_meta = xdmf_meta.get(pvd_p.stem)
+                scalar_fields = [
+                    f for f in _scalar_fields_from_meta(pvd_meta)
+                    if f["name"] not in _HEART_IV_EXCLUDED
+                ]
+                default_field = scalar_fields[0]["name"] if scalar_fields else None
+                legend, stats, scalar_bar = redraw_xdmf(
+                    plotter, ctrl, pvd_p, xdmf_meta,
+                    dark_mode=state.dark_mode,
+                    opacity=opacity,
+                    field=default_field,
+                    step=0,
+                    cmap=_resolve_cmap(state),
+                )
+                state.legend_items = legend
+                state.mesh_stats = stats
+                state.scalar_bar = scalar_bar
+                state.available_scalar_fields = scalar_fields  # type: ignore[attr-defined]
+                state.active_scalar_field = default_field  # type: ignore[attr-defined]
+                state.n_steps = pvd_meta.n_steps if pvd_meta else 1  # type: ignore[attr-defined]
+                state.step_times = list(pvd_meta.times) if pvd_meta else []  # type: ignore[attr-defined]
         elif xdmf_files:
             first_stem, first_path = next(iter(xdmf_files.items()))
             first_meta = xdmf_meta.get(first_stem)
@@ -230,13 +275,12 @@ def select_scalar_field(
             state.mesh_stats = stats
             state.scalar_bar = scalar_bar
         else:
-            # XDMF dataset — resolve file path from active_xdmf or first available file.
+            # XDMF or PVD dataset — resolve the active timeseries file path.
             meta = project_metadata[active_dataset]
             xdmf_files = discover_xdmf(dataset_dir(meta))
-            stem: str | None = state.active_xdmf  # type: ignore[attr-defined]
-            path = xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
+            path = _timeseries_path(meta, state, xdmf_files)
             if path is None:
-                logger.error(f"No XDMF file found for dataset '{active_dataset}'")
+                logger.error(f"No timeseries file found for dataset '{active_dataset}'")
                 return
             current_step: int = int(state.active_step)  # type: ignore[attr-defined]
             legend, stats, scalar_bar = redraw_xdmf(
@@ -274,10 +318,9 @@ def select_step(
         active_dataset: str = state.active_dataset  # type: ignore[attr-defined]
         meta = project_metadata[active_dataset]
         xdmf_files = discover_xdmf(dataset_dir(meta))
-        stem: str | None = state.active_xdmf  # type: ignore[attr-defined]
-        path = xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
+        path = _timeseries_path(meta, state, xdmf_files)
         if path is None:
-            logger.error(f"No XDMF file found for dataset '{active_dataset}'")
+            logger.error(f"No timeseries file found for dataset '{active_dataset}'")
             return
         field: str | None = state.active_scalar_field  # type: ignore[attr-defined]
         _legend, stats, scalar_bar = redraw_xdmf(
@@ -412,13 +455,12 @@ def select_color_scheme(
             state.mesh_stats = stats
             state.scalar_bar = scalar_bar
         else:
-            # XDMF dataset.
+            # XDMF or PVD dataset.
             meta = project_metadata[key]
             xdmf_files = discover_xdmf(dataset_dir(meta))
-            stem: str | None = state.active_xdmf  # type: ignore[attr-defined]
-            path = xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
+            path = _timeseries_path(meta, state, xdmf_files)
             if path is None:
-                logger.error(f"No XDMF file found for dataset '{key}'")
+                logger.error(f"No timeseries file found for dataset '{key}'")
                 return
             field = state.active_scalar_field  # type: ignore[attr-defined]
             step: int = int(state.active_step)  # type: ignore[attr-defined]

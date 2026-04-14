@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 
 # File extensions that PyVista can read natively
 _PYVISTA_NATIVE: frozenset[str] = frozenset(
-    {".vtk", ".vtu", ".vtp", ".vts", ".vtr", ".vti", ".pvd", ".pvtu", ".pvtp"}
+    {".vtk", ".vtu", ".vtp", ".vts", ".vtr", ".vti", ".pvtu", ".pvtp"}
 )
 
 # File extensions that may contain time-series data
@@ -109,9 +109,12 @@ def _parse_xdmf_base_grid(
 def _detect_format(path: Path) -> str:
     """Return a format string for the given file path.
 
-    Returns one of: fenics_xdmf, timeseries_xdmf, pyvista_native, meshio_fallback.
+    Returns one of: pvd_timeseries, fenics_xdmf, timeseries_xdmf,
+    pyvista_native, meshio_fallback.
     """
     suffix = path.suffix.lower()
+    if suffix == ".pvd":
+        return "pvd_timeseries"
     if suffix in _PYVISTA_NATIVE:
         return "pyvista_native"
     if suffix in _XDMF_EXTENSIONS:
@@ -141,6 +144,22 @@ def _detect_xdmf_subtype(path: Path) -> str:
     return "fenics_xdmf"
 
 
+# ---- PVD helpers ----
+
+def _parse_pvd(path: Path) -> list[tuple[float, Path]]:
+    """Parse a PVD file and return (timestep, abs_vtu_path) pairs sorted by time."""
+    tree = ET.parse(path)
+    collection = tree.getroot().find("Collection")
+    if collection is None:
+        raise ValueError(f"No Collection element in {path.name}")
+    entries = [
+        (float(ds.get("timestep", "0")), path.parent / (ds.get("file") or ""))
+        for ds in collection.findall("DataSet")
+        if ds.get("file")
+    ]
+    return sorted(entries, key=lambda x: x[0])
+
+
 # ---- Metadata extraction ----
 
 def get_metadata(path: Path) -> MeshMetadata:
@@ -164,7 +183,9 @@ def get_metadata(path: Path) -> MeshMetadata:
 
     logger.debug(f"Computing metadata for '{path.name}'")
     fmt = _detect_format(path)
-    if fmt == "fenics_xdmf":
+    if fmt == "pvd_timeseries":
+        raw = _metadata_pvd(path, fmt)
+    elif fmt == "fenics_xdmf":
         raw = _metadata_fenics_xdmf(path, fmt)
     elif fmt == "timeseries_xdmf":
         raw = _metadata_timeseries_xdmf(path, fmt)
@@ -204,6 +225,34 @@ def _metadata_timeseries_xdmf(path: Path, fmt: str) -> dict:
         "n_cells": sum(len(block.data) for block in cells) if cells else 0,
         "cell_types": list({block.type for block in cells}) if cells else [],
         "fields": fields,
+    }
+
+
+def _metadata_pvd(path: Path, fmt: str) -> dict:
+    """Extract metadata from a PVD timeseries.
+
+    Parses the PVD XML for timestep list; reads step 0 VTU for field shapes.
+    """
+    entries = _parse_pvd(path)
+    times = [t for t, _ in entries]
+    mesh = cast(pv.DataSet, pv.read(str(entries[0][1]))) if entries else pv.UnstructuredGrid()
+
+    def _field_shape(arr: np.ndarray) -> list[int]:
+        return list(arr.shape[1:]) if arr.ndim > 1 else [1]
+
+    return {
+        "format": fmt,
+        "n_steps": len(entries),
+        "times": times,
+        "n_points": mesh.n_points,
+        "n_cells": mesh.n_cells,
+        "cell_types": [str(ct.name).lower() for ct in mesh.distinct_cell_types],
+        "fields": {
+            **{name: {"center": "point", "shape": _field_shape(arr)}
+               for name, arr in mesh.point_data.items()},
+            **{name: {"center": "cell", "shape": _field_shape(arr)}
+               for name, arr in mesh.cell_data.items()},
+        },
     }
 
 
@@ -294,6 +343,19 @@ def _metadata_static(path: Path, fmt: str) -> dict:
 
 
 # ---- Mesh loaders ----
+
+def _load_pvd(path: Path, step: int = 0) -> pv.DataSet:
+    """Load one VTU from a PVD timeseries by step index."""
+    entries = _parse_pvd(path)
+    if not entries:
+        raise ValueError(f"PVD file has no DataSet entries: {path.name}")
+    if step >= len(entries):
+        logger.warning(f"Step {step} out of range ({len(entries)} steps), using last.")
+        step = len(entries) - 1
+    _, vtu_path = entries[step]
+    logger.debug(f"[pvd] loading step {step}: '{vtu_path.name}'")
+    return cast(pv.DataSet, pv.read(str(vtu_path)))
+
 
 def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
     """Load one timestep from a FEniCS-style XDMF file.
@@ -401,6 +463,8 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     """
     fmt = _detect_format(path)
     logger.debug(f"Loading '{path.name}' as '{fmt}' step {step}")
+    if fmt == "pvd_timeseries":
+        return _load_pvd(path, step)
     if fmt == "fenics_xdmf":
         return _load_fenics_xdmf(path, step)
     if fmt == "timeseries_xdmf":

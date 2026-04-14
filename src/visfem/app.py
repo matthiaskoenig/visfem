@@ -2,6 +2,7 @@
 import asyncio
 import base64
 import importlib.resources
+import math
 import pyvista as pv
 from trame.app import TrameApp
 from trame.decorators import change
@@ -9,7 +10,7 @@ from trame.widgets.vtk import VtkWebXRHelper
 from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
-from visfem.engine.discovery import dataset_dir, discover_xdmf, group_by_organ_system, load_project_metadata
+from visfem.engine.discovery import dataset_dir, discover_xdmf, group_by_organ_system, load_project_metadata, pvd_file_path
 from visfem.engine.scene import apply_opacity
 from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
 from visfem.engine.selection import (
@@ -37,6 +38,10 @@ class VisfemApp(TrameApp):
         for meta in self._project_metadata.values():
             for name, path in discover_xdmf(dataset_dir(meta)).items():
                 self._xdmf_meta[name] = get_metadata(path)
+        for meta in self._project_metadata.values():
+            p = pvd_file_path(meta)
+            if p and p.exists():
+                self._xdmf_meta[p.stem] = get_metadata(p)
         ircadb_meta = self._project_metadata.get("ircadb")
         ircadb_dir = dataset_dir(ircadb_meta) if ircadb_meta else None
         self._ircadb_patients: list[int] = sorted(
@@ -250,7 +255,9 @@ class VisfemApp(TrameApp):
             while self.state.autoplay:
                 step = int(self.state.active_step)
                 n = int(self.state.n_steps)
-                next_step = 0 if step >= n - 1 else step + 1
+                # Target ~100 rendered frames; increment >1 for large datasets.
+                inc = math.ceil(n / 100)
+                next_step = 0 if step + inc >= n else step + inc
                 select_step(
                     self.plotter, self.ctrl, self.state,
                     self._project_metadata, self._xdmf_meta, next_step,

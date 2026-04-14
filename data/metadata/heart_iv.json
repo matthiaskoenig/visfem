@@ -11,8 +11,8 @@
   "organ_system": [
     "heart"
   ],
-  "description": "TODO. Cardiac simulation timeseries (IV) with 1601 time steps (IV.0.vtu-IV.1600.vtu).",
-  "mesh_format": "PVD, VTU",
+  "description": "Fully coupled electromechanical cardiac simulation timeseries of the four-chamber heart. 1601 time steps from t=0 to t=1.6 s (1 ms resolution). Deforming mesh (32505 points, 166530 cells). Fields include transmembrane potential, intracellular calcium, active stress, fiber stretch (Lambda), and wall displacement.",
+  "mesh_format": "PVD",
   "references": [
     "https://doi.org/10.5281/zenodo.10526554",
     "https://doi.org/10.1113/JP285022",

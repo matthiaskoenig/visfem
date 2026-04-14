@@ -72,6 +72,13 @@ def dataset_dir(meta: ProjectMetadata) -> Path:
     """Resolve the filesystem directory for a dataset from its metadata."""
     return DATA_BASE / meta.data_path
 
+
+def pvd_file_path(meta: ProjectMetadata) -> Path | None:
+    """Return the PVD file path for PVD-format datasets, else None."""
+    if meta.mesh_format == "PVD":
+        return DATA_BASE / meta.data_path
+    return None
+
 def meta_to_state(meta: ProjectMetadata) -> dict[str, object]:
     """Serialize a ProjectMetadata instance to a plain dict for Trame state."""
     return {

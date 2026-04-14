@@ -37,13 +37,14 @@ def build_controls_bar(on_reset_camera: object, on_select_scalar_field: object) 
         # ---- Opacity icon ----
         v3.VIcon("mdi-circle-opacity", size="16", style="opacity:0.5; flex-shrink:0;")
 
-        # ---- Opacity slider ----
+        # ---- Opacity slider (disabled during autoplay to avoid race conditions) ----
         v3.VSlider(
-            v_model=("ctrl_opacity", 0.8),
+            v_model=("ctrl_opacity", 0.9),
             min=0.0, max=1.0, step=0.1,
             density="compact", hide_details=True,
             color="#00897b", track_color="rgba(255,255,255,0.15)",
             thumb_label=False,
+            disabled=("autoplay",),
             style="flex:1; min-width:120px; margin:0; padding:0; align-self:center;",
         )
 

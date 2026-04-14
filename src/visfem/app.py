@@ -76,7 +76,7 @@ class VisfemApp(TrameApp):
             "active_xdmf": None,
             "panel_datasets_open": True,
             "legend_items": [],
-            "ctrl_opacity": 0.8,
+            "ctrl_opacity": 0.9,
             "active_meta": None,
             "mesh_stats": None,
             "panel_info_open": True,
@@ -153,6 +153,7 @@ class VisfemApp(TrameApp):
 
     def select_dataset(self, key: str) -> None:
         """Route to the correct redraw based on dataset key."""
+        self.state.autoplay = False  # stop any running autoplay before switching
         self._fiber_actor = select_dataset(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key,
@@ -160,6 +161,7 @@ class VisfemApp(TrameApp):
 
     def select_xdmf(self, key: str, stem: str) -> None:
         """Load and render a specific XDMF file within a multi-file dataset."""
+        self.state.autoplay = False  # stop any running autoplay before switching
         select_xdmf(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key, stem,
@@ -174,6 +176,8 @@ class VisfemApp(TrameApp):
 
     def select_scalar_field(self, field: str) -> None:
         """Re-render the current dataset with the given scalar field."""
+        self.state.autoplay = False  # stop autoplay and reset slider on field change
+        self.state.active_step = 0
         select_scalar_field(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, field,
@@ -214,11 +218,10 @@ class VisfemApp(TrameApp):
             while self.state.autoplay:
                 step = int(self.state.active_step)
                 n = int(self.state.n_steps)
-                if step >= n - 1:
-                    break
+                next_step = 0 if step >= n - 1 else step + 1
                 select_step(
                     self.plotter, self.ctrl, self.state,
-                    self._project_metadata, self._xdmf_meta, step + 1,
+                    self._project_metadata, self._xdmf_meta, next_step,
                 )
                 # Flush all dirty state variables to connected clients.
                 # Without this, active_step / trame__busy etc. accumulate and
@@ -226,6 +229,10 @@ class VisfemApp(TrameApp):
                 # (e.g. the user clicks Stop), making the slider appear frozen.
                 with self.state:
                     pass
+                # Push the updated VTK scene after flushing state — the two
+                # channels are independent and must both be triggered explicitly
+                # inside an async task.
+                self.ctrl.view_update()
                 # Yield to the event loop so Trame can send the queued messages
                 # (VTK scene + state) to the browser before the next render.
                 await asyncio.sleep(0.15)

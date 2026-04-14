@@ -117,7 +117,8 @@ def select_dataset(
             state.mesh_stats = stats
             state.scalar_bar = None
         elif key == "tibia_simulation":
-            default_field = TIBIA_SIM_FIELDS[0]["name"]
+            default_field: str | None = TIBIA_SIM_FIELDS[0]["name"]
+            assert default_field is not None
             legend, stats, scalar_bar = redraw_tibia_simulation(
                 plotter, ctrl, ddir,
                 dark_mode=state.dark_mode,

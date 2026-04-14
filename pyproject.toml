@@ -67,3 +67,6 @@ path = "./src/visfem/__init__.py"
 
 [project.scripts]
 visfem = "visfem.app:main"
+
+[tool.mypy]
+disable_error_code = ["import-not-found"]

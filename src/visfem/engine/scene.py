@@ -1,5 +1,6 @@
 """Scene management and mesh rendering helpers."""
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pyvista as pv
@@ -125,7 +126,7 @@ def redraw_xdmf(
     step: int = 0,
     reset_camera: bool = True,
     cmap: str = "viridis",
-) -> tuple[list[dict[str, str]], dict[str, int] | None, dict | None]:
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
     """Load and render one step of an XDMF mesh.
 
     If *field* is None the first scalar field from metadata is used.
@@ -175,7 +176,7 @@ def redraw_ircadb(
     dark_mode: bool,
     opacity: float,
     palette: list[str] | None = None,
-) -> tuple[list[dict[str, str]], dict[str, int] | None]:
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Load all organ meshes for a patient and render as one merged actor.
 
     Returns legend_items for the loaded organs.
@@ -235,7 +236,7 @@ def redraw_heart(
     dark_mode: bool,
     opacity: float,
     palette: list[str] | None = None,
-) -> tuple[list[dict[str, str]], dict[str, int] | None, vtkActor | None]:
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None, vtkActor | None]:
     """Render the heart mesh colored by material region.
 
     Returns (legend_items, mesh_stats, fiber_actor).  fiber_actor is the
@@ -314,7 +315,7 @@ def redraw_heart_ep(
     dark_mode: bool,
     opacity: float,
     palette: list[str] | None = None,
-) -> tuple[list[dict[str, str]], dict[str, int] | None]:
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Render the EP heart surface colored by EP material region."""
     ep_path = dataset_dir / "surfaces" / "ep_surface.vtp"
     if not ep_path.exists():
@@ -386,7 +387,7 @@ def redraw_tibia_mesh(
     dark_mode: bool,
     opacity: float,
     palette: list[str] | None = None,
-) -> tuple[list[dict[str, str]], dict[str, int] | None]:
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Render Tibia_Mesh.vtk colored by PartId region."""
     mesh_path = dataset_dir / "Tibia_Mesh.vtk"
     if not mesh_path.exists():
@@ -457,7 +458,7 @@ def redraw_tibia_simulation(
     field: str = "vonMises_stress",
     palette: list[str] | None = None,
     cmap: str = "turbo",
-) -> tuple[list[dict[str, str]], dict[str, int] | None, dict | None]:
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
     """Render Tibia_Simulation.vtk with the given scalar field.
 
     Claes_window is rendered as a discrete categorical colormap with a legend.

@@ -327,7 +327,6 @@ def extract_ep_surface() -> None:
 
 def print_heart_data_summary() -> None:
     """Print a complete summary of all heart data files."""
-    import os
 
     print("\n=== M.vtu (mechanical volumetric mesh) ===")
     m = pv.read(str(MESH_PATH))

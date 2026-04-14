@@ -18,3 +18,4 @@ data/results/**
 visfem.code-workspace
 vscode/launch.json
 vscode/settings.json
+notebooks/.ipynb_checkpoints/demo-checkpoint.ipynb

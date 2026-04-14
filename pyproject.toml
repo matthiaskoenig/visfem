@@ -55,7 +55,7 @@ dev = [
     "pytest-cov>=7.0.0",
 ]
 
-[project_urls]
+[project.urls]
 Homepage = "https://github.com/matthiaskoenig/visfem"
 Repository = "https://github.com/matthiaskoenig/visfem"
 Documentation = "https://github.com/matthiaskoenig/visfem"

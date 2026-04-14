@@ -7,14 +7,13 @@ from visfem.engine.colors import scheme_to_hex, region_colors  # noqa: F401 re-e
 
 # ---- Categorical palettes ----
 
-# Clinical Claes healing-zone colors (red=bad → green=good → grey=resorption).
-# These are clinically meaningful and serve as the default for tibia datasets.
+# Clinical Claes healing-zone colors (red=bad, green=good, grey=resorption).
 _CLINICAL: list[str] = ["#7f7f7f", "#bcbd22", "#d62728", "#ff7f0e", "#2ca02c"]
 
-# Qual-paired palette (11 distinct colors) — good for datasets with many regions.
+# Qual-paired palette (11 distinct colors) for datasets with many regions.
 _PAIRED: list[str] = scheme_to_hex(60)
 
-# Tableau 10 colors — clean, perceptually distinct.
+# Tableau 10 colors
 _TABLEAU: list[str] = [
     "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
     "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
@@ -27,8 +26,7 @@ _WONG: list[str] = [
     "#f0e442", "#0072b2", "#d55e00", "#cc79a7",
 ]
 
-# Paul Tol's Bright scheme — 7 colors, optimised for all colour-vision deficiencies.
-# https://personal.sron.nl/~pault/
+# Paul Tol's Bright scheme, optimised for all colour-vision deficiencies.
 _TOL_BRIGHT: list[str] = [
     "#4477aa", "#ee6677", "#228833", "#ccbb44",
     "#66ccee", "#aa3377", "#bbbbbb",
@@ -47,7 +45,7 @@ CATEGORICAL_META: list[dict] = [
     {"name": "clinical",   "label": "Clinical",   "swatches": _CLINICAL[:5]},
     {"name": "paired",     "label": "Paired",     "swatches": _PAIRED[:6]},
     {"name": "tableau",    "label": "Tableau",    "swatches": _TABLEAU[:6]},
-    {"name": "wong",       "label": "Wong",       "swatches": _WONG[1:7]},   # skip black for swatch preview
+    {"name": "wong",       "label": "Wong",       "swatches": _WONG[:7]},
     {"name": "tol_bright", "label": "Tol Bright", "swatches": _TOL_BRIGHT[:6]},
 ]
 
@@ -55,7 +53,6 @@ CATEGORICAL_META: list[dict] = [
 # ---- Continuous colormaps ----
 
 CONTINUOUS_CMAPS: dict[str, str] = {
-    # Colorblind-safe (perceptually uniform):
     "viridis": (
         "linear-gradient(to right, "
         "#440154 0%, #3b528b 25%, #21918c 50%, #5ec962 75%, #fde725 100%)"
@@ -64,7 +61,6 @@ CONTINUOUS_CMAPS: dict[str, str] = {
         "linear-gradient(to right, "
         "#0d0887 0%, #7e03a8 25%, #cc4778 50%, #f89540 75%, #f0f921 100%)"
     ),
-    # Designed explicitly for colour-vision deficiency + perceptually uniform:
     "cividis": (
         "linear-gradient(to right, "
         "#00224d 0%, #384b70 25%, #7b7979 50%, #bda566 75%, #fee867 100%)"
@@ -73,7 +69,6 @@ CONTINUOUS_CMAPS: dict[str, str] = {
         "linear-gradient(to right, "
         "#000004 0%, #420a68 25%, #932667 50%, #e76f5a 75%, #fcffa4 100%)"
     ),
-    # High contrast (not colorblind-safe — red-green conflict):
     "turbo": (
         "linear-gradient(to right, "
         "#30123b 0%, #4145ab 8%, #4675ed 17%, #39a2fc 25%, "
@@ -83,8 +78,7 @@ CONTINUOUS_CMAPS: dict[str, str] = {
     ),
 }
 
-# UI metadata for the colormap picker (name, display label, gradient CSS string).
-# Colorblind-safe options are listed first.
+# UI metadata for the colormap picker (name, display label, gradient CSS string)
 CONTINUOUS_META: list[dict] = [
     {"name": "viridis", "label": "Viridis",  "gradient": CONTINUOUS_CMAPS["viridis"]},
     {"name": "plasma",  "label": "Plasma",   "gradient": CONTINUOUS_CMAPS["plasma"]},

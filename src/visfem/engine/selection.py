@@ -30,11 +30,11 @@ def _scalar_fields_from_meta(mesh_meta: MeshMetadata | None) -> list[dict[str, s
 
 def _resolve_palette(state: Any) -> list[str]:
     """Return the active categorical palette colors from state."""
-    name: str = str(state.active_categorical_palette)  # type: ignore[attr-defined]
+    name: str = str(state.active_categorical_palette)  
     return CATEGORICAL_PALETTES.get(name, CATEGORICAL_PALETTES["paired"])
 
 
-# Fields present in heart_iv VTUs that are not meaningful for display.
+# Fields present in heart_iv VTUs that are not meaningful for display
 _HEART_IV_EXCLUDED: frozenset[str] = frozenset(
     {"Fixation", "PointID", "Material", "CellID", "f", "n", "s"}
 )
@@ -48,13 +48,13 @@ def _timeseries_path(
     """Return the active timeseries file path for PVD or XDMF datasets."""
     if meta.mesh_format == "PVD":
         return pvd_file_path(meta)
-    stem: str | None = state.active_xdmf  # type: ignore[attr-defined]
+    stem: str | None = state.active_xdmf  
     return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
 
 
 def _resolve_cmap(state: Any) -> str:
     """Return the active continuous colormap name from state."""
-    return str(state.active_continuous_cmap)  # type: ignore[attr-defined]
+    return str(state.active_continuous_cmap)  
 
 
 def select_dataset(
@@ -70,27 +70,25 @@ def select_dataset(
     Returns the fiber glyph actor when key=='heart', otherwise None.
     Sets per-dataset palette/cmap defaults before rendering.
     """
-    state.active_dataset = key  # type: ignore[attr-defined]
-    state.active_patient = None  # type: ignore[attr-defined]
-    state.active_xdmf = None  # type: ignore[attr-defined]
-    state.show_fibers = False  # type: ignore[attr-defined]
-    state.available_scalar_fields = []  # type: ignore[attr-defined]
-    state.active_scalar_field = None  # type: ignore[attr-defined]
-    state.n_steps = 1  # type: ignore[attr-defined]
-    state.active_step = 0  # type: ignore[attr-defined]
-    state.step_times = []  # type: ignore[attr-defined]
+    state.active_dataset = key  
+    state.active_patient = None  
+    state.active_xdmf = None  
+    state.show_fibers = False  
+    state.available_scalar_fields = []  
+    state.active_scalar_field = None  
+    state.n_steps = 1  
+    state.active_step = 0  
+    state.step_times = []  
 
-    # Reset color defaults per dataset type.
-    # Tibia datasets default to "clinical" palette (suits Claes healing zones).
-    # Everything else defaults to "paired" (enough distinct colors for many regions).
+    # Reset color defaults per dataset type
     if key in ("tibia_simulation", "tibia_mesh"):
-        state.active_categorical_palette = "clinical"  # type: ignore[attr-defined]
+        state.active_categorical_palette = "clinical"  
     else:
-        state.active_categorical_palette = "paired"  # type: ignore[attr-defined]
-    state.active_continuous_cmap = "viridis"  # type: ignore[attr-defined]
+        state.active_categorical_palette = "paired"  
+    state.active_continuous_cmap = "viridis"  
 
-    opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
-    state.trame__busy = True  # type: ignore[attr-defined]
+    opacity = float(state.ctrl_opacity)  
+    state.trame__busy = True  
     fiber_actor: vtkActor | None = None
     try:
         meta = project_metadata[key]
@@ -130,8 +128,8 @@ def select_dataset(
             state.legend_items = legend
             state.mesh_stats = stats
             state.scalar_bar = scalar_bar
-            state.available_scalar_fields = TIBIA_SIM_FIELDS  # type: ignore[attr-defined]
-            state.active_scalar_field = default_field  # type: ignore[attr-defined]
+            state.available_scalar_fields = TIBIA_SIM_FIELDS  
+            state.active_scalar_field = default_field  
         elif key == "heart_ep":
             legend, stats = redraw_heart_ep(
                 plotter, ctrl, ddir,
@@ -169,10 +167,10 @@ def select_dataset(
                 state.legend_items = legend
                 state.mesh_stats = stats
                 state.scalar_bar = scalar_bar
-                state.available_scalar_fields = scalar_fields  # type: ignore[attr-defined]
-                state.active_scalar_field = default_field  # type: ignore[attr-defined]
-                state.n_steps = pvd_meta.n_steps if pvd_meta else 1  # type: ignore[attr-defined]
-                state.step_times = list(pvd_meta.times) if pvd_meta else []  # type: ignore[attr-defined]
+                state.available_scalar_fields = scalar_fields  
+                state.active_scalar_field = default_field  
+                state.n_steps = pvd_meta.n_steps if pvd_meta else 1  
+                state.step_times = list(pvd_meta.times) if pvd_meta else []  
         elif xdmf_files:
             first_stem, first_path = next(iter(xdmf_files.items()))
             first_meta = xdmf_meta.get(first_stem)
@@ -189,13 +187,13 @@ def select_dataset(
             state.legend_items = legend
             state.mesh_stats = stats
             state.scalar_bar = scalar_bar
-            state.available_scalar_fields = scalar_fields  # type: ignore[attr-defined]
-            state.active_scalar_field = default_field  # type: ignore[attr-defined]
-            state.n_steps = first_meta.n_steps if first_meta else 1  # type: ignore[attr-defined]
-            state.step_times = list(first_meta.times) if first_meta else []  # type: ignore[attr-defined]
+            state.available_scalar_fields = scalar_fields  
+            state.active_scalar_field = default_field  
+            state.n_steps = first_meta.n_steps if first_meta else 1  
+            state.step_times = list(first_meta.times) if first_meta else []  
         state.active_meta = meta_to_state(meta)
     finally:
-        state.trame__busy = False  # type: ignore[attr-defined]
+        state.trame__busy = False  
     return fiber_actor
 
 
@@ -209,16 +207,16 @@ def select_xdmf(
     stem: str,
 ) -> None:
     """Load and render a specific XDMF file within a multi-file dataset."""
-    state.active_dataset = key  # type: ignore[attr-defined]
-    state.active_xdmf = stem  # type: ignore[attr-defined]
-    state.active_patient = None  # type: ignore[attr-defined]
-    state.available_scalar_fields = []  # type: ignore[attr-defined]
-    state.active_scalar_field = None  # type: ignore[attr-defined]
-    state.n_steps = 1  # type: ignore[attr-defined]
-    state.active_step = 0  # type: ignore[attr-defined]
-    state.step_times = []  # type: ignore[attr-defined]
-    opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
-    state.trame__busy = True  # type: ignore[attr-defined]
+    state.active_dataset = key  
+    state.active_xdmf = stem  
+    state.active_patient = None  
+    state.available_scalar_fields = []  
+    state.active_scalar_field = None  
+    state.n_steps = 1  
+    state.active_step = 0  
+    state.step_times = []  
+    opacity = float(state.ctrl_opacity)  
+    state.trame__busy = True  
     try:
         meta = project_metadata[key]
         path = discover_xdmf(dataset_dir(meta)).get(stem)
@@ -239,13 +237,13 @@ def select_xdmf(
         state.legend_items = legend
         state.mesh_stats = stats
         state.scalar_bar = scalar_bar
-        state.available_scalar_fields = scalar_fields  # type: ignore[attr-defined]
-        state.active_scalar_field = default_field  # type: ignore[attr-defined]
-        state.n_steps = stem_meta.n_steps if stem_meta else 1  # type: ignore[attr-defined]
-        state.step_times = list(stem_meta.times) if stem_meta else []  # type: ignore[attr-defined]
+        state.available_scalar_fields = scalar_fields  
+        state.active_scalar_field = default_field  
+        state.n_steps = stem_meta.n_steps if stem_meta else 1  
+        state.step_times = list(stem_meta.times) if stem_meta else []  
         state.active_meta = meta_to_state(project_metadata[key])
     finally:
-        state.trame__busy = False  # type: ignore[attr-defined]
+        state.trame__busy = False  
 
 
 def select_scalar_field(
@@ -257,11 +255,11 @@ def select_scalar_field(
     field: str,
 ) -> None:
     """Re-render the current dataset with a different scalar field."""
-    state.active_scalar_field = field  # type: ignore[attr-defined]
-    opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
-    state.trame__busy = True  # type: ignore[attr-defined]
+    state.active_scalar_field = field  
+    opacity = float(state.ctrl_opacity)  
+    state.trame__busy = True  
     try:
-        active_dataset: str = state.active_dataset  # type: ignore[attr-defined]
+        active_dataset: str = state.active_dataset  
         if active_dataset == "tibia_simulation":
             meta = project_metadata["tibia_simulation"]
             legend, stats, scalar_bar = redraw_tibia_simulation(
@@ -283,7 +281,7 @@ def select_scalar_field(
             if path is None:
                 logger.error(f"No timeseries file found for dataset '{active_dataset}'")
                 return
-            current_step: int = int(state.active_step)  # type: ignore[attr-defined]
+            current_step: int = int(state.active_step)  
             legend, stats, scalar_bar = redraw_xdmf(
                 plotter, ctrl, path, xdmf_meta,
                 dark_mode=state.dark_mode,
@@ -297,7 +295,7 @@ def select_scalar_field(
             state.mesh_stats = stats
             state.scalar_bar = scalar_bar
     finally:
-        state.trame__busy = False  # type: ignore[attr-defined]
+        state.trame__busy = False  
 
 
 def select_step(
@@ -308,22 +306,19 @@ def select_step(
     xdmf_meta: dict[str, MeshMetadata],
     step: int,
 ) -> None:
-    """Navigate the current XDMF dataset to a different timestep.
-
-    Camera position is preserved — only the mesh data and scalar bar are updated.
-    """
-    state.active_step = step  # type: ignore[attr-defined]
-    opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
-    state.trame__busy = True  # type: ignore[attr-defined]
+    """Navigate the current XDMF dataset to a different timestep."""
+    state.active_step = step  
+    opacity = float(state.ctrl_opacity)  
+    state.trame__busy = True  
     try:
-        active_dataset: str = state.active_dataset  # type: ignore[attr-defined]
+        active_dataset: str = state.active_dataset  
         meta = project_metadata[active_dataset]
         xdmf_files = discover_xdmf(dataset_dir(meta))
         path = _timeseries_path(meta, state, xdmf_files)
         if path is None:
             logger.error(f"No timeseries file found for dataset '{active_dataset}'")
             return
-        field: str | None = state.active_scalar_field  # type: ignore[attr-defined]
+        field: str | None = state.active_scalar_field  
         _legend, stats, scalar_bar = redraw_xdmf(
             plotter, ctrl, path, xdmf_meta,
             dark_mode=state.dark_mode,
@@ -336,7 +331,7 @@ def select_step(
         state.mesh_stats = stats
         state.scalar_bar = scalar_bar
     finally:
-        state.trame__busy = False  # type: ignore[attr-defined]
+        state.trame__busy = False  
 
 
 def select_patient(
@@ -347,17 +342,17 @@ def select_patient(
     patient: int,
 ) -> None:
     """Load and render a specific IRCADb patient."""
-    state.active_dataset = "ircadb"  # type: ignore[attr-defined]
-    state.active_patient = patient  # type: ignore[attr-defined]
-    state.active_xdmf = None  # type: ignore[attr-defined]
-    state.available_scalar_fields = []  # type: ignore[attr-defined]
-    state.active_scalar_field = None  # type: ignore[attr-defined]
-    state.scalar_bar = None  # type: ignore[attr-defined]
-    state.n_steps = 1  # type: ignore[attr-defined]
-    state.active_step = 0  # type: ignore[attr-defined]
-    state.step_times = []  # type: ignore[attr-defined]
-    opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
-    state.trame__busy = True  # type: ignore[attr-defined]
+    state.active_dataset = "ircadb"  
+    state.active_patient = patient  
+    state.active_xdmf = None  
+    state.available_scalar_fields = []  
+    state.active_scalar_field = None  
+    state.scalar_bar = None  
+    state.n_steps = 1  
+    state.active_step = 0  
+    state.step_times = []  
+    opacity = float(state.ctrl_opacity)  
+    state.trame__busy = True  
     try:
         ircadb_meta = project_metadata["ircadb"]
         patient_dir = dataset_dir(ircadb_meta) / f"patient_{patient:02d}"
@@ -371,7 +366,7 @@ def select_patient(
         state.mesh_stats = stats
         state.active_meta = meta_to_state(project_metadata["ircadb"])
     finally:
-        state.trame__busy = False  # type: ignore[attr-defined]
+        state.trame__busy = False  
 
 
 def select_color_scheme(
@@ -381,21 +376,16 @@ def select_color_scheme(
     project_metadata: dict[str, ProjectMetadata],
     xdmf_meta: dict[str, MeshMetadata],
 ) -> None:
-    """Re-render the current scene after a palette or colormap change.
-
-    Does not change navigation state (field, step, patient, camera).
-    The caller is responsible for updating active_categorical_palette or
-    active_continuous_cmap in state before calling this function.
-    """
-    key: str | None = state.active_dataset  # type: ignore[attr-defined]
+    """Re-render the current scene after a palette or colormap change."""
+    key: str | None = state.active_dataset  
     if key is None:
         return
 
-    opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
-    state.trame__busy = True  # type: ignore[attr-defined]
+    opacity = float(state.ctrl_opacity)  
+    state.trame__busy = True  
     try:
         if key == "ircadb":
-            patient: int | None = state.active_patient  # type: ignore[attr-defined]
+            patient: int | None = state.active_patient  
             if patient is None:
                 return
             ircadb_meta = project_metadata["ircadb"]
@@ -443,7 +433,7 @@ def select_color_scheme(
             state.mesh_stats = stats
         elif key == "tibia_simulation":
             meta = project_metadata["tibia_simulation"]
-            field: str = state.active_scalar_field  # type: ignore[attr-defined]
+            field: str = state.active_scalar_field  
             legend, stats, scalar_bar = redraw_tibia_simulation(
                 plotter, ctrl, dataset_dir(meta),
                 dark_mode=state.dark_mode,
@@ -456,15 +446,15 @@ def select_color_scheme(
             state.mesh_stats = stats
             state.scalar_bar = scalar_bar
         else:
-            # XDMF or PVD dataset.
+            # XDMF or PVD dataset
             meta = project_metadata[key]
             xdmf_files = discover_xdmf(dataset_dir(meta))
             path = _timeseries_path(meta, state, xdmf_files)
             if path is None:
                 logger.error(f"No timeseries file found for dataset '{key}'")
                 return
-            field = state.active_scalar_field  # type: ignore[attr-defined]
-            step: int = int(state.active_step)  # type: ignore[attr-defined]
+            field = state.active_scalar_field  
+            step: int = int(state.active_step)  
             _legend, stats, scalar_bar = redraw_xdmf(
                 plotter, ctrl, path, xdmf_meta,
                 dark_mode=state.dark_mode,
@@ -477,4 +467,4 @@ def select_color_scheme(
             state.mesh_stats = stats
             state.scalar_bar = scalar_bar
     finally:
-        state.trame__busy = False  # type: ignore[attr-defined]
+        state.trame__busy = False  

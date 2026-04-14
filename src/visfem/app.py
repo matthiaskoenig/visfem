@@ -242,15 +242,7 @@ class VisfemApp(TrameApp):
             self._autoplay_task = asyncio.ensure_future(self._autoplay_loop())
 
     async def _autoplay_loop(self) -> None:
-        """Async task: advance one step at a time until stopped or end.
-
-        Running inside Trame's aiohttp event loop means ctrl.view_update() and
-        state writes are in the correct context.  However, state changes made
-        inside the task are NOT automatically pushed to the client the way they
-        are after a normal RPC callback — we must use `with self.state:` to
-        explicitly flush dirty variables (active_step, scalar_bar, trame__busy,
-        …) so the slider and time label update in real time.
-        """
+        """Advance one step at a time until stopped or end."""
         try:
             while self.state.autoplay:
                 step = int(self.state.active_step)
@@ -262,18 +254,9 @@ class VisfemApp(TrameApp):
                     self.plotter, self.ctrl, self.state,
                     self._project_metadata, self._xdmf_meta, next_step,
                 )
-                # Flush all dirty state variables to connected clients.
-                # Without this, active_step / trame__busy etc. accumulate and
-                # are only pushed when the next WebSocket message arrives
-                # (e.g. the user clicks Stop), making the slider appear frozen.
                 with self.state:
                     pass
-                # Push the updated VTK scene after flushing state — the two
-                # channels are independent and must both be triggered explicitly
-                # inside an async task.
                 self.ctrl.view_update()
-                # Yield to the event loop so Trame can send the queued messages
-                # (VTK scene + state) to the browser before the next render.
                 await asyncio.sleep(0.15)
         finally:
             self.state.autoplay = False

@@ -235,7 +235,7 @@ def plot_fiber_orientation(subsample: int = 5) -> None:
     submesh["Fiber"] = mesh.cell_data["Fiber"][cell_idx]
     glyphs = submesh.glyph(orient="Fiber", scale=False, factor=1.5)
     plotter = pv.Plotter()
-    plotter.add_mesh(mesh, opacity=0.08, color="lightgray", show_edges=False)
+    plotter.add_mesh(mesh, opacity=0.5, color="darkgray", show_edges=False)
     plotter.add_mesh(glyphs, color="red")
     plotter.add_title(f"Fiber orientation (1 in {subsample} cells)", font_size=9)
     plotter.show()

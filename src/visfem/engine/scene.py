@@ -34,8 +34,7 @@ _FIELD_LABELS: dict[str, str] = {
     "ActiveStress": "active stress (Pa)",
 }
 
-# Ordered list of selectable scalar fields for the tibia simulation dataset.
-# Each entry is {name, label} as consumed by the UI field selector.
+# Ordered list of selectable scalar fields for the tibia simulation dataset
 TIBIA_SIM_FIELDS: list[dict[str, str]] = [
     {"name": "vonMises_stress",           "label": _FIELD_LABELS["vonMises_stress"]},
     {"name": "vonMises_equivalent_strain","label": _FIELD_LABELS["vonMises_equivalent_strain"]},
@@ -101,16 +100,12 @@ def apply_opacity(plotter: pv.Plotter, opacity: float) -> None:
 
 
 def push_scene(plotter: pv.Plotter, ctrl: object, reset_camera: bool = True) -> None:
-    """Flush VTK pipeline and push the complete scene to vtk.js.
-
-    Pass reset_camera=False when navigating timesteps so the user's current
-    view is preserved between steps.
-    """
+    """Flush VTK pipeline and push the complete scene to vtk.js."""
     plotter.render()
     if reset_camera:
         plotter.reset_camera()
-        ctrl.view_push_camera()  # type: ignore[attr-defined]
-    ctrl.view_update()  # type: ignore[attr-defined]
+        ctrl.view_push_camera()  
+    ctrl.view_update()  
 
 
 # ---- Renderers ----

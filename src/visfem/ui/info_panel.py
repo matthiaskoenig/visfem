@@ -1,4 +1,4 @@
-"""Metadata info panel UI fragment for VisFEM."""
+"""Metadata info panel UI for VisFEM."""
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
@@ -68,7 +68,14 @@ def build_info_panel() -> None:
                     v3.VDivider(style="margin-bottom: 10px;")
 
                     # ---- PI ----
-                    _row("mdi-account-outline", "PI", "{{ active_meta.pi }}")
+                    with html.Div(style="display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-start;"):
+                        v3.VIcon("mdi-account-outline", size="14", style="opacity: 0.5; margin-top: 2px; flex-shrink: 0;")
+                        with html.Div():
+                            html.Div(
+                                "PI(s)",
+                                style="font-size: 0.68rem; opacity: 0.45; text-transform: none; letter-spacing: 0.08em; margin-bottom: 2px;",
+                            )
+                            html.Div("{{ active_meta.pi }}", style="font-size: 0.76rem;")
 
                     # ---- Institution ----
                     with html.Div(style="display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-start;"):
@@ -143,10 +150,10 @@ def build_info_panel() -> None:
                             with html.Div(
                                 v_for="item in legend_items",
                                 key="item.names[0]",
-                                style="display: flex; align-items: flex-start; gap: 6px;",
+                                style="display: flex; align-items: center; gap: 6px;",
                             ):
                                 html.Span(
-                                    style=("'width:10px; height:10px; border-radius:50%; flex-shrink:0; margin-top:3px; background:' + item.color",),
+                                    style=("'width:10px; height:10px; border-radius:50%; flex-shrink:0; background:' + item.color",),
                                 )
                                 with html.Div():
                                     with html.Div(

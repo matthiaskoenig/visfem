@@ -1,4 +1,4 @@
-"""Toolbar UI fragment for VisFEM."""
+"""Toolbar UI for VisFEM."""
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
@@ -7,7 +7,7 @@ def build_toolbar(
     toggle_theme: object,
     toggle_xr: object,
 ) -> None:
-    """Build the main toolbar with theme, camera, screenshot and VR buttons."""
+    """Build the main toolbar with theme and VR buttons."""
     v3.VProgressLinear(
         indeterminate=True, absolute=True, bottom=True,
         active=("trame__busy",), color="#00897b", height=2,
@@ -23,13 +23,6 @@ def build_toolbar(
                 variant="text", density="compact",
                 click=toggle_theme, v_bind="props", classes="ml-3",
             )
-    # with v3.VTooltip(text="Screenshot", location="bottom"):
-    #     with v3.Template(v_slot_activator="{ props }"):
-    #         v3.VBtn(
-    #             icon="mdi-camera", variant="text", density="compact",
-    #             click="utils.download('visfem.png', trigger('screenshot'), 'image/png')",
-    #             v_bind="props", classes="ml-3",
-    #         )
     with v3.VTooltip(text="Toggle VR", location="bottom"):
         with v3.Template(v_slot_activator="{ props }"):
             v3.VBtn(

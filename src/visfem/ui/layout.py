@@ -40,6 +40,10 @@ def build_ui(
 
         with layout.toolbar as toolbar:
             toolbar.density = "compact"
+            toolbar.style = (
+                "background-color: color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%);"
+            )
+            toolbar.elevation = 0
             build_toolbar(on_toggle_theme, on_toggle_xr)
 
         with layout.content:

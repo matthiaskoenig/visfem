@@ -22,15 +22,12 @@ _TIME_LABEL_STYLE = (
     "text-align:right; font-variant-numeric:tabular-nums;"
 )
 
-# Vue template expression for the time/step label — {{ }} is the correct syntax
-# for dynamic text content in html.* elements (tuples only work for prop values).
 _TIME_LABEL_EXPR = (
     "{{ step_times.length > 0"
     " ? 't = ' + Number(step_times[active_step]).toFixed(1)"
     " : (active_step + 1) + ' / ' + n_steps }}"
 )
 
-# JS expression for the gradient strip background — tuple makes it a bound prop.
 _GRADIENT_STYLE = (
     "'flex:1; height:10px; border-radius:4px; background:' + scalar_bar.gradient",
 )
@@ -69,8 +66,6 @@ def build_scalar_bar(on_select_step: object, on_toggle_autoplay: object) -> None
                 click=(on_select_step, "[active_step - 1]"),
             )
 
-            # Slider: v_model updates active_step for visual feedback while
-            # dragging; `end` fires only on release to avoid queuing renders.
             v3.VSlider(
                 v_model=("active_step", 0),
                 min=0, max=("n_steps - 1",), step=1,
@@ -89,7 +84,6 @@ def build_scalar_bar(on_select_step: object, on_toggle_autoplay: object) -> None
                 click=(on_select_step, "[active_step + 1]"),
             )
 
-            # One-item tuple → Trame/Vue evaluates it as a bound JS expression.
             html.Span(_TIME_LABEL_EXPR, style=_TIME_LABEL_STYLE)
 
         # ---- Scalar bar (continuous scalar field only) ----
@@ -111,8 +105,7 @@ def build_scalar_bar(on_select_step: object, on_toggle_autoplay: object) -> None
                         "font-variant-numeric:tabular-nums;"
                     ),
                 )
-                # Trailing comma is required — makes this a tuple (JS expression),
-                # not a plain Python string.
+                
                 html.Div(style=_GRADIENT_STYLE)
                 html.Span(
                     "{{ scalar_bar.max_label }}",

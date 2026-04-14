@@ -1,4 +1,4 @@
-"""Dataset selection panel UI fragment for VisFEM."""
+"""Dataset selection panel UI for VisFEM."""
 from visfem.engine.discovery import dataset_dir, discover_xdmf, xdmf_display_name
 from visfem.models import ProjectMetadata
 from trame.widgets import html

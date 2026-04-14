@@ -16,9 +16,6 @@ _BAR_BASE_LIGHT = (
     "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(0,0,0,0.08); "
     "border-radius:8px; padding:0 12px;"
 )
-# Explicit fixed width to avoid triggering ResizeObserver loops from dynamic relayout.
-# Palette button is always visible (+70px added to all cases vs previous widths).
-# 340px base → +70px for heart fiber toggle → +70px for field selector.
 _BAR_STYLE = (
     f"(dark_mode ? '{_BAR_BASE_DARK}' : '{_BAR_BASE_LIGHT}')"
     " + 'width:'"

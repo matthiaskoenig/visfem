@@ -2,7 +2,7 @@
 
 Two distinct metadata types:
   MeshMetadata     -- auto-generated from mesh files, cached as .meta.json sidecars
-  ProjectMetadata  -- hand-authored per dataset, stored in data/metadata/*.json
+  ProjectMetadata  -- hand-authored per dataset, stored in data/datasets/**/*.json
 """
 
 import hashlib
@@ -26,9 +26,9 @@ class FieldInfo(BaseModel):
 class MeshMetadata(BaseModel):
     """Auto-generated metadata for a single mesh file.
 
-    Cached as a .meta.json sidecar next to the source file.
-    Sidecars are automatically invalidated and regenerated when the
-    schema changes, detected via schema_hash.
+    Cached as a .meta.json sidecar to avoid re-parsing the (potentially large)
+    mesh file on every startup. Sidecars are automatically invalidated and
+    regenerated when the schema changes, detected via schema_hash.
     """
     schema_hash: str = ""
     format: str           # fenics_xdmf | timeseries_xdmf | pyvista_native | meshio_fallback
@@ -63,7 +63,7 @@ MESH_METADATA_HASH: str = compute_mesh_metadata_hash()
 
 # ===========================================================================
 # ProjectMetadata
-# Hand-authored per dataset, stored in data/metadata/*.json.
+# Hand-authored per dataset, stored in data/datasets/**/*.json.
 # ===========================================================================
 
 class BiologicalScale(StrEnum):

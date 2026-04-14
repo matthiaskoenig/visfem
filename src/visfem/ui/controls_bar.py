@@ -17,20 +17,36 @@ _BAR_BASE_LIGHT = (
     "border-radius:8px; padding:0 12px;"
 )
 # Explicit fixed width to avoid triggering ResizeObserver loops from dynamic relayout.
-# 270px base → +70px for heart fiber toggle → +70px for field selector.
+# Palette button is always visible (+70px added to all cases vs previous widths).
+# 340px base → +70px for heart fiber toggle → +70px for field selector.
 _BAR_STYLE = (
     f"(dark_mode ? '{_BAR_BASE_DARK}' : '{_BAR_BASE_LIGHT}')"
     " + 'width:'"
     " + ((available_scalar_fields && available_scalar_fields.length > 1)"
-    "    ? (active_dataset === 'heart' ? '410px' : '340px')"
-    "    : (active_dataset === 'heart' ? '340px' : '270px'))"
+    "    ? (active_dataset === 'heart' ? '480px' : '410px')"
+    "    : (active_dataset === 'heart' ? '410px' : '340px'))"
     " + ';'",
 )
 
 _DIVIDER_STYLE = "width:1px; height:20px; background:rgba(255,255,255,0.12); flex-shrink:0;"
 
+# Swatch dot shown in the palette/colormap menu items.
+_SWATCH_STYLE = (
+    "display:inline-block; width:10px; height:10px; "
+    "border-radius:50%; flex-shrink:0;"
+)
+# Gradient strip shown in the colormap menu items.
+_GRADIENT_STYLE = (
+    "display:inline-block; width:60px; height:10px; "
+    "border-radius:3px; flex-shrink:0;"
+)
 
-def build_controls_bar(on_reset_camera: object, on_select_scalar_field: object) -> None:
+
+def build_controls_bar(
+    on_reset_camera: object,
+    on_select_scalar_field: object,
+    on_select_color_scheme: object,
+) -> None:
     """Build the centered floating controls bar as a single unified pill."""
     with html.Div(style=_BAR_STYLE):
 
@@ -113,3 +129,81 @@ def build_controls_bar(on_reset_camera: object, on_select_scalar_field: object) 
                                 "{{ field.label }}",
                                 style="font-size:0.82rem;",
                             )
+
+        # ---- Color palette / colormap picker (always visible) ----
+        html.Div(style=_DIVIDER_STYLE)
+        with v3.VMenu(location="bottom", max_height=280):
+            with v3.Template(v_slot_activator="{ props }"):
+                with v3.VTooltip(text="Color palette", location="bottom"):
+                    with v3.Template(v_slot_activator="{ props: tProps }"):
+                        v3.VBtn(
+                            icon="mdi-palette-outline",
+                            variant="text", density="compact", size="small",
+                            disabled=("active_dataset === null",),
+                            v_bind="{ ...props, ...tProps }",
+                        )
+
+            # ---- Categorical palette options (shown when no scalar_bar is active) ----
+            with v3.VList(
+                density="compact", nav=True,
+                v_if="scalar_bar === null || scalar_bar === undefined",
+            ):
+                with html.Div(
+                    v_for="palette in categorical_palette_meta",
+                    key="palette.name",
+                ):
+                    with v3.VListItem(
+                        density="compact",
+                        click=(on_select_color_scheme, "[palette.name]"),
+                        active=("active_categorical_palette === palette.name",),
+                        active_color="#00897b",
+                    ):
+                        with v3.Template(v_slot_title=""):
+                            with html.Div(
+                                style="display:flex; align-items:center; gap:6px;",
+                            ):
+                                html.Span(
+                                    "{{ palette.label }}",
+                                    style="font-size:0.82rem; min-width:52px;",
+                                )
+                                with html.Div(
+                                    style="display:flex; gap:3px;",
+                                ):
+                                    with html.Div(
+                                        v_for="(swatch, i) in palette.swatches",
+                                        key="i",
+                                    ):
+                                        html.Div(
+                                            style=(
+                                                f"'{_SWATCH_STYLE} background:' + swatch + ';'",
+                                            ),
+                                        )
+
+            # ---- Continuous colormap options (shown when scalar_bar is active) ----
+            with v3.VList(
+                density="compact", nav=True,
+                v_if="scalar_bar !== null && scalar_bar !== undefined",
+            ):
+                with html.Div(
+                    v_for="cmap in continuous_cmap_meta",
+                    key="cmap.name",
+                ):
+                    with v3.VListItem(
+                        density="compact",
+                        click=(on_select_color_scheme, "[cmap.name]"),
+                        active=("active_continuous_cmap === cmap.name",),
+                        active_color="#00897b",
+                    ):
+                        with v3.Template(v_slot_title=""):
+                            with html.Div(
+                                style="display:flex; align-items:center; gap:6px;",
+                            ):
+                                html.Span(
+                                    "{{ cmap.label }}",
+                                    style="font-size:0.82rem; min-width:52px;",
+                                )
+                                html.Div(
+                                    style=(
+                                        f"'{_GRADIENT_STYLE} background:' + cmap.gradient + ';'",
+                                    ),
+                                )

@@ -11,7 +11,11 @@ from vtkmodules.vtkRenderingCore import vtkActor
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
 from visfem.engine.discovery import dataset_dir, discover_xdmf, group_by_organ_system, load_project_metadata
 from visfem.engine.scene import apply_opacity
-from visfem.engine.selection import select_dataset, select_patient, select_scalar_field, select_step, select_xdmf
+from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
+from visfem.engine.selection import (
+    select_color_scheme, select_dataset, select_patient,
+    select_scalar_field, select_step, select_xdmf,
+)
 from visfem.log import get_logger
 from visfem.mesh import get_metadata
 from visfem.models import MeshMetadata
@@ -53,6 +57,7 @@ class VisfemApp(TrameApp):
             on_select_patient=self.select_patient,
             on_select_scalar_field=self.select_scalar_field,
             on_select_step=self.select_step,
+            on_select_color_scheme=self.select_color_scheme,
             on_toggle_autoplay=self.toggle_autoplay,
             on_toggle_theme=self.toggle_theme,
             on_reset_camera=self.reset_camera,
@@ -97,6 +102,10 @@ class VisfemApp(TrameApp):
             "active_step": 0,
             "step_times": [],
             "autoplay": False,
+            "active_categorical_palette": "paired",
+            "active_continuous_cmap": "viridis",
+            "categorical_palette_meta": CATEGORICAL_META,
+            "continuous_cmap_meta": CONTINUOUS_META,
         })
 
     # ---- Theme ----
@@ -198,6 +207,19 @@ class VisfemApp(TrameApp):
         select_step(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, int(step),
+        )
+
+    def select_color_scheme(self, name: str) -> None:
+        """Update the active palette/colormap and re-render the current scene."""
+        if self.state.active_dataset is None:
+            return
+        if self.state.scalar_bar is not None:
+            self.state.active_continuous_cmap = name
+        else:
+            self.state.active_categorical_palette = name
+        select_color_scheme(
+            self.plotter, self.ctrl, self.state,
+            self._project_metadata, self._xdmf_meta,
         )
 
     # ---- Autoplay ----

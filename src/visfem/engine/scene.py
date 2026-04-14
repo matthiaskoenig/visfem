@@ -7,8 +7,9 @@ from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.engine.colors import (
     BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP,
-    COLORS_PAIRED, region_colors,
+    region_colors,
 )
+from visfem.engine.palettes import CATEGORICAL_PALETTES, CONTINUOUS_CMAPS
 from visfem.engine.discovery import ircadb_organ_names, format_organ_name
 from visfem.log import get_logger
 from visfem.mesh import load_mesh, parse_labels_file
@@ -16,22 +17,6 @@ from visfem.models import MeshMetadata, ProjectMetadata
 
 logger = get_logger(__name__)
 
-
-# ---- Colormap CSS gradients (pre-built for the scalar bar HTML overlay) ----
-
-_CMAP_GRADIENTS: dict[str, str] = {
-    "turbo": (
-        "linear-gradient(to right, "
-        "#30123b 0%, #4145ab 8%, #4675ed 17%, #39a2fc 25%, "
-        "#1bcfd4 38%, #24eca6 50%, #61fc6c 62%, "
-        "#a4fc3b 70%, #f3c63a 80%, #fe9b2d 88%, "
-        "#f36315 93%, #7a0403 100%)"
-    ),
-    "viridis": (
-        "linear-gradient(to right, "
-        "#440154 0%, #3b528b 25%, #21918c 50%, #5ec962 75%, #fde725 100%)"
-    ),
-}
 
 # Human-readable labels for known field names
 _FIELD_LABELS: dict[str, str] = {
@@ -85,7 +70,7 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
         "field_label": _FIELD_LABELS.get(field, field.replace("_", " ")),
         "min_label": _fmt_value(clim[0]),
         "max_label": _fmt_value(clim[1]),
-        "gradient": _CMAP_GRADIENTS.get(cmap, "linear-gradient(to right, #222, #fff)"),
+        "gradient": CONTINUOUS_CMAPS.get(cmap, "linear-gradient(to right, #222, #fff)"),
     }
 
 
@@ -136,6 +121,7 @@ def redraw_xdmf(
     field: str | None = None,
     step: int = 0,
     reset_camera: bool = True,
+    cmap: str = "viridis",
 ) -> tuple[list[dict[str, str]], dict[str, int] | None, dict | None]:
     """Load and render one step of an XDMF mesh.
 
@@ -158,7 +144,7 @@ def redraw_xdmf(
     plotter.add_mesh(
         mesh,
         scalars=field,
-        cmap="viridis",
+        cmap=cmap,
         show_edges=False,
         copy_mesh=True,
         show_scalar_bar=False,
@@ -172,7 +158,7 @@ def redraw_xdmf(
     if field:
         try:
             lo, hi = mesh.get_data_range(field)
-            scalar_bar = _scalar_bar_dict(field, [float(lo), float(hi)], "viridis")
+            scalar_bar = _scalar_bar_dict(field, [float(lo), float(hi)], cmap)
         except Exception:
             pass
 
@@ -185,6 +171,7 @@ def redraw_ircadb(
     patient_dir: Path,
     dark_mode: bool,
     opacity: float,
+    palette: list[str] | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, int] | None]:
     """Load all organ meshes for a patient and render as one merged actor.
 
@@ -210,7 +197,8 @@ def redraw_ircadb(
             logger.error(f"Failed to load '{vtk_path.name}': {e}")
 
     n = len(parts)
-    colors = region_colors(n, COLORS_PAIRED)
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    colors = region_colors(n, _palette)
     stats: dict[str, int] | None = None
     if parts:
         merged = pv.merge(parts)
@@ -243,6 +231,7 @@ def redraw_heart(
     dataset_dir: Path,
     dark_mode: bool,
     opacity: float,
+    palette: list[str] | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, int] | None, vtkActor | None]:
     """Render the heart mesh colored by material region.
 
@@ -272,7 +261,8 @@ def redraw_heart(
         [{mid: i for i, mid in enumerate(unique_ids)}[mid] for mid in material_ids],
         dtype=np.int32,
     )
-    colors = region_colors(len(unique_ids), COLORS_PAIRED)
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    colors = region_colors(len(unique_ids), _palette)
 
     clear_scene(plotter, dark_mode)
     plotter.add_mesh(
@@ -320,6 +310,7 @@ def redraw_heart_ep(
     dataset_dir: Path,
     dark_mode: bool,
     opacity: float,
+    palette: list[str] | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, int] | None]:
     """Render the EP heart surface colored by EP material region."""
     ep_path = dataset_dir / "surfaces" / "ep_surface.vtp"
@@ -357,7 +348,8 @@ def redraw_heart_ep(
         [{mid: i for i, mid in enumerate(unique_ids)}[mid] for mid in material_ids],
         dtype=np.int32,
     )
-    colors = region_colors(len(unique_ids), COLORS_PAIRED)
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    colors = region_colors(len(unique_ids), _palette)
 
     clear_scene(plotter, dark_mode)
     plotter.add_mesh(
@@ -390,6 +382,7 @@ def redraw_tibia_mesh(
     dataset_dir: Path,
     dark_mode: bool,
     opacity: float,
+    palette: list[str] | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, int] | None]:
     """Render Tibia_Mesh.vtk colored by PartId region."""
     mesh_path = dataset_dir / "Tibia_Mesh.vtk"
@@ -415,7 +408,8 @@ def redraw_tibia_mesh(
         [{pid: i for i, pid in enumerate(unique_ids)}[pid] for pid in part_ids],
         dtype=np.int32,
     )
-    colors = region_colors(len(unique_ids), COLORS_PAIRED)
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    colors = region_colors(len(unique_ids), _palette)
 
     clear_scene(plotter, dark_mode)
     plotter.add_mesh(
@@ -450,9 +444,6 @@ _CLAES_LABELS: dict[int, str] = {
     5: "Bone resorption",
 }
 
-# Clinically meaningful colors: red=bad, yellow=transition, green=good, grey=lazy/resorption
-_CLAES_COLORS: list[str] = ["#d62728", "#ff7f0e", "#2ca02c", "#bcbd22", "#7f7f7f"]
-
 
 def redraw_tibia_simulation(
     plotter: pv.Plotter,
@@ -461,6 +452,8 @@ def redraw_tibia_simulation(
     dark_mode: bool,
     opacity: float,
     field: str = "vonMises_stress",
+    palette: list[str] | None = None,
+    cmap: str = "turbo",
 ) -> tuple[list[dict[str, str]], dict[str, int] | None, dict | None]:
     """Render Tibia_Simulation.vtk with the given scalar field.
 
@@ -484,13 +477,14 @@ def redraw_tibia_simulation(
 
     if field == "Claes_window":
         # Categorical: map integer zone values to a discrete colormap with a legend.
+        _palette = palette if palette is not None else CATEGORICAL_PALETTES["clinical"]
         zones = mesh.cell_data["Claes_window"].astype(int)
         zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
         zone_map = {z: i for i, z in enumerate(zone_ids)}
         mesh.cell_data["_zone_id"] = np.array(
             [zone_map[int(z)] for z in zones], dtype=np.int32
         )
-        colors = [_CLAES_COLORS[z - 1] for z in zone_ids]
+        colors = region_colors(len(zone_ids), _palette)
         n = len(zone_ids)
         plotter.add_mesh(
             mesh,
@@ -507,8 +501,8 @@ def redraw_tibia_simulation(
         apply_opacity(plotter, opacity)
         push_scene(plotter, ctrl)
         legend = [
-            {"names": [_CLAES_LABELS.get(z, f"Zone {z}")], "color": _CLAES_COLORS[z - 1]}
-            for z in zone_ids
+            {"names": [_CLAES_LABELS.get(z, f"Zone {z}")], "color": colors[i]}
+            for i, z in enumerate(zone_ids)
         ]
         return legend, stats, None
     else:
@@ -518,7 +512,7 @@ def redraw_tibia_simulation(
         plotter.add_mesh(
             mesh,
             scalars=field,
-            cmap="turbo",
+            cmap=cmap,
             clim=clim,
             opacity=opacity,
             show_edges=False,
@@ -527,5 +521,5 @@ def redraw_tibia_simulation(
         )
         apply_opacity(plotter, opacity)
         push_scene(plotter, ctrl)
-        scalar_bar = _scalar_bar_dict(field, clim, "turbo")
+        scalar_bar = _scalar_bar_dict(field, clim, cmap)
         return [], stats, scalar_bar

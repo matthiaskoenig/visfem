@@ -20,9 +20,6 @@ def scheme_to_hex(scheme_id: int) -> list[str]:
     return colors
 
 
-COLORS_PAIRED = scheme_to_hex(60)  # qual_paired (11 colors) for all region renders
-
-
 def region_colors(n: int, palette: list[str]) -> list[str]:
     """Return n colors cycled from palette."""
     return [palette[i % len(palette)] for i in range(n)]

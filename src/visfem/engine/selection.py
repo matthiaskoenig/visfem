@@ -272,6 +272,12 @@ def select_patient(
     state.active_dataset = "ircadb"  # type: ignore[attr-defined]
     state.active_patient = patient  # type: ignore[attr-defined]
     state.active_xdmf = None  # type: ignore[attr-defined]
+    state.available_scalar_fields = []  # type: ignore[attr-defined]
+    state.active_scalar_field = None  # type: ignore[attr-defined]
+    state.scalar_bar = None  # type: ignore[attr-defined]
+    state.n_steps = 1  # type: ignore[attr-defined]
+    state.active_step = 0  # type: ignore[attr-defined]
+    state.step_times = []  # type: ignore[attr-defined]
     opacity = float(state.ctrl_opacity)  # type: ignore[attr-defined]
     state.trame__busy = True  # type: ignore[attr-defined]
     try:

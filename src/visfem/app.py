@@ -178,6 +178,7 @@ class VisfemApp(TrameApp):
 
     def select_patient(self, patient: int) -> None:
         """Load and render a specific IRCADb patient."""
+        self.state.autoplay = False  # stop any running autoplay before switching
         select_patient(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, patient,

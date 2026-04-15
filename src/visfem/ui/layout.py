@@ -1,4 +1,5 @@
 """Top-level UI assembly for VisFEM."""
+
 from typing import Any
 
 import pyvista as pv
@@ -40,31 +41,38 @@ def build_ui(
 
         with layout.toolbar as toolbar:
             toolbar.density = "compact"
-            toolbar.style = (
-                "background-color: color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%);"
-            )
+            toolbar.style = "background-color: color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%);"
             toolbar.elevation = 0
             build_toolbar(on_toggle_theme, on_toggle_xr)
 
         with layout.content:
-            with v3.VContainer(fluid=True, classes="pa-0 fill-height", style="position: relative;"):
-                with VtkLocalView(plotter.render_window, ref="view", camera="camera") as view:
-                    ctrl.reset_camera = view.reset_camera  
-                    ctrl.view_push_camera = view.push_camera  
-                    ctrl.view_update = view.update  
+            with v3.VContainer(
+                fluid=True, classes="pa-0 fill-height", style="position: relative;"
+            ):
+                with VtkLocalView(
+                    plotter.render_window, ref="view", camera="camera"
+                ) as view:
+                    ctrl.reset_camera = view.reset_camera
+                    ctrl.view_push_camera = view.push_camera
+                    ctrl.view_update = view.update
                     webxr_helper = VtkWebXRHelper(
                         draw_controllers_ray=True,
                         enter_xr=(on_enter_xr,),
                         exit_xr=(on_exit_xr,),
                     )
-                    ctrl.start_xr = webxr_helper.start_xr  
-                    ctrl.stop_xr = webxr_helper.stop_xr  
+                    ctrl.start_xr = webxr_helper.start_xr
+                    ctrl.stop_xr = webxr_helper.stop_xr
 
                 build_dataset_panel(
-                    organ_groups, ircadb_patients,
-                    on_select_dataset, on_select_xdmf, on_select_patient,
+                    organ_groups,
+                    ircadb_patients,
+                    on_select_dataset,
+                    on_select_xdmf,
+                    on_select_patient,
                 )
-                build_controls_bar(on_reset_camera, on_select_scalar_field, on_select_color_scheme)
+                build_controls_bar(
+                    on_reset_camera, on_select_scalar_field, on_select_color_scheme
+                )
                 build_info_panel()
                 build_scalar_bar(on_select_step, on_toggle_autoplay)
 

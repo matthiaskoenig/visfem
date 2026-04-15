@@ -24,24 +24,22 @@ from visfem.mesh import get_metadata, load_mesh
 
 
 # Paths
-_DATA_BASE   = Path(__file__).parents[1] / "data" / "fem_data"
-HEART_DIR    = _DATA_BASE / "heart"
+_DATA_BASE = Path(__file__).parents[1] / "data" / "datasets"
 
 # Static meshes
-MESH_PATH    = HEART_DIR / "M.vtu"
-EP_MESH_PATH = HEART_DIR / "EP.vtu"
-SURFACE_DIR  = HEART_DIR / "surfaces"
+MESH_PATH = _DATA_BASE / "heart" / "M.vtu"
+EP_MESH_PATH = _DATA_BASE / "heart_ep" / "EP.vtu"
+SURFACE_DIR = _DATA_BASE / "heart_ep" / "surfaces"
 
 # STL surfaces
 SURFACES: dict[str, Path] = {p.stem: p for p in sorted(SURFACE_DIR.glob("*.stl"))}
 
 # IV timeseries
-PVD_PATH = HEART_DIR / "IV.pvd"
-VTU_DIR  = HEART_DIR / "IV_vtu"
+PVD_PATH = _DATA_BASE / "heart_iv" / "IV.pvd"
+VTU_DIR = _DATA_BASE / "heart_iv" / "IV_vtu"
 
 # Steps to sample for IV range / topology checks
 IV_SAMPLE_STEPS = [0, 100, 400, 800, 1200, 1600]
-
 
 
 # Material ID tables
@@ -62,25 +60,25 @@ MATERIAL_NAMES: dict[int, str] = {
 }
 
 _MATERIAL_COLORS: dict[int, str] = {
-    30: "#c0152a",   # LV
-    31: "#e8603c",   # RV
-    32: "#d45087",   # RA
-    33: "#f4a261",   # LA
-    34: "#9b2d7f",   # pulmonary aortic valve
-    35: "#c77dff",   # aortic valve
-    36: "#e63e8c",   # tricuspid valve
-    37: "#ff6b9d",   # mitral valve
-    38: "#ffb347",   # orifices
-    39: "#4363d8",   # vessels
-    60: "#f9c0c0",   # pericardium inner
-    61: "#ffe0d0",   # pericardium outer
+    30: "#c0152a",  # LV
+    31: "#e8603c",  # RV
+    32: "#d45087",  # RA
+    33: "#f4a261",  # LA
+    34: "#9b2d7f",  # pulmonary aortic valve
+    35: "#c77dff",  # aortic valve
+    36: "#e63e8c",  # tricuspid valve
+    37: "#ff6b9d",  # mitral valve
+    38: "#ffb347",  # orifices
+    39: "#4363d8",  # vessels
+    60: "#f9c0c0",  # pericardium inner
+    61: "#ffe0d0",  # pericardium outer
 }
 
 # EP.vtu electrophysiology mesh
 EP_MATERIAL_NAMES: dict[int, str] = {
-    1:  "Ventricle endocardium",
-    2:  "Ventricle myocardium",
-    3:  "Ventricle epicardium",
+    1: "Ventricle endocardium",
+    2: "Ventricle myocardium",
+    3: "Ventricle epicardium",
     32: "Right atrial bulk tissue",
     33: "Left atrial bulk tissue",
     72: "Crista terminalis",
@@ -95,24 +93,25 @@ EP_MATERIAL_NAMES: dict[int, str] = {
 }
 
 _EP_MATERIAL_COLORS: dict[int, str] = {
-    1:  "#c0152a",   # ventricle endocardium
-    2:  "#e8603c",   # ventricle myocardium
-    3:  "#f4a261",   # ventricle epicardium
-    32: "#d45087",   # RA bulk
-    33: "#ff6b9d",   # LA bulk
-    72: "#4363d8",   # crista terminalis
-    73: "#f032e6",   # sinus node
-    74: "#9b2d7f",   # pectinate muscles
-    75: "#42d4f4",   # Bachmann bundle
-    76: "#3cb44b",   # middle posterior bridge
-    77: "#bfef45",   # lower posterior bridge
-    78: "#469990",   # coronary sinus bridge
-    79: "#ffb347",   # atrial appendage
-    80: "#c77dff",   # inferior isthmus
+    1: "#c0152a",  # ventricle endocardium
+    2: "#e8603c",  # ventricle myocardium
+    3: "#f4a261",  # ventricle epicardium
+    32: "#d45087",  # RA bulk
+    33: "#ff6b9d",  # LA bulk
+    72: "#4363d8",  # crista terminalis
+    73: "#f032e6",  # sinus node
+    74: "#9b2d7f",  # pectinate muscles
+    75: "#42d4f4",  # Bachmann bundle
+    76: "#3cb44b",  # middle posterior bridge
+    77: "#bfef45",  # lower posterior bridge
+    78: "#469990",  # coronary sinus bridge
+    79: "#ffb347",  # atrial appendage
+    80: "#c77dff",  # inferior isthmus
 }
 
 
 # Inspection static meshes (M.vtu / EP.vtu / surfaces)
+
 
 def print_metadata() -> None:
     """Print metadata summary for M.vtu."""
@@ -135,7 +134,9 @@ def print_material_distribution() -> None:
     print(f"\nMaterial distribution ({mesh.n_cells} total cells):")
     for mat_id, cell_count in zip(unique_ids, cell_counts):
         name = MATERIAL_NAMES.get(int(mat_id), "unknown")
-        print(f"  MaterialID {int(mat_id):>3}  {name:<35}  {cell_count:>6} cells  ({100*cell_count/mesh.n_cells:.1f}%)")
+        print(
+            f"  MaterialID {int(mat_id):>3}  {name:<35}  {cell_count:>6} cells  ({100*cell_count/mesh.n_cells:.1f}%)"
+        )
 
 
 def print_ep_material_distribution() -> None:
@@ -146,7 +147,9 @@ def print_ep_material_distribution() -> None:
     print(f"\nEP material distribution ({ep_mesh.n_cells} total cells):")
     for mat_id, cell_count in zip(unique_ids, cell_counts):
         name = EP_MATERIAL_NAMES.get(int(mat_id), "unknown")
-        print(f"  MaterialID {int(mat_id):>3}  {name:<30}  {cell_count:>9} cells  ({100*cell_count/ep_mesh.n_cells:.2f}%)")
+        print(
+            f"  MaterialID {int(mat_id):>3}  {name:<30}  {cell_count:>9} cells  ({100*cell_count/ep_mesh.n_cells:.2f}%)"
+        )
 
 
 def print_surface_summary() -> None:
@@ -166,20 +169,30 @@ def print_heart_data_summary() -> None:
     m = pv.read(str(MESH_PATH))
     print(f"  points: {m.n_points}, cells: {m.n_cells}")
     print(f"  arrays: {m.array_names}")
-    for mid, cnt in zip(*np.unique(m.cell_data["Material"].astype(int), return_counts=True)):
-        print(f"    Material {int(mid):>3}  {MATERIAL_NAMES.get(int(mid), 'unknown'):<35} {cnt:>7} cells")
+    for mid, cnt in zip(
+        *np.unique(m.cell_data["Material"].astype(int), return_counts=True)
+    ):
+        print(
+            f"    Material {int(mid):>3}  {MATERIAL_NAMES.get(int(mid), 'unknown'):<35} {cnt:>7} cells"
+        )
 
     print("\n=== EP.vtu (electrophysiology volumetric mesh) ===")
     ep = pv.read(str(EP_MESH_PATH))
     print(f"  points: {ep.n_points}, cells: {ep.n_cells}")
     print(f"  arrays: {ep.array_names}")
-    for mid, cnt in zip(*np.unique(ep.cell_data["Material"].astype(int), return_counts=True)):
-        print(f"    Material {int(mid):>3}  {EP_MATERIAL_NAMES.get(int(mid), 'unknown'):<35} {cnt:>7} cells")
+    for mid, cnt in zip(
+        *np.unique(ep.cell_data["Material"].astype(int), return_counts=True)
+    ):
+        print(
+            f"    Material {int(mid):>3}  {EP_MATERIAL_NAMES.get(int(mid), 'unknown'):<35} {cnt:>7} cells"
+        )
 
     print("\n=== surfaces/ STL files (pre-extracted surfaces) ===")
     for name, path in SURFACES.items():
         mesh = pv.read(str(path))
-        print(f"  {name:<20} {mesh.n_points:>7} pts  {mesh.n_cells:>7} cells  arrays={mesh.array_names}")
+        print(
+            f"  {name:<20} {mesh.n_points:>7} pts  {mesh.n_cells:>7} cells  arrays={mesh.array_names}"
+        )
 
     print("\n=== ep_surface.vtp (extracted EP outer surface) ===")
     ep_surf_path = SURFACE_DIR / "ep_surface.vtp"
@@ -187,8 +200,12 @@ def print_heart_data_summary() -> None:
         ep_surf = pv.read(str(ep_surf_path))
         print(f"  points: {ep_surf.n_points}, cells: {ep_surf.n_cells}")
         print(f"  arrays: {ep_surf.array_names}")
-        for mid, cnt in zip(*np.unique(ep_surf.cell_data["Material"].astype(int), return_counts=True)):
-            print(f"    Material {int(mid):>3}  {EP_MATERIAL_NAMES.get(int(mid), 'unknown'):<35} {cnt:>7} cells")
+        for mid, cnt in zip(
+            *np.unique(ep_surf.cell_data["Material"].astype(int), return_counts=True)
+        ):
+            print(
+                f"    Material {int(mid):>3}  {EP_MATERIAL_NAMES.get(int(mid), 'unknown'):<35} {cnt:>7} cells"
+            )
     else:
         print("  NOT FOUND. un extract_ep_surface() first")
 
@@ -217,13 +234,17 @@ def inspect_vtu_fields(vtu_path: Path) -> pv.UnstructuredGrid:
 
     console.print("\n[bold]Point data fields:")
     for name, arr in mesh.point_data.items():
-        console.print(f"  {name:<30} shape={str(arr.shape):<18} dtype={arr.dtype}  "
-                      f"min={arr.min():.4g}  max={arr.max():.4g}")
+        console.print(
+            f"  {name:<30} shape={str(arr.shape):<18} dtype={arr.dtype}  "
+            f"min={arr.min():.4g}  max={arr.max():.4g}"
+        )
 
     console.print("\n[bold]Cell data fields:")
     for name, arr in mesh.cell_data.items():
-        console.print(f"  {name:<30} shape={str(arr.shape):<18} dtype={arr.dtype}  "
-                      f"min={arr.min():.4g}  max={arr.max():.4g}")
+        console.print(
+            f"  {name:<30} shape={str(arr.shape):<18} dtype={arr.dtype}  "
+            f"min={arr.min():.4g}  max={arr.max():.4g}"
+        )
     return mesh
 
 
@@ -241,13 +262,21 @@ def check_iv_topology_consistency(
         if reference is None:
             reference = (mesh.n_points, mesh.n_cells)
             reference_points = mesh.points.copy()
-            console.print(f"  Step {step:>4}: reference  -  n_points={mesh.n_points}  n_cells={mesh.n_cells}")
+            console.print(
+                f"  Step {step:>4}: reference  -  n_points={mesh.n_points}  n_cells={mesh.n_cells}"
+            )
             continue
         assert reference_points is not None
         points_identical = np.allclose(mesh.points, reference_points)
         topology_match = (mesh.n_points, mesh.n_cells) == reference
-        status = "[green]OK[/green]" if (topology_match and points_identical) else "[red]MISMATCH[/red]"
-        console.print(f"  Step {step:>4}: {status}  -  n_points={mesh.n_points}  n_cells={mesh.n_cells}  points_identical={points_identical}")
+        status = (
+            "[green]OK[/green]"
+            if (topology_match and points_identical)
+            else "[red]MISMATCH[/red]"
+        )
+        console.print(
+            f"  Step {step:>4}: {status}  -  n_points={mesh.n_points}  n_cells={mesh.n_cells}  points_identical={points_identical}"
+        )
 
 
 def inspect_iv_field_ranges(
@@ -299,7 +328,12 @@ def plot_material_colored_per_region() -> None:
         if not mask.any():
             continue
         submesh = mesh.extract_cells(np.where(mask)[0])
-        plotter.add_mesh(submesh, color=color, label=MATERIAL_NAMES.get(mat_id, f"Material {mat_id}"), show_edges=False)
+        plotter.add_mesh(
+            submesh,
+            color=color,
+            label=MATERIAL_NAMES.get(mat_id, f"Material {mat_id}"),
+            show_edges=False,
+        )
     plotter.add_legend(bcolor="black", border=False)
     plotter.add_title("Four-chamber heart  per-region colors", font_size=9)
     plotter.show()
@@ -371,7 +405,9 @@ def plot_cavities_combined(opacity: float = 0.6) -> None:
     plotter.show()
 
 
-def plot_mesh_with_surface_overlay(surface_name: str = "epicard", opacity: float = 0.15) -> None:
+def plot_mesh_with_surface_overlay(
+    surface_name: str = "epicard", opacity: float = 0.15
+) -> None:
     """Render M.vtu colored by material with an STL surface overlaid as a ghost."""
     mesh = load_mesh(MESH_PATH)
     path = SURFACES.get(surface_name)
@@ -396,7 +432,12 @@ def plot_ep_surface_per_region() -> None:
         if not mask.any():
             continue
         submesh = surface_mesh.extract_cells(np.where(mask)[0])
-        plotter.add_mesh(submesh, color=color, label=EP_MATERIAL_NAMES.get(mat_id, f"Material {mat_id}"), show_edges=False)
+        plotter.add_mesh(
+            submesh,
+            color=color,
+            label=EP_MATERIAL_NAMES.get(mat_id, f"Material {mat_id}"),
+            show_edges=False,
+        )
     plotter.add_legend(bcolor="black", border=False)
     plotter.add_title("EP.vtu surface  per-region colors", font_size=9)
     plotter.show()
@@ -447,50 +488,42 @@ def extract_ep_surface() -> None:
     print(f"Saved: {out_path}  ({out_path.stat().st_size / 1e6:.1f} MB)")
 
 
-
 if __name__ == "__main__":
-
     # --- Basic data summary (always on) ---
     print_heart_data_summary()
 
-    
     # Inspection static meshes
-    
+
     # print_metadata()
     # print_material_distribution()
     # print_ep_material_distribution()
     # print_surface_summary()
 
-    
     # Inspection IV timeseries
-    
+
     # step_to_path = inspect_pvd()
     # inspect_vtu_fields(step_to_path[0])
     # check_iv_topology_consistency(step_to_path)
     # inspect_iv_field_ranges(step_to_path)
 
-    
     # Visualization M.vtu
-    
+
     # plot_material_colored()
     # plot_material_colored_per_region()
     # plot_single_material(30)  # Left ventricle
     # plot_fiber_orientation(subsample=5)
 
-    
     # Visualization surfaces (STL)
-    
+
     # plot_surface("epicard")
     # plot_cavities_combined()
     # plot_mesh_with_surface_overlay("epicard")
 
-    
     # Visualization EP.vtu
-    
+
     # plot_ep_surface_per_region()
     # plot_ep_single_region(73)  # Sinus node
 
-    
     # Utility
-    
-    # extract_ep_surface()
+
+    extract_ep_surface()

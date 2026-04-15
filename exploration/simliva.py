@@ -1,12 +1,15 @@
-"""Exploratory script for the SPP SimLivA dataset.
+"""Exploration script for the SPP SimLivA datasets.
 
-FEniCS XDMF files: deformation (lobule_deformation/) and perfusion
-(lobule_perfusion/: lobule_spt_p1, lobule_spt_p6, scan_64_p1).
-Run sections by uncommenting the relevant call at the bottom.
+Perfusion / deformation (lobule_perfusion/, lobule_deformation/)
+    FEniCS XDMF timeseries — scalars, vectors, deformation fields.
+
+Convergence (lobule_convergence/)
+    4 mesh resolutions of the same wedge lobule — for resolution comparison.
 """
 
 import math
 from pathlib import Path
+from typing import Literal
 
 import pyvista as pv
 
@@ -14,37 +17,44 @@ from plot_utils import animate_field, preview_field_animation  # noqa: F401
 from visfem.mesh import get_metadata, load_mesh
 
 
-# ---- Paths ----
+# Paths
 
 _DATA_BASE      = Path(__file__).parents[1] / "data" / "fem_data"
 PERFUSION_DIR   = _DATA_BASE / "simliva" / "lobule_perfusion"
 DEFORMATION_DIR = _DATA_BASE / "simliva" / "lobule_deformation"
+CONVERGENCE_DIR = _DATA_BASE / "simliva" / "lobule_convergence"
 OUTPUT_DIR      = Path(__file__).parents[1] / "data" / "results"
 
-# Discover all XDMF files that have a matching .h5 — no filenames hardcoded
-ALL_FILES: dict[str, Path] = {
+# Perfusion + deformation XDMF files
+SPP_FILES: dict[str, Path] = {
     p.stem: p
     for directory in (DEFORMATION_DIR, PERFUSION_DIR)
     for p in sorted(directory.glob("*.xdmf"))
     if p.with_suffix(".h5").exists()
 }
 
+# Convergence XDMF files (4 mesh resolutions)
+CONV_FILES: dict[str, Path] = {
+    p.stem: p
+    for p in sorted(CONVERGENCE_DIR.glob("*.xdmf"))
+    if p.with_suffix(".h5").exists()
+}
+
 
 def _grid_shape(n: int) -> tuple[int, int]:
-    """Return a tight (nrows, ncols) grid shape for n subplots, max 4 columns."""
+    """Return a tight (nrows, ncols) grid for n subplots, max 4 columns."""
     sqrt = int(math.isqrt(n))
     if sqrt * sqrt == n:
         return sqrt, sqrt
     ncols = min(n, 4)
-    nrows = -(-n // ncols)
-    return nrows, ncols
+    return -(-n // ncols), ncols
 
 
-# ---- Inspection ----
+# Inspection
 
-def print_metadata_all() -> None:
-    """Print metadata summary for all discovered SPP files."""
-    for stem, path in ALL_FILES.items():
+def print_metadata_all(files: dict[str, Path] = SPP_FILES) -> None:
+    """Print metadata summary for all files in the given dict."""
+    for stem, path in files.items():
         meta = get_metadata(path)
         print(f"\n{stem}  ({path.parent.name}/{path.name})")
         print(f"  format     : {meta.format}")
@@ -55,12 +65,12 @@ def print_metadata_all() -> None:
         print(f"  time range : {meta.times[0]:.4g} to {meta.times[-1]:.4g}")
         print(f"  fields ({len(meta.fields)}):")
         for name, info in meta.fields.items():
-            print(f"    {name:<25} center={info.center}  shape={info.shape}")
+            print(f"    {name:<35} center={info.center}  shape={info.shape}")
 
 
-def print_mesh_at_step(stem: str, step: int = 0) -> None:
+def print_mesh_at_step(stem: str, step: int = 0, files: dict[str, Path] = SPP_FILES) -> None:
     """Load one step and print mesh and field summary."""
-    path = ALL_FILES[stem]
+    path = files[stem]
     meta = get_metadata(path)
     mesh = load_mesh(path, step=step)
     timestamp = meta.times[step]
@@ -71,11 +81,11 @@ def print_mesh_at_step(stem: str, step: int = 0) -> None:
     print(f"  cell fields:  {list(mesh.cell_data.keys())}")
 
 
-# ---- Visualization ----
+# Visualization
 
-def plot_field_at_step(stem: str, field: str, step: int = 0) -> None:
+def plot_field_at_step(stem: str, field: str, step: int = 0, files: dict[str, Path] = SPP_FILES) -> None:
     """Plot a single field at a given step."""
-    path = ALL_FILES[stem]
+    path = files[stem]
     meta = get_metadata(path)
     mesh = load_mesh(path, step=step)
     timestamp = meta.times[step]
@@ -85,43 +95,36 @@ def plot_field_at_step(stem: str, field: str, step: int = 0) -> None:
     plotter.show()
 
 
-def plot_all_fields_at_step(stem: str, step: int = 0) -> None:
+def plot_all_scalar_fields(stem: str, step: int = 0, files: dict[str, Path] = SPP_FILES) -> None:
     """Plot all scalar fields at a given step in a grid layout."""
-    path = ALL_FILES[stem]
+    path = files[stem]
     meta = get_metadata(path)
     mesh = load_mesh(path, step=step)
     timestamp = meta.times[step]
 
-    scalar_fields = [
-        name for name, info in meta.fields.items()
-        if info.shape == [1]
-    ]
+    scalar_fields = [name for name, info in meta.fields.items() if info.shape == [1]]
     if not scalar_fields:
         print(f"No scalar fields found in {stem} at step {step}.")
         return
 
     nrows, ncols = _grid_shape(len(scalar_fields))
     plotter = pv.Plotter(shape=(nrows, ncols))
-
     for i, field in enumerate(scalar_fields):
         row, col = i // ncols, i % ncols
         plotter.subplot(row, col)
-        # mesh.copy() needed so each subplot can set a different active scalar independently
         plotter.add_mesh(mesh.copy(), scalars=field, show_edges=True)
         plotter.add_title(field, font_size=8)
-
     for j in range(len(scalar_fields), nrows * ncols):
         plotter.subplot(j // ncols, j % ncols)
         plotter.add_text("-", font_size=10, color="gray")
-
     plotter.link_views()
     plotter.add_title(f"{stem}  all scalar fields  t={timestamp:.4g}", font_size=8)
     plotter.show()
 
 
-def plot_field_time_evolution(stem: str, field: str, steps: list[int]) -> None:
+def plot_field_time_evolution(stem: str, field: str, steps: list[int], files: dict[str, Path] = SPP_FILES) -> None:
     """Plot the same field at multiple time steps side by side."""
-    path = ALL_FILES[stem]
+    path = files[stem]
     meta = get_metadata(path)
 
     first_mesh = load_mesh(path, step=0)
@@ -130,71 +133,132 @@ def plot_field_time_evolution(stem: str, field: str, steps: list[int]) -> None:
 
     nrows, ncols = _grid_shape(len(steps))
     plotter = pv.Plotter(shape=(nrows, ncols))
-
     for i, step in enumerate(steps):
-        step_mesh = load_mesh(path, step=step)
-        timestamp = meta.times[step]
+        actual_step = min(step, meta.n_steps - 1)
+        mesh = load_mesh(path, step=actual_step)
+        timestamp = meta.times[actual_step]
         row, col = i // ncols, i % ncols
         plotter.subplot(row, col)
-        plotter.add_mesh(step_mesh, scalars=field, show_edges=False, clim=color_range)
+        plotter.add_mesh(mesh, scalars=field, show_edges=False, clim=color_range)
         plotter.add_title(f"t={timestamp:.4g}", font_size=8)
-
     plotter.link_views()
     plotter.show()
 
 
+# Visualization
+
 def plot_deformation_vectors(field: str = "u", step: int = 0) -> None:
     """Plot the deformation mesh with a vector field shown as arrow glyphs."""
     stem = "deformation"
-    if stem not in ALL_FILES:
-        print(f"'{stem}' not found in discovered files: {list(ALL_FILES.keys())}")
+    if stem not in SPP_FILES:
+        print(f"'{stem}' not found in: {list(SPP_FILES.keys())}")
         return
-    path = ALL_FILES[stem]
+    path = SPP_FILES[stem]
     meta = get_metadata(path)
     mesh = load_mesh(path, step=step)
     timestamp = meta.times[step]
-
     if field not in mesh.point_data:
-        print(f"Field '{field}' not found in point data. Available: {list(mesh.point_data.keys())}")
+        print(f"Field '{field}' not in point data. Available: {list(mesh.point_data.keys())}")
         return
-
+    glyphs = mesh.glyph(orient=field, scale=field, factor=0.01)
     plotter = pv.Plotter()
     plotter.add_mesh(mesh, show_edges=True, opacity=0.5, color="lightgray")
-    # factor=0.01 scales glyph size to match deformation units (displacements are small)
-    glyphs = mesh.glyph(orient=field, scale=field, factor=0.01)
     plotter.add_mesh(glyphs, color="red")
     plotter.add_title(f"deformation  {field} glyphs  t={timestamp:.4g}", font_size=9)
     plotter.show()
 
 
+# Visualization
+
+def plot_all_resolutions(field: str, step: int = 0) -> None:
+    """Plot all convergence resolutions side by side with linked cameras."""
+    stems = list(CONV_FILES.keys())
+    nrows, ncols = _grid_shape(len(stems))
+    plotter = pv.Plotter(shape=(nrows, ncols))
+    for i, stem in enumerate(stems):
+        path = CONV_FILES[stem]
+        meta = get_metadata(path)
+        actual_step = min(step, meta.n_steps - 1)
+        mesh = load_mesh(path, step=actual_step)
+        timestamp = meta.times[actual_step]
+        row, col = i // ncols, i % ncols
+        plotter.subplot(row, col)
+        plotter.add_mesh(mesh, scalars=field, show_edges=True)
+        plotter.add_title(f"{stem}  t={timestamp:.4g}", font_size=7)
+        print(f"  {stem}: {mesh.n_points} pts, {mesh.n_cells} cells")
+    plotter.link_views()
+    plotter.show()
+
+
+def plot_slice(
+    stem: str,
+    field: str,
+    step: int = 0,
+    normal: Literal["x", "y", "z", "-x", "-y", "-z"] = "z",
+) -> None:
+    """Plot a cross-section through a convergence mesh with ghost context."""
+    path = CONV_FILES[stem]
+    meta = get_metadata(path)
+    mesh = load_mesh(path, step=step)
+    timestamp = meta.times[step]
+    sliced = mesh.slice(normal=normal)
+    plotter = pv.Plotter()
+    plotter.add_mesh(mesh, opacity=0.15, color="lightgray")
+    plotter.add_mesh(sliced, scalars=field, show_edges=False)
+    plotter.add_title(f"{stem}  {field}  slice {normal}  t={timestamp:.4g}", font_size=9)
+    plotter.show()
+
+
+
 if __name__ == "__main__":
-    STEP = 0
-    FIELD = "pressure"           # valid for lobule and scan files
-    STEPS = [0, 20, 40, 60, 85]  # for time evolution plots
+    SPP_STEP   = 0
+    SPP_FIELD  = "pressure"
+    SPP_STEPS  = [0, 20, 40, 60, 85]
 
-    print(f"Discovered files: {list(ALL_FILES.keys())}")
+    CONV_STEP  = 150
+    CONV_FIELD = "pressure"
+    CONV_STEPS = [0, 100, 200, 400, 500, 600, 700, 800]
 
+    # --- Basic data summary (always on) ---
+    print(f"SPP files:  {list(SPP_FILES.keys())}")
+    print(f"Conv files: {list(CONV_FILES.keys())}")
+
+    
+    # Inspection — SPP (perfusion / deformation)
+    
+    # print_metadata_all(SPP_FILES)
+    # print_mesh_at_step("lobule_spt_p1", step=SPP_STEP)
+    # print_mesh_at_step("deformation",   step=SPP_STEP)
+
+    
     # Inspection
-    print_metadata_all()
-    # print_mesh_at_step("lobule_spt_p1", step=STEP)
-    # print_mesh_at_step("deformation", step=STEP)
+    
+    # print_metadata_all(CONV_FILES)
+    # print_mesh_at_step("lobule_sixth_000025", step=CONV_STEP, files=CONV_FILES)
 
-    # Single field
-    # plot_field_at_step("lobule_spt_p1", field=FIELD, step=STEP)
-    # plot_field_at_step("deformation", field="n_f", step=STEP)
-    # plot_field_at_step("scan_64_p1", field="active_state", step=STEP)
 
-    # All scalar fields at one step
-    # plot_all_fields_at_step("lobule_spt_p1", step=STEP)
-    # plot_all_fields_at_step("deformation", step=STEP)
+    # plot_field_at_step("lobule_spt_p1",  field=SPP_FIELD,       step=SPP_STEP)
+    # plot_field_at_step("deformation",    field="n_f",            step=SPP_STEP)
+    # plot_field_at_step("scan_64_p1",     field="active_state",   step=SPP_STEP)
+    # plot_all_scalar_fields("lobule_spt_p1",  step=SPP_STEP)
+    # plot_all_scalar_fields("deformation",    step=SPP_STEP)
+    # plot_field_time_evolution("lobule_spt_p1",  field=SPP_FIELD,       steps=SPP_STEPS)
+    # plot_field_time_evolution("scan_64_p1",     field="active_state",  steps=SPP_STEPS)
+    # plot_deformation_vectors(field="u", step=SPP_STEP)
 
-    # Time evolution across selected steps
-    # plot_field_time_evolution("lobule_spt_p1", field=FIELD, steps=STEPS)
-    # plot_field_time_evolution("scan_64_p1", field="active_state", steps=STEPS)
+    
+    # Visualization
+    
+    # plot_field_at_step("lobule_sixth_000025", field=CONV_FIELD, step=CONV_STEP, files=CONV_FILES)
+    # plot_all_scalar_fields("lobule_sixth_000025", step=CONV_STEP, files=CONV_FILES)
+    # plot_all_resolutions(field=CONV_FIELD, step=CONV_STEP)
+    # plot_slice("lobule_sixth_000025", field=CONV_FIELD, step=CONV_STEP, normal="z")
+    # plot_field_time_evolution("lobule_sixth_000025", field=CONV_FIELD, steps=CONV_STEPS, files=CONV_FILES)
 
-    # Vector field glyphs (deformation only)
-    # plot_deformation_vectors(field="u", step=STEP)
-
+    
     # GIF animation
-    # animate_field(ALL_FILES["lobule_spt_p1"], field="necrosis", output_path=OUTPUT_DIR / "lobule_p1_necrosis.gif", every_nth=5)
-    # preview_field_animation(ALL_FILES["lobule_spt_p1"], field="necrosis", every_nth=2)
+    
+    # animate_field(SPP_FILES["lobule_spt_p1"],      field="necrosis",    output_path=OUTPUT_DIR / "lobule_p1_necrosis.gif",      every_nth=5)
+    # animate_field(CONV_FILES["lobule_sixth_000025"], field=CONV_FIELD,  output_path=OUTPUT_DIR / "convergence_pressure.gif",    every_nth=10)
+    # preview_field_animation(SPP_FILES["lobule_spt_p1"],       field="necrosis",   every_nth=2)
+    # preview_field_animation(CONV_FILES["lobule_sixth_000025"], field=CONV_FIELD,   every_nth=50)

@@ -57,12 +57,12 @@ def build_ui(
 
                 # ---- Left panel ----
                 with html.Div(
-                    v_show="left_panel_open",
                     style=(
-                        f"width:{LEFT_PANEL_WIDTH}; flex-shrink:0; "
-                        "height:100%; overflow:hidden; "
+                        f"'flex-shrink:0; height:100%; overflow:hidden; "
                         "display:flex; flex-direction:column; "
-                        "border-right:1px solid rgba(var(--v-border-color), var(--v-border-opacity));"
+                        "transition:width 0.22s ease; ' + "
+                        f"(left_panel_open ? 'width:{LEFT_PANEL_WIDTH}; "
+                        "border-right:1px solid rgba(var(--v-border-color), var(--v-border-opacity));' : 'width:0px;')",
                     ),
                 ):
                     build_left_panel(
@@ -91,12 +91,12 @@ def build_ui(
 
                 # ---- Right panel ----
                 with html.Div(
-                    v_show="right_panel_open",
                     style=(
-                        f"width:{RIGHT_PANEL_WIDTH}; flex-shrink:0; "
-                        "height:100%; overflow:hidden; "
+                        f"'flex-shrink:0; height:100%; overflow:hidden; "
                         "display:flex; flex-direction:column; "
-                        "border-left:1px solid rgba(var(--v-border-color), var(--v-border-opacity));"
+                        "transition:width 0.22s ease; ' + "
+                        f"(right_panel_open ? 'width:{RIGHT_PANEL_WIDTH}; "
+                        "border-left:1px solid rgba(var(--v-border-color), var(--v-border-opacity));' : 'width:0px;')",
                     ),
                 ):
                     build_right_panel(

@@ -1,21 +1,25 @@
 """Metadata info panel UI for VisFEM."""
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
+from visfem.ui.theme import (
+    ACCENT, ACCENT_DIM,
+    FS_XS, FS_SM3, FS_MD, FS_MD2, FS_SM2, FS_LG,
+    FW_BOLD,
+    LS_WIDE, LS_WIDER,
+    RADIUS_MD,
+    Z_PANEL, PANEL_TOP, PANEL_RIGHT, PANEL_WIDTH,
+    panel_style,
+)
+
+_panel_style = panel_style(
+    f"position:absolute; top:{PANEL_TOP}; right:{PANEL_RIGHT}; "
+    f"width:{PANEL_WIDTH}; z-index:{Z_PANEL}; "
+)
 
 
 def build_info_panel() -> None:
     """Build the floating metadata info panel on the right."""
-    panel_style = (
-        "dark_mode ? "
-        "'position:absolute; top:12px; right:12px; width:270px; z-index:10; "
-        "background:rgba(28,35,35,0.88); backdrop-filter:blur(8px); "
-        "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,0.07);' "
-        ": "
-        "'position:absolute; top:12px; right:12px; width:270px; z-index:10; "
-        "background:rgba(240,244,244,0.92); backdrop-filter:blur(8px); "
-        "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(0,0,0,0.08);'",
-    )
-    with v3.VCard(style=panel_style, elevation=6, rounded="lg"):
+    with v3.VCard(style=_panel_style, elevation=6, rounded="lg"):
 
         # ---- Header ----
         with v3.VCardTitle(
@@ -23,7 +27,7 @@ def build_info_panel() -> None:
             click="panel_info_open = !panel_info_open",
         ):
             with html.Div(style="display: flex; align-items: center;"):
-                v3.VIcon("mdi-information-outline", size="small", color="#00897b", classes="mr-2")
+                v3.VIcon("mdi-information-outline", size="small", color=ACCENT, classes="mr-2")
                 html.Span("Dataset Info", style="flex: 1;")
                 v3.VIcon(
                     ("panel_info_open ? 'mdi-chevron-up' : 'mdi-chevron-down'",),
@@ -40,7 +44,7 @@ def build_info_panel() -> None:
                     style="padding: 24px 16px; text-align: center; opacity: 0.35;",
                 ):
                     v3.VIcon("mdi-cube-outline", size="32", style="margin-bottom: 8px; display: block; margin-left: auto; margin-right: auto;")
-                    html.Div("Select a dataset to view metadata", style="font-size: 0.78rem;")
+                    html.Div("Select a dataset to view metadata", style=f"font-size:{FS_MD2};")
 
                 # ---- Filled state ----
                 with html.Div(v_if="active_meta !== null", style="padding: 12px 14px;"):
@@ -48,7 +52,7 @@ def build_info_panel() -> None:
                     # ---- Name ----
                     html.Div(
                         "{{ active_meta.name }}",
-                        style="font-size: 0.92rem; font-weight: 700; margin-bottom: 6px; line-height: 1.3;",
+                        style=f"font-size:{FS_LG}; font-weight:{FW_BOLD}; margin-bottom:6px; line-height:1.3;",
                     )
 
                     # ---- Organ system tags ----
@@ -56,13 +60,13 @@ def build_info_panel() -> None:
                         with html.Div(v_for="sys in active_meta.organ_system", key="sys"):
                             html.Span(
                                 "{{ sys }}",
-                                style="font-size: 0.68rem; padding: 2px 7px; border-radius: 10px; background: rgba(0,137,123,0.18); color: #00897b; text-transform: uppercase; letter-spacing: 0.06em;",
+                                style=f"font-size:{FS_XS}; padding:2px 7px; border-radius:{RADIUS_MD}; background:{ACCENT_DIM}; color:{ACCENT}; text-transform:uppercase; letter-spacing:{LS_WIDE};",
                             )
 
                     # ---- Description ----
                     html.Div(
                         "{{ active_meta.description }}",
-                        style="font-size: 0.76rem; line-height: 1.5; opacity: 0.75; margin-bottom: 12px;",
+                        style=f"font-size:{FS_MD}; line-height:1.5; opacity:0.75; margin-bottom:12px;",
                     )
 
                     v3.VDivider(style="margin-bottom: 10px;")
@@ -73,9 +77,9 @@ def build_info_panel() -> None:
                         with html.Div():
                             html.Div(
                                 "PI(s)",
-                                style="font-size: 0.68rem; opacity: 0.45; text-transform: none; letter-spacing: 0.08em; margin-bottom: 2px;",
+                                style=f"font-size:{FS_XS}; opacity:0.45; text-transform:none; letter-spacing:{LS_WIDER}; margin-bottom:2px;",
                             )
-                            html.Div("{{ active_meta.pi }}", style="font-size: 0.76rem;")
+                            html.Div("{{ active_meta.pi }}", style=f"font-size:{FS_MD};")
 
                     # ---- Institution ----
                     with html.Div(style="display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-start;"):
@@ -83,7 +87,7 @@ def build_info_panel() -> None:
                         with html.Div():
                             _label("Institution")
                             with html.Div(v_for="inst in active_meta.institution", key="inst"):
-                                html.Div("{{ inst }}", style="font-size: 0.76rem; line-height: 1.5;")
+                                html.Div("{{ inst }}", style=f"font-size:{FS_MD}; line-height:1.5;")
 
                     # ---- Biological scale ----
                     _row("mdi-magnify", "Biological scale", "{{ active_meta.biological_scale }}")
@@ -101,7 +105,7 @@ def build_info_panel() -> None:
                             _label("Mesh")
                             html.Div(
                                 "{{ mesh_stats.n_cells.toLocaleString() }} cells / {{ mesh_stats.n_points.toLocaleString() }} points",
-                                style="font-size: 0.76rem;",
+                                style=f"font-size:{FS_MD};",
                             )
 
                     # ---- References ----
@@ -130,14 +134,14 @@ def build_info_panel() -> None:
                                 "{{ ref }}",
                                 href=("ref",),
                                 target="_blank",
-                                style="color:#00897b; font-size:0.74rem; word-break:break-all; text-decoration:none;",
+                                style=f"color:{ACCENT}; font-size:{FS_SM3}; word-break:break-all; text-decoration:none;",
                             )
                         with html.Div(
                                 v_for="ref in active_meta.ref_texts",
                                 key="ref",
                                 style="margin-top: 4px;",
                         ):
-                            html.Div("{{ ref }}", style="font-size:0.74rem; opacity:0.75;")
+                            html.Div("{{ ref }}", style=f"font-size:{FS_SM3}; opacity:0.75;")
 
                     # ---- Region legend ----
                     with html.Div(
@@ -160,14 +164,14 @@ def build_info_panel() -> None:
                                         v_for="n in item.names",
                                         key="n",
                                     ):
-                                        html.Span("{{ n }}", style="font-size: 0.72rem; line-height: 1.6;")
+                                        html.Span("{{ n }}", style=f"font-size:{FS_SM2}; line-height:1.6;")
 
 
 def _label(text: str) -> None:
     """Render a small uppercase section label."""
     html.Div(
         text,
-        style="font-size: 0.68rem; opacity: 0.45; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 2px;",
+        style=f"font-size:{FS_XS}; opacity:0.45; text-transform:uppercase; letter-spacing:{LS_WIDER}; margin-bottom:2px;",
     )
 
 
@@ -177,4 +181,4 @@ def _row(icon: str, label: str, value_template: str) -> None:
         v3.VIcon(icon, size="14", style="opacity: 0.5; margin-top: 2px; flex-shrink: 0;")
         with html.Div():
             _label(label)
-            html.Div(value_template, style="font-size: 0.76rem;")
+            html.Div(value_template, style=f"font-size:{FS_MD};")

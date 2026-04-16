@@ -1,41 +1,28 @@
 """Centered controls bar UI fragment for VisFEM."""
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
+from visfem.ui.theme import (
+    ACCENT, TRACK_DARK,
+    DIVIDER_STYLE, SWATCH_STYLE, GRADIENT_SWATCH_STYLE,
+    FS_MD4,
+    Z_PANEL, RADIUS_SM,
+    CONTROLS_BAR_HEIGHT, CONTROLS_BAR_TOP, CONTROLS_BAR_GAP, PANEL_PADDING,
+    glass_panel_styles,
+)
 
-_BAR_BASE_DARK = (
-    "position:absolute; top:12px; left:50%; transform:translateX(-50%); "
-    "z-index:10; display:flex; align-items:center; gap:8px; height:38px; "
-    "background:rgba(28,35,35,0.88); backdrop-filter:blur(8px); "
-    "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,0.07); "
-    "border-radius:8px; padding:0 12px;"
+_BAR_POS = (
+    f"position:absolute; top:{CONTROLS_BAR_TOP}; left:50%; transform:translateX(-50%); "
+    f"z-index:{Z_PANEL}; display:flex; align-items:center; gap:{CONTROLS_BAR_GAP}; "
+    f"height:{CONTROLS_BAR_HEIGHT}; border-radius:{RADIUS_SM}; padding:{PANEL_PADDING};"
 )
-_BAR_BASE_LIGHT = (
-    "position:absolute; top:12px; left:50%; transform:translateX(-50%); "
-    "z-index:10; display:flex; align-items:center; gap:8px; height:38px; "
-    "background:rgba(240,244,244,0.92); backdrop-filter:blur(8px); "
-    "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(0,0,0,0.08); "
-    "border-radius:8px; padding:0 12px;"
-)
+_BAR_DARK, _BAR_LIGHT = glass_panel_styles(_BAR_POS)
 _BAR_STYLE = (
-    f"(dark_mode ? '{_BAR_BASE_DARK}' : '{_BAR_BASE_LIGHT}')"
+    f"(dark_mode ? '{_BAR_DARK}' : '{_BAR_LIGHT}')"
     " + 'width:'"
     " + ((available_scalar_fields && available_scalar_fields.length > 1)"
     "    ? (active_dataset === 'heart' ? '480px' : '410px')"
     "    : (active_dataset === 'heart' ? '410px' : '340px'))"
     " + ';'",
-)
-
-_DIVIDER_STYLE = "width:1px; height:20px; background:rgba(255,255,255,0.12); flex-shrink:0;"
-
-# Swatch dot shown in the palette/colormap menu items.
-_SWATCH_STYLE = (
-    "display:inline-block; width:10px; height:10px; "
-    "border-radius:50%; flex-shrink:0;"
-)
-# Gradient strip shown in the colormap menu items.
-_GRADIENT_STYLE = (
-    "display:inline-block; width:60px; height:10px; "
-    "border-radius:3px; flex-shrink:0;"
 )
 
 
@@ -55,14 +42,14 @@ def build_controls_bar(
             v_model=("ctrl_opacity", 0.9),
             min=0.0, max=1.0, step=0.1,
             density="compact", hide_details=True,
-            color="#00897b", track_color="rgba(255,255,255,0.15)",
+            color=ACCENT, track_color=TRACK_DARK,
             thumb_label=False,
             disabled=("autoplay",),
             style="flex:1; min-width:120px; margin:0; padding:0; align-self:center;",
         )
 
         # ---- Divider ----
-        html.Div(style=_DIVIDER_STYLE)
+        html.Div(style=DIVIDER_STYLE)
 
         # ---- Camera reset ----
         with v3.VTooltip(text="Reset camera", location="bottom"):
@@ -75,7 +62,7 @@ def build_controls_bar(
 
         # ---- Fiber toggle (heart dataset only) ----
         html.Div(
-            style=_DIVIDER_STYLE,
+            style=DIVIDER_STYLE,
             v_if="active_dataset === 'heart'",
         )
         with v3.VTooltip(
@@ -94,7 +81,7 @@ def build_controls_bar(
 
         # ---- Scalar field selector (datasets with ≥2 selectable fields) ----
         html.Div(
-            style=_DIVIDER_STYLE,
+            style=DIVIDER_STYLE,
             v_if="available_scalar_fields && available_scalar_fields.length > 1",
         )
         with v3.VMenu(
@@ -119,16 +106,16 @@ def build_controls_bar(
                         density="compact",
                         click=(on_select_scalar_field, "[field.name]"),
                         active=("active_scalar_field === field.name",),
-                        active_color="#00897b",
+                        active_color=ACCENT,
                     ):
                         with v3.Template(v_slot_title=""):
                             html.Span(
                                 "{{ field.label }}",
-                                style="font-size:0.82rem;",
+                                style=f"font-size:{FS_MD4};",
                             )
 
         # ---- Color palette / colormap picker (always visible) ----
-        html.Div(style=_DIVIDER_STYLE)
+        html.Div(style=DIVIDER_STYLE)
         with v3.VMenu(location="bottom", max_height=280):
             with v3.Template(v_slot_activator="{ props }"):
                 with v3.VTooltip(text="Color palette", location="bottom"):
@@ -153,7 +140,7 @@ def build_controls_bar(
                         density="compact",
                         click=(on_select_color_scheme, "[palette.name]"),
                         active=("active_categorical_palette === palette.name",),
-                        active_color="#00897b",
+                        active_color=ACCENT,
                     ):
                         with v3.Template(v_slot_title=""):
                             with html.Div(
@@ -161,7 +148,7 @@ def build_controls_bar(
                             ):
                                 html.Span(
                                     "{{ palette.label }}",
-                                    style="font-size:0.82rem; min-width:52px;",
+                                    style=f"font-size:{FS_MD4}; min-width:52px;",
                                 )
                                 with html.Div(
                                     style="display:flex; gap:3px;",
@@ -172,7 +159,7 @@ def build_controls_bar(
                                     ):
                                         html.Div(
                                             style=(
-                                                f"'{_SWATCH_STYLE} background:' + swatch + ';'",
+                                                f"'{SWATCH_STYLE} background:' + swatch + ';'",
                                             ),
                                         )
 
@@ -189,7 +176,7 @@ def build_controls_bar(
                         density="compact",
                         click=(on_select_color_scheme, "[cmap.name]"),
                         active=("active_continuous_cmap === cmap.name",),
-                        active_color="#00897b",
+                        active_color=ACCENT,
                     ):
                         with v3.Template(v_slot_title=""):
                             with html.Div(
@@ -197,10 +184,10 @@ def build_controls_bar(
                             ):
                                 html.Span(
                                     "{{ cmap.label }}",
-                                    style="font-size:0.82rem; min-width:52px;",
+                                    style=f"font-size:{FS_MD4}; min-width:52px;",
                                 )
                                 html.Div(
                                     style=(
-                                        f"'{_GRADIENT_STYLE} background:' + cmap.gradient + ';'",
+                                        f"'{GRADIENT_SWATCH_STYLE} background:' + cmap.gradient + ';'",
                                     ),
                                 )

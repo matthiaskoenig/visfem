@@ -1,24 +1,22 @@
 """Scalar bar and timestep navigation overlay for continuous field datasets."""
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
+from visfem.ui.theme import (
+    ACCENT, TRACK_DARK,
+    FS_XS, FS_SM,
+    Z_PANEL, RADIUS_SM, SCALAR_BAR_BOTTOM, SCALAR_BAR_PADDING, SCALAR_BAR_WIDTH,
+    panel_style,
+)
 
-_BAR_BASE = (
-    "position:absolute; bottom:16px; left:50%; transform:translateX(-50%); "
-    "z-index:10; border-radius:8px; padding:7px 14px; width:300px;"
+_POS = (
+    f"position:absolute; bottom:{SCALAR_BAR_BOTTOM}; left:50%; transform:translateX(-50%); "
+    f"z-index:{Z_PANEL}; border-radius:{RADIUS_SM}; padding:{SCALAR_BAR_PADDING}; width:{SCALAR_BAR_WIDTH};"
 )
-_BAR_DARK = _BAR_BASE + (
-    "background:rgba(28,35,35,0.88); backdrop-filter:blur(8px); "
-    "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,0.07);"
-)
-_BAR_LIGHT = _BAR_BASE + (
-    "background:rgba(240,244,244,0.92); backdrop-filter:blur(8px); "
-    "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(0,0,0,0.08);"
-)
-_STYLE = (f"dark_mode ? '{_BAR_DARK}' : '{_BAR_LIGHT}'",)
+_STYLE = panel_style(_POS)
 
 _BTN_STYLE = "opacity:0.7; flex-shrink:0;"
 _TIME_LABEL_STYLE = (
-    "font-size:0.68rem; opacity:0.60; flex-shrink:0; min-width:52px; "
+    f"font-size:{FS_XS}; opacity:0.60; flex-shrink:0; min-width:52px; "
     "text-align:right; font-variant-numeric:tabular-nums;"
 )
 
@@ -70,7 +68,7 @@ def build_scalar_bar(on_select_step: object, on_toggle_autoplay: object) -> None
                 v_model=("active_step", 0),
                 min=0, max=("n_steps - 1",), step=1,
                 density="compact", hide_details=True,
-                color="#00897b", track_color="rgba(255,255,255,0.15)",
+                color=ACCENT, track_color=TRACK_DARK,
                 thumb_label=False,
                 style="flex:1; margin:0; padding:0; align-self:center;",
                 end=(on_select_step, "[active_step]"),
@@ -92,7 +90,7 @@ def build_scalar_bar(on_select_step: object, on_toggle_autoplay: object) -> None
             html.Div(
                 "{{ scalar_bar.field_label }}",
                 style=(
-                    "font-size:0.70rem; opacity:0.50; text-align:center; "
+                    f"font-size:{FS_SM}; opacity:0.50; text-align:center; "
                     "text-transform:uppercase; letter-spacing:0.08em; margin-bottom:5px;"
                 ),
             )
@@ -101,16 +99,16 @@ def build_scalar_bar(on_select_step: object, on_toggle_autoplay: object) -> None
                 html.Span(
                     "{{ scalar_bar.min_label }}",
                     style=(
-                        "font-size:0.70rem; opacity:0.75; flex-shrink:0; "
+                        f"font-size:{FS_SM}; opacity:0.75; flex-shrink:0; "
                         "font-variant-numeric:tabular-nums;"
                     ),
                 )
-                
+
                 html.Div(style=_GRADIENT_STYLE)
                 html.Span(
                     "{{ scalar_bar.max_label }}",
                     style=(
-                        "font-size:0.70rem; opacity:0.75; flex-shrink:0; "
+                        f"font-size:{FS_SM}; opacity:0.75; flex-shrink:0; "
                         "font-variant-numeric:tabular-nums;"
                     ),
                 )

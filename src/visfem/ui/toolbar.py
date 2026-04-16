@@ -1,6 +1,7 @@
 """Toolbar UI for VisFEM."""
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
+from visfem.ui.theme import ACCENT, FS_XL, FW_SEMI, LS_NORMAL
 
 
 def build_toolbar(
@@ -10,11 +11,11 @@ def build_toolbar(
     """Build the main toolbar with theme and VR buttons."""
     v3.VProgressLinear(
         indeterminate=True, absolute=True, bottom=True,
-        active=("trame__busy",), color="#00897b", height=2,
+        active=("trame__busy",), color=ACCENT, height=2,
     )
     html.Div(style="width: 15px;")
-    v3.VIcon("mdi-vector-triangle", color="#00897b", classes="mr-3")
-    html.Span("VisFEM", style="font-size: 1.2rem; font-weight: 600; letter-spacing: 0.05em;")
+    v3.VIcon("mdi-vector-triangle", color=ACCENT, classes="mr-3")
+    html.Span("VisFEM", style=f"font-size:{FS_XL}; font-weight:{FW_SEMI}; letter-spacing:{LS_NORMAL};")
     v3.VSpacer()
     with v3.VTooltip(text="Toggle theme", location="bottom"):
         with v3.Template(v_slot_activator="{ props }"):

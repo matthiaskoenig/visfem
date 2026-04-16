@@ -3,6 +3,18 @@ from visfem.engine.discovery import dataset_dir, discover_xdmf, xdmf_display_nam
 from visfem.models import ProjectMetadata
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
+from visfem.ui.theme import (
+    ACCENT,
+    FS_MD2, FS_MD3, FS_MD4,
+    FW_BOLD, LS_WIDEST,
+    Z_PANEL, PANEL_TOP, PANEL_LEFT, PANEL_WIDTH,
+    panel_style,
+)
+
+_panel_style = panel_style(
+    f"position:absolute; top:{PANEL_TOP}; left:{PANEL_LEFT}; "
+    f"width:{PANEL_WIDTH}; z-index:{Z_PANEL}; "
+)
 
 
 def build_dataset_panel(
@@ -13,23 +25,13 @@ def build_dataset_panel(
     on_select_patient: object,
 ) -> None:
     """Build the floating dataset selection panel on the left."""
-    panel_style = (
-        "dark_mode ? "
-        "'position:absolute; top:12px; left:12px; width:270px; z-index:10; "
-        "background:rgba(28,35,35,0.88); backdrop-filter:blur(8px); "
-        "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(255,255,255,0.07);' "
-        ": "
-        "'position:absolute; top:12px; left:12px; width:270px; z-index:10; "
-        "background:rgba(240,244,244,0.92); backdrop-filter:blur(8px); "
-        "-webkit-backdrop-filter:blur(8px); border:1px solid rgba(0,0,0,0.08);'",
-    )
-    with v3.VCard(style=panel_style, elevation=6, rounded="lg"):
+    with v3.VCard(style=_panel_style, elevation=6, rounded="lg"):
         with v3.VCardTitle(
             style="font-size: 0.85rem; padding: 8px 12px; cursor: pointer; user-select: none;",
             click="panel_datasets_open = !panel_datasets_open",
         ):
             with html.Div(style="display: flex; align-items: center;"):
-                v3.VIcon("mdi-layers-outline", size="small", color="#00897b", classes="mr-2")
+                v3.VIcon("mdi-layers-outline", size="small", color=ACCENT, classes="mr-2")
                 html.Span("Datasets", style="flex: 1;")
                 v3.VIcon(
                     ("panel_datasets_open ? 'mdi-chevron-up' : 'mdi-chevron-down'",),
@@ -48,7 +50,7 @@ def build_dataset_panel(
                                     with v3.Template(v_slot_title=""):
                                         html.Span(
                                             system.title(),
-                                            style="font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.6;",
+                                            style=f"font-size:{FS_MD2}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:0.6;",
                                         )
                             for key, meta in datasets:
                                 ddir = dataset_dir(meta)
@@ -60,38 +62,38 @@ def build_dataset_panel(
                                             with v3.VListItem(
                                                 v_bind="props", density="compact",
                                                 active=("active_dataset === 'ircadb'",),
-                                                active_color="#00897b", rounded="lg",
+                                                active_color=ACCENT, rounded="lg",
                                                 style="padding-left: 24px;",
                                             ):
                                                 with v3.Template(v_slot_prepend=""):
                                                     v3.VIcon("mdi-circle-medium", size="x-small", style="opacity: 0.5;")
                                                 with v3.Template(v_slot_title=""):
-                                                    html.Span(meta.name, style="font-size: 0.82rem;")
+                                                    html.Span(meta.name, style=f"font-size:{FS_MD4};")
                                         for patient in ircadb_patients:
                                             with v3.VListItem(
                                                 density="compact",
                                                 active=(f"active_dataset === 'ircadb' && active_patient === {patient}",),
-                                                active_color="#00897b", rounded="lg",
+                                                active_color=ACCENT, rounded="lg",
                                                 click=(on_select_patient, f"[{patient}]"),
                                                 style="padding-left: 40px;",
                                             ):
                                                 with v3.Template(v_slot_prepend=""):
                                                     v3.VIcon("mdi-account", size="x-small", style="opacity: 0.5;")
                                                 with v3.Template(v_slot_title=""):
-                                                    html.Span(f"Patient {patient:02d}", style="font-size: 0.80rem;")
+                                                    html.Span(f"Patient {patient:02d}", style=f"font-size:{FS_MD3};")
 
                                 elif len(xdmf_files) <= 1:
                                     with v3.VListItem(
                                         density="compact",
                                         active=(f"active_dataset === '{key}'",),
-                                        active_color="#00897b", rounded="lg",
+                                        active_color=ACCENT, rounded="lg",
                                         click=(on_select_dataset, f"['{key}']"),
                                         style="padding-left: 24px;",
                                     ):
                                         with v3.Template(v_slot_prepend=""):
                                             v3.VIcon("mdi-circle-medium", size="x-small", style="opacity: 0.5;")
                                         with v3.Template(v_slot_title=""):
-                                            html.Span(meta.name, style="font-size: 0.82rem; white-space: normal; word-break: break-word;")
+                                            html.Span(meta.name, style=f"font-size:{FS_MD4}; white-space:normal; word-break:break-word;")
 
                                 elif len(xdmf_files) > 1:
                                     with v3.VListGroup(value=key):
@@ -99,22 +101,22 @@ def build_dataset_panel(
                                             with v3.VListItem(
                                                 v_bind="props", density="compact",
                                                 active=(f"active_dataset === '{key}'",),
-                                                active_color="#00897b", rounded="lg",
+                                                active_color=ACCENT, rounded="lg",
                                                 style="padding-left: 24px;",
                                             ):
                                                 with v3.Template(v_slot_prepend=""):
                                                     v3.VIcon("mdi-circle-medium", size="x-small", style="opacity: 0.5;")
                                                 with v3.Template(v_slot_title=""):
-                                                    html.Span(meta.name, style="font-size: 0.82rem; white-space: normal; word-break: break-word;")
+                                                    html.Span(meta.name, style=f"font-size:{FS_MD4}; white-space:normal; word-break:break-word;")
                                         for stem, _ in xdmf_files.items():
                                             with v3.VListItem(
                                                 density="compact",
                                                 active=(f"active_dataset === '{key}' && active_xdmf === '{stem}'",),
-                                                active_color="#00897b", rounded="lg",
+                                                active_color=ACCENT, rounded="lg",
                                                 click=(on_select_xdmf, f"['{key}', '{stem}']"),
                                                 style="padding-left: 40px;",
                                             ):
                                                 with v3.Template(v_slot_prepend=""):
                                                     v3.VIcon("mdi-circle-small", size="x-small", style="opacity: 0.5;")
                                                 with v3.Template(v_slot_title=""):
-                                                    html.Span(xdmf_display_name(stem), style="font-size: 0.80rem;")
+                                                    html.Span(xdmf_display_name(stem), style=f"font-size:{FS_MD3};")

@@ -135,18 +135,17 @@ def build_right_panel(
             _section_header("mdi-tag-multiple-outline", "Regions", "right_regions_open")
 
             with html.Div(v_show="right_regions_open"):
-                with html.Div(style="display:flex; flex-direction:column; gap:5px; margin-bottom:8px;"):
-                    with html.Div(
-                        v_for="item in legend_items",
-                        key="item.names[0]",
-                        style="display:flex; align-items:center; gap:6px;",
-                    ):
-                        html.Span(
-                            style=("'width:10px; height:10px; border-radius:50%; flex-shrink:0; background:' + item.color",),
-                        )
-                        with html.Div():
-                            with html.Div(v_for="n in item.names", key="n"):
-                                html.Span("{{ n }}", style=f"font-size:{FS_SM2}; line-height:1.6;")
+                with html.Div(style="display:flex; flex-direction:column; gap:4px; margin-bottom:8px;"):
+                    with html.Div(v_for="item in legend_items", key="item.names[0]"):
+                        with html.Div(
+                            v_for="n in item.names",
+                            key="n",
+                            style="display:flex; align-items:center; gap:6px;",
+                        ):
+                            html.Span(
+                                style=("'width:9px; height:9px; border-radius:50%; flex-shrink:0; background:' + item.color",),
+                            )
+                            html.Span("{{ n }}", style=f"font-size:{FS_SM2}; line-height:1.6;")
 
         # ----------------------------------------------------------------
         # Section: Playback (multi-step datasets only)
@@ -227,7 +226,5 @@ def _section_header(icon: str, label: str, state_var: str) -> None:
             label,
             style=f"font-size:{FS_MD2}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:0.55; flex:1;",
         )
-        v3.VIcon(
-            (f"{state_var} ? 'mdi-chevron-down' : 'mdi-chevron-right'",),
-            size="x-small", style="opacity:0.40;",
-        )
+        v3.VIcon("mdi-chevron-down", size="small", v_show=f"{state_var}")
+        v3.VIcon("mdi-chevron-right", size="small", v_show=f"!{state_var}")

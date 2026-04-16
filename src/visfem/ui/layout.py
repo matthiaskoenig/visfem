@@ -8,6 +8,7 @@ from trame.widgets import html
 from trame.widgets.vtk import VtkLocalView, VtkWebXRHelper
 
 from visfem.models import ProjectMetadata
+from visfem.ui.footer import FOOTER_STYLE, build_footer
 from visfem.ui.left_panel import build_left_panel
 from visfem.ui.right_panel import build_right_panel
 from visfem.ui.toolbar import build_toolbar
@@ -46,9 +47,18 @@ def build_ui(
             toolbar.elevation = 0
             build_toolbar(on_toggle_theme, on_toggle_xr, on_toggle_left_panel, on_toggle_right_panel)
 
+        layout.footer.clear()
+        with layout.footer as footer:
+            footer.style = FOOTER_STYLE
+            build_footer()
+
         with layout.content:
             with html.Div(
-                style="display:flex; height:calc(100vh - var(--v-layout-top, 0px)); overflow:hidden;"
+                style=(
+                    "display:flex; "
+                    "height:calc(100vh - var(--v-layout-top, 0px) - var(--v-layout-bottom, 0px)); "
+                    "overflow:hidden;"
+                )
             ):
 
                 # ---- Left panel ----
@@ -70,7 +80,14 @@ def build_ui(
                     )
 
                 # ---- VTK viewport (fills remaining space) ----
-                with html.Div(style="flex:1; min-width:0; height:100%; position:relative;"):
+                # background-color matches the scene background so WebGL's framebuffer
+                # clear during panel-resize transitions shows the right color, not black.
+                with html.Div(
+                    style=(
+                        "'flex:1; min-width:0; height:100%; position:relative; "
+                        "background-color:' + (dark_mode ? 'rgb(20,26,26)' : 'rgb(209,214,214)')",
+                    ),
+                ):
                     with VtkLocalView(
                         plotter.render_window, ref="view", camera="camera"
                     ) as view:

@@ -37,10 +37,8 @@ def build_left_panel(
                 "Datasets",
                 style=f"font-size:{FS_MD2}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:0.55; flex:1;",
             )
-            v3.VIcon(
-                ("left_datasets_section_open ? 'mdi-chevron-down' : 'mdi-chevron-right'",),
-                size="x-small", style="opacity:0.40;",
-            )
+            v3.VIcon("mdi-chevron-down", size="small", v_show="left_datasets_section_open")
+            v3.VIcon("mdi-chevron-right", size="small", v_show="!left_datasets_section_open")
 
         with html.Div(v_show="left_datasets_section_open", style="flex:0 1 auto; max-height:45%; overflow-y:auto;"):
             with v3.VList(
@@ -145,10 +143,8 @@ def build_left_panel(
                 "Dataset Info",
                 style=f"font-size:{FS_MD2}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:0.55; flex:1;",
             )
-            v3.VIcon(
-                ("left_info_section_open ? 'mdi-chevron-down' : 'mdi-chevron-right'",),
-                size="x-small", style="opacity:0.40;",
-            )
+            v3.VIcon("mdi-chevron-down", size="small", v_show="left_info_section_open")
+            v3.VIcon("mdi-chevron-right", size="small", v_show="!left_info_section_open")
 
         with html.Div(v_show="left_info_section_open", style="flex:1; overflow-y:auto; min-height:0; padding:0 14px 14px 14px;"):
 

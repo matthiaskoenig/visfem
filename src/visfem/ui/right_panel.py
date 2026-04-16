@@ -38,7 +38,7 @@ def build_right_panel(
                 v3.VIcon("mdi-circle-opacity", size="16", style="opacity:0.5; flex-shrink:0;")
                 v3.VSlider(
                     v_model=("ctrl_opacity", 0.9),
-                    min=0.0, max=1.0, step=0.1,
+                    min=0.1, max=0.9, step=0.1,
                     density="compact", hide_details=True,
                     color=ACCENT, track_color=TRACK_DARK,
                     thumb_label=False,

@@ -292,7 +292,6 @@ class VisfemApp(TrameApp):
                 )
                 with self.state:
                     pass
-                self.ctrl.view_update()
                 await asyncio.sleep(0.15)
         finally:
             self.state.autoplay = False

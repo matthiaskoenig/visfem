@@ -46,7 +46,3 @@ SWATCH_STYLE = (
     f"display:inline-block; width:10px; height:10px; "
     f"border-radius:{RADIUS_FULL}; flex-shrink:0;"
 )
-GRADIENT_SWATCH_STYLE = (
-    "display:inline-block; width:60px; height:10px; "
-    "border-radius:3px; flex-shrink:0;"
-)

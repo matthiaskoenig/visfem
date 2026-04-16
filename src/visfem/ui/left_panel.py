@@ -11,6 +11,9 @@ from visfem.ui.theme import (
     RADIUS_MD,
 )
 
+# Compact gap between the leading icon and the item label
+_ICON_GAP = "display:flex; align-items:center; gap:6px;"
+
 
 def build_left_panel(
     organ_groups: dict[str, list[tuple[str, ProjectMetadata]]],
@@ -52,13 +55,13 @@ def build_left_panel(
                     with v3.VListGroup(value=system):
                         with v3.Template(v_slot_activator="{ props }"):
                             with v3.VListItem(v_bind="props", density="compact"):
-                                with v3.Template(v_slot_prepend=""):
-                                    v3.VIcon("mdi-chevron-right", size="x-small", style="opacity:0.45;")
                                 with v3.Template(v_slot_title=""):
-                                    html.Span(
-                                        system.title(),
-                                        style=f"font-size:{FS_MD2}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:0.55;",
-                                    )
+                                    with html.Div(style=_ICON_GAP):
+                                        v3.VIcon("mdi-chevron-right", size="x-small", style="opacity:0.45; flex-shrink:0;")
+                                        html.Span(
+                                            system.title(),
+                                            style=f"font-size:{FS_MD2}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:0.55;",
+                                        )
                         for key, meta in datasets:
                             ddir = dataset_dir(meta)
                             xdmf_files = discover_xdmf(ddir)
@@ -72,10 +75,10 @@ def build_left_panel(
                                             active_color=ACCENT, rounded="lg",
                                             style="padding-left:12px;",
                                         ):
-                                            with v3.Template(v_slot_prepend=""):
-                                                v3.VIcon("mdi-circle-medium", size="x-small", style="opacity:0.45;")
                                             with v3.Template(v_slot_title=""):
-                                                html.Span(meta.name, style=f"font-size:{FS_MD4};")
+                                                with html.Div(style=_ICON_GAP):
+                                                    v3.VIcon("mdi-circle-medium", size="x-small", style="opacity:0.45; flex-shrink:0;")
+                                                    html.Span(meta.name, style=f"font-size:{FS_MD4};")
                                     for patient in ircadb_patients:
                                         with v3.VListItem(
                                             density="compact",
@@ -84,10 +87,10 @@ def build_left_panel(
                                             click=(on_select_patient, f"[{patient}]"),
                                             style="padding-left:24px;",
                                         ):
-                                            with v3.Template(v_slot_prepend=""):
-                                                v3.VIcon("mdi-account", size="x-small", style="opacity:0.45;")
                                             with v3.Template(v_slot_title=""):
-                                                html.Span(f"Patient {patient:02d}", style=f"font-size:{FS_MD3};")
+                                                with html.Div(style=_ICON_GAP):
+                                                    v3.VIcon("mdi-account", size="x-small", style="opacity:0.45; flex-shrink:0;")
+                                                    html.Span(f"Patient {patient:02d}", style=f"font-size:{FS_MD3};")
 
                             elif len(xdmf_files) <= 1:
                                 with v3.VListItem(
@@ -97,10 +100,10 @@ def build_left_panel(
                                     click=(on_select_dataset, f"['{key}']"),
                                     style="padding-left:12px;",
                                 ):
-                                    with v3.Template(v_slot_prepend=""):
-                                        v3.VIcon("mdi-circle-medium", size="x-small", style="opacity:0.45;")
                                     with v3.Template(v_slot_title=""):
-                                        html.Span(meta.name, style=f"font-size:{FS_MD4}; white-space:normal; word-break:break-word;")
+                                        with html.Div(style=_ICON_GAP):
+                                            v3.VIcon("mdi-circle-medium", size="x-small", style="opacity:0.45; flex-shrink:0;")
+                                            html.Span(meta.name, style=f"font-size:{FS_MD4}; white-space:normal; word-break:break-word;")
 
                             else:
                                 with v3.VListGroup(value=key):
@@ -111,10 +114,10 @@ def build_left_panel(
                                             active_color=ACCENT, rounded="lg",
                                             style="padding-left:12px;",
                                         ):
-                                            with v3.Template(v_slot_prepend=""):
-                                                v3.VIcon("mdi-circle-medium", size="x-small", style="opacity:0.45;")
                                             with v3.Template(v_slot_title=""):
-                                                html.Span(meta.name, style=f"font-size:{FS_MD4}; white-space:normal; word-break:break-word;")
+                                                with html.Div(style=_ICON_GAP):
+                                                    v3.VIcon("mdi-circle-medium", size="x-small", style="opacity:0.45; flex-shrink:0;")
+                                                    html.Span(meta.name, style=f"font-size:{FS_MD4}; white-space:normal; word-break:break-word;")
                                     for stem, _ in xdmf_files.items():
                                         with v3.VListItem(
                                             density="compact",
@@ -123,10 +126,10 @@ def build_left_panel(
                                             click=(on_select_xdmf, f"['{key}', '{stem}']"),
                                             style="padding-left:24px;",
                                         ):
-                                            with v3.Template(v_slot_prepend=""):
-                                                v3.VIcon("mdi-circle-small", size="x-small", style="opacity:0.45;")
                                             with v3.Template(v_slot_title=""):
-                                                html.Span(xdmf_display_name(stem), style=f"font-size:{FS_MD3};")
+                                                with html.Div(style=_ICON_GAP):
+                                                    v3.VIcon("mdi-circle-small", size="small", style="opacity:0.45; flex-shrink:0;")
+                                                    html.Span(xdmf_display_name(stem), style=f"font-size:{FS_MD3};")
 
         # ----------------------------------------------------------------
         # Section: Dataset Info

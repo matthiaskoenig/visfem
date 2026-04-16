@@ -1,8 +1,5 @@
-"""Color palette and colormap definitions for VisFEM.
+"""Color palette and colormap definitions for VisFEM."""
 
-All categorical palettes and continuous colormaps are defined here so that
-scene.py and the UI both reference a single source of truth.
-"""
 from visfem.engine.colors import scheme_to_hex, region_colors  # noqa: F401 re-exported
 
 # ---- Categorical palettes ----
@@ -20,7 +17,6 @@ _TABLEAU: list[str] = [
 ]
 
 # Wong (2011) — "Points of view: Color blindness", Nature Methods 8:441.
-# 8-color palette safe for deuteranopia, protanopia, and tritanopia.
 _WONG: list[str] = [
     "#000000", "#e69f00", "#56b4e9", "#009e73",
     "#f0e442", "#0072b2", "#d55e00", "#cc79a7",
@@ -41,12 +37,14 @@ CATEGORICAL_PALETTES: dict[str, list[str]] = {
 }
 
 # UI metadata for the palette picker (name, display label, preview swatches).
+_SWATCH_COUNT = 5  # normalized count — all palettes show same number of dots
+
 CATEGORICAL_META: list[dict] = [
-    {"name": "clinical",   "label": "Clinical",   "swatches": _CLINICAL[:5]},
-    {"name": "paired",     "label": "Paired",     "swatches": _PAIRED[:6]},
-    {"name": "tableau",    "label": "Tableau",    "swatches": _TABLEAU[:6]},
-    {"name": "wong",       "label": "Wong",       "swatches": _WONG[:7]},
-    {"name": "tol_bright", "label": "Tol Bright", "swatches": _TOL_BRIGHT[:6]},
+    {"name": "clinical",   "label": "Clinical",   "swatches": _CLINICAL[:_SWATCH_COUNT]},
+    {"name": "paired",     "label": "Paired",     "swatches": _PAIRED[:_SWATCH_COUNT]},
+    {"name": "tableau",    "label": "Tableau",    "swatches": _TABLEAU[:_SWATCH_COUNT]},
+    {"name": "wong",       "label": "Wong",       "swatches": _WONG[:_SWATCH_COUNT]},
+    {"name": "tol_bright", "label": "Tol Bright", "swatches": _TOL_BRIGHT[:_SWATCH_COUNT]},
 ]
 
 

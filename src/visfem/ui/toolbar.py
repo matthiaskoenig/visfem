@@ -16,6 +16,8 @@ def build_toolbar(
         active=("trame__busy",), color=ACCENT, height=2,
     )
 
+    html.Div(style="width:15px;")
+
     # ---- Left panel toggle ----
     with v3.VTooltip(text="Toggle data panel", location="bottom"):
         with v3.Template(v_slot_activator="{ props }"):
@@ -27,7 +29,7 @@ def build_toolbar(
                 style=("left_panel_open ? '' : 'opacity:0.35'",),
             )
 
-    html.Div(style="width: 6px;")
+    html.Div(style="width:8px;")
     v3.VIcon("mdi-vector-triangle", color=ACCENT, classes="mr-3")
     html.Span("VisFEM", style=f"font-size:{FS_XL}; font-weight:{FW_SEMI}; letter-spacing:{LS_NORMAL};")
     v3.VSpacer()

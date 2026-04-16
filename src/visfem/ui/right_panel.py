@@ -4,8 +4,8 @@ from trame.widgets import vuetify3 as v3
 
 from visfem.ui.theme import (
     ACCENT, TRACK_DARK,
-    SWATCH_STYLE, GRADIENT_SWATCH_STYLE,
-    FS_XS, FS_SM, FS_MD, FS_MD2, FS_MD4,
+    SWATCH_STYLE,
+    FS_XS, FS_SM, FS_MD2, FS_MD4,
     FW_BOLD, LS_WIDEST,
 )
 
@@ -26,8 +26,15 @@ def build_right_panel(
         _section_header("mdi-eye-outline", "View", "right_view_open")
 
         with html.Div(v_show="right_view_open"):
-            # Opacity row
-            with html.Div(style="display:flex; align-items:center; gap:8px; margin-bottom:8px;"):
+            # Single row: [camera reset] | [opacity icon] [opacity slider]
+            with html.Div(style="display:flex; align-items:center; gap:6px; margin-bottom:12px;"):
+                v3.VBtn(
+                    icon="mdi-camera-retake-outline",
+                    variant="text", density="compact",
+                    click=on_reset_camera,
+                    style="opacity:0.65; flex-shrink:0;",
+                )
+                html.Span(style="width:1px; height:16px; background:rgba(128,128,128,0.3); flex-shrink:0;")
                 v3.VIcon("mdi-circle-opacity", size="16", style="opacity:0.5; flex-shrink:0;")
                 v3.VSlider(
                     v_model=("ctrl_opacity", 0.9),
@@ -37,16 +44,6 @@ def build_right_panel(
                     thumb_label=False,
                     disabled=("autoplay",),
                     style="flex:1; margin:0; padding:0;",
-                )
-
-            # Camera reset — plain text action, consistent with the rest of the panel
-            with html.Div(style="margin-bottom:12px;"):
-                v3.VBtn(
-                    "Reset Camera",
-                    prepend_icon="mdi-camera-retake-outline",
-                    variant="text", density="compact",
-                    click=on_reset_camera,
-                    style=f"text-transform:none; letter-spacing:0; font-size:{FS_MD}; opacity:0.75; padding:0 2px; margin-left:-2px;",
                 )
 
         v3.VDivider(style="margin-bottom:10px;")
@@ -107,7 +104,7 @@ def build_right_panel(
                         ):
                             with v3.Template(v_slot_title=""):
                                 with html.Div(style="display:flex; align-items:center; gap:6px;"):
-                                    html.Span("{{ palette.label }}", style=f"font-size:{FS_MD4}; min-width:52px;")
+                                    html.Span("{{ palette.label }}", style=f"font-size:{FS_MD4}; width:72px; flex-shrink:0;")
                                     with html.Div(style="display:flex; gap:3px;"):
                                         with html.Div(v_for="(swatch, i) in palette.swatches", key="i"):
                                             html.Div(style=(f"'{SWATCH_STYLE} background:' + swatch + ';'",))
@@ -126,9 +123,9 @@ def build_right_panel(
                             active_color=ACCENT,
                         ):
                             with v3.Template(v_slot_title=""):
-                                with html.Div(style="display:flex; align-items:center; gap:6px;"):
-                                    html.Span("{{ cmap.label }}", style=f"font-size:{FS_MD4}; min-width:52px;")
-                                    html.Div(style=(f"'{GRADIENT_SWATCH_STYLE} background:' + cmap.gradient + ';'",))
+                                with html.Div(style="display:flex; align-items:center; gap:8px;"):
+                                    html.Span("{{ cmap.label }}", style=f"font-size:{FS_MD4}; width:52px; flex-shrink:0;")
+                                    html.Div(style=("'flex:1; height:14px; border-radius:4px; background:' + cmap.gradient",))
 
         # ----------------------------------------------------------------
         # Section: Playback (multi-step datasets only)

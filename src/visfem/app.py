@@ -42,13 +42,16 @@ class VisfemApp(TrameApp):
             p = pvd_file_path(meta)
             if p and p.exists():
                 self._xdmf_meta[p.stem] = get_metadata(p)
-        ircadb_meta = self._project_metadata.get("ircadb")
-        ircadb_dir = dataset_dir(ircadb_meta) if ircadb_meta else None
-        self._ircadb_patients: list[int] = sorted(
-            int(d.name.split("_")[-1])
-            for d in (ircadb_dir.glob("patient_*") if ircadb_dir else [])
-            if d.is_dir()
-        )
+        self._patients_by_dataset: dict[str, list[int]] = {}
+        for key, meta in self._project_metadata.items():
+            ddir = dataset_dir(meta)
+            patients = sorted(
+                int(d.name.split("_")[-1])
+                for d in ddir.glob("patient_*")
+                if d.is_dir()
+            )
+            if patients:
+                self._patients_by_dataset[key] = patients
         self._setup_plotter()
         self._setup_state()
         self.ui = build_ui(
@@ -56,7 +59,7 @@ class VisfemApp(TrameApp):
             plotter=self.plotter,
             ctrl=self.ctrl,
             organ_groups=self._organ_groups,
-            ircadb_patients=self._ircadb_patients,
+            patients_by_dataset=self._patients_by_dataset,
             on_select_dataset=self.select_dataset,
             on_select_xdmf=self.select_xdmf,
             on_select_patient=self.select_patient,
@@ -106,6 +109,7 @@ class VisfemApp(TrameApp):
             "right_color_open": True,
             "right_playback_open": True,
             "right_scalar_bar_open": True,
+            "right_regions_open": True,
             "legend_items": [],
             "ctrl_opacity": 0.9,
             "active_meta": None,
@@ -222,12 +226,12 @@ class VisfemApp(TrameApp):
             self._project_metadata, self._xdmf_meta, key, stem,
         )
 
-    def select_patient(self, patient: int) -> None:
-        """Load and render a specific IRCADb patient."""
+    def select_patient(self, dataset_key: str, patient: int) -> None:
+        """Load and render a specific patient from a multi-patient dataset."""
         self.state.autoplay = False  # stop any running autoplay before switching
         select_patient(
             self.plotter, self.ctrl, self.state,
-            self._project_metadata, patient,
+            self._project_metadata, dataset_key, patient,
         )
 
     def select_scalar_field(self, field: str) -> None:

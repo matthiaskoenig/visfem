@@ -5,7 +5,7 @@ from trame.widgets import vuetify3 as v3
 from visfem.ui.theme import (
     ACCENT, TRACK_DARK,
     SWATCH_STYLE,
-    FS_XS, FS_SM, FS_MD2, FS_MD4,
+    FS_XS, FS_SM, FS_SM2, FS_MD2, FS_MD4,
     FW_BOLD, LS_WIDEST,
 )
 
@@ -128,6 +128,27 @@ def build_right_panel(
                                     html.Div(style=("'flex:1; height:14px; border-radius:4px; background:' + cmap.gradient",))
 
         # ----------------------------------------------------------------
+        # Section: Regions (categorical datasets with legend)
+        # ----------------------------------------------------------------
+        with html.Div(v_if="legend_items && legend_items.length > 0"):
+            v3.VDivider(style="margin-bottom:10px;")
+            _section_header("mdi-tag-multiple-outline", "Regions", "right_regions_open")
+
+            with html.Div(v_show="right_regions_open"):
+                with html.Div(style="display:flex; flex-direction:column; gap:5px; margin-bottom:8px;"):
+                    with html.Div(
+                        v_for="item in legend_items",
+                        key="item.names[0]",
+                        style="display:flex; align-items:center; gap:6px;",
+                    ):
+                        html.Span(
+                            style=("'width:10px; height:10px; border-radius:50%; flex-shrink:0; background:' + item.color",),
+                        )
+                        with html.Div():
+                            with html.Div(v_for="n in item.names", key="n"):
+                                html.Span("{{ n }}", style=f"font-size:{FS_SM2}; line-height:1.6;")
+
+        # ----------------------------------------------------------------
         # Section: Playback (multi-step datasets only)
         # ----------------------------------------------------------------
         with html.Div(v_if="n_steps > 1"):
@@ -179,7 +200,7 @@ def build_right_panel(
             with html.Div(v_show="right_scalar_bar_open"):
                 html.Div(
                     "{{ scalar_bar.field_label }}",
-                    style=f"font-size:{FS_SM}; opacity:0.50; text-align:center; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:5px;",
+                    style=f"font-size:{FS_SM}; opacity:0.50; text-align:center; letter-spacing:0.04em; margin-bottom:5px;",
                 )
                 with html.Div(style="display:flex; align-items:center; gap:8px;"):
                     html.Span(

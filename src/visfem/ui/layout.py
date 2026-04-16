@@ -19,7 +19,7 @@ def build_ui(
     plotter: pv.Plotter,
     ctrl: Any,
     organ_groups: dict[str, list[tuple[str, ProjectMetadata]]],
-    ircadb_patients: list[int],
+    patients_by_dataset: dict[str, list[int]],
     on_select_dataset: object,
     on_select_xdmf: object,
     on_select_patient: object,
@@ -47,10 +47,6 @@ def build_ui(
             build_toolbar(on_toggle_theme, on_toggle_xr, on_toggle_left_panel, on_toggle_right_panel)
 
         with layout.content:
-            # Flex row: [left panel] | [vtk view] | [right panel]
-            # height uses Vuetify's --v-layout-top variable (toolbar offset) so the
-            # container is always exactly viewport-height minus the toolbar — independent
-            # of content, which keeps panels scrollable and prevents page extension.
             with html.Div(
                 style="display:flex; height:calc(100vh - var(--v-layout-top, 0px)); overflow:hidden;"
             ):
@@ -67,7 +63,7 @@ def build_ui(
                 ):
                     build_left_panel(
                         organ_groups,
-                        ircadb_patients,
+                        patients_by_dataset,
                         on_select_dataset,
                         on_select_xdmf,
                         on_select_patient,

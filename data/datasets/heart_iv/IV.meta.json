@@ -1,5 +1,5 @@
 {
-  "schema_hash": "6bf31a33",
+  "schema_hash": "8fa7351b",
   "format": "pvd_timeseries",
   "n_steps": 1601,
   "times": [
@@ -1703,5 +1703,35 @@
       ]
     }
   },
-  "bounds": null
+  "bounds": null,
+  "scalar_bounds": {
+    "PointID": [
+      0.0,
+      32504.0
+    ],
+    "Fixation": [
+      0.0,
+      7.0
+    ],
+    "CellID": [
+      0.0,
+      166529.0
+    ],
+    "Material": [
+      30.0,
+      161.0
+    ],
+    "ActiveStress": [
+      0.0,
+      430073.81051047816
+    ],
+    "Calcium": [
+      0.0,
+      1.4808069423981887
+    ],
+    "Potential": [
+      -100.00269160882507,
+      124.16687860902341
+    ]
+  }
 }

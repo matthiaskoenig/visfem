@@ -192,6 +192,7 @@ def get_metadata(path: Path) -> MeshMetadata:
     else:
         raw = _metadata_static(path, fmt)
 
+    raw["scalar_bounds"] = _compute_scalar_bounds(path, fmt, raw["fields"], raw["n_steps"])
     meta = MeshMetadata.model_validate({**raw, "schema_hash": MESH_METADATA_HASH})
     sidecar.write_text(meta.model_dump_json(indent=2))
     logger.debug(f"Cached metadata to '{sidecar.name}'")
@@ -339,6 +340,109 @@ def _metadata_static(path: Path, fmt: str) -> dict:
             **{name: {"center": "cell", "shape": _field_shape(arr)}
                for name, arr in mesh.cell_data.items()},
         },
+    }
+
+
+# ---- Global scalar bounds ----
+
+def _compute_scalar_bounds(
+    path: Path,
+    fmt: str,
+    fields: dict,
+    n_steps: int,
+) -> dict[str, list[float]]:
+    """Return {field: [global_min, global_max]} for every scalar field across all timesteps.
+
+    Called once during metadata extraction; result is persisted in the .meta.json sidecar.
+    Only scalar fields (shape [1]) are scanned — vector/tensor fields are skipped.
+    """
+    scalar_fields = [name for name, info in fields.items() if info.get("shape") == [1]]
+    if not scalar_fields:
+        return {}
+
+    logger.info(f"Computing global scalar bounds for '{path.name}' ({n_steps} step(s))…")
+
+    bounds: dict[str, list[float]] = {
+        name: [float("inf"), float("-inf")] for name in scalar_fields
+    }
+
+    def _update(name: str, arr: np.ndarray) -> None:
+        bounds[name][0] = min(bounds[name][0], float(arr.min()))
+        bounds[name][1] = max(bounds[name][1], float(arr.max()))
+
+    if fmt == "timeseries_xdmf":
+        with meshio.xdmf.TimeSeriesReader(path) as reader:
+            reader.read_points_cells()  # required initialisation before read_data()
+            for step in range(n_steps):
+                try:
+                    _, point_data, cell_data = reader.read_data(step)
+                except Exception:
+                    continue
+                for name in scalar_fields:
+                    data = point_data.get(name)
+                    if data is None:
+                        blocks = cell_data.get(name)
+                        data = blocks[0] if blocks else None
+                    if data is not None:
+                        _update(name, data)
+
+    elif fmt == "fenics_xdmf":
+        domain, _, _, _ = _parse_xdmf_base_grid(path)
+        temporal_grids = [
+            g for g in domain.findall("Grid")
+            if g.get("CollectionType") == "Temporal"
+        ]
+        h5_file = path.parent / (path.stem + ".h5")
+        with h5py.File(str(h5_file), "r") as hdf5:
+            for collection in temporal_grids:
+                field_name = collection.get("Name")
+                if field_name not in bounds:
+                    continue
+                for child in collection.findall("Grid"):
+                    attr = child.find("Attribute")
+                    if attr is None:
+                        continue
+                    data_item = attr.find("DataItem")
+                    if data_item is None:
+                        continue
+                    hdf5_key = (data_item.text or "").strip().split(":/")[1]
+                    try:
+                        _update(field_name, hdf5[hdf5_key][:])
+                    except KeyError:
+                        pass
+
+    elif fmt == "pvd_timeseries":
+        for _, vtu_path in _parse_pvd(path):
+            try:
+                mesh = cast(pv.DataSet, pv.read(str(vtu_path)))
+                for name in scalar_fields:
+                    try:
+                        lo, hi = mesh.get_data_range(name)
+                        bounds[name][0] = min(bounds[name][0], float(lo))
+                        bounds[name][1] = max(bounds[name][1], float(hi))
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.warning(f"Skipping '{vtu_path.name}' during bounds scan: {e}")
+
+    else:
+        # Static / single-step — load once
+        try:
+            mesh = _load_static(path)
+            for name in scalar_fields:
+                try:
+                    lo, hi = mesh.get_data_range(name)
+                    bounds[name][0] = float(lo)
+                    bounds[name][1] = float(hi)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Failed to load '{path.name}' for bounds scan: {e}")
+
+    # Drop any field whose bounds could not be determined
+    return {
+        name: b for name, b in bounds.items()
+        if b[0] != float("inf") and b[1] != float("-inf")
     }
 
 

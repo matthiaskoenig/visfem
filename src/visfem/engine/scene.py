@@ -146,10 +146,17 @@ def redraw_xdmf(
     if field is None:
         field = next(iter(mesh_meta.fields), None) if mesh_meta else None
 
+    # Use precomputed global bounds so the colormap scale is stable across all timesteps
+    # Fall back to the current step's range if bounds were not cached yet
+    clim: list[float] | None = None
+    if field and mesh_meta and field in mesh_meta.scalar_bounds:
+        clim = mesh_meta.scalar_bounds[field]
+
     plotter.add_mesh(
         mesh,
         scalars=field,
         cmap=cmap,
+        clim=clim,
         show_edges=False,
         copy_mesh=True,
         show_scalar_bar=False,
@@ -161,11 +168,14 @@ def redraw_xdmf(
 
     scalar_bar: dict | None = None
     if field:
-        try:
-            lo, hi = mesh.get_data_range(field)
-            scalar_bar = _scalar_bar_dict(field, [float(lo), float(hi)], cmap)
-        except Exception:
-            pass
+        if clim is None:
+            try:
+                lo, hi = mesh.get_data_range(field)
+                clim = [float(lo), float(hi)]
+            except Exception:
+                pass
+        if clim is not None:
+            scalar_bar = _scalar_bar_dict(field, clim, cmap)
 
     return [], stats, scalar_bar
 

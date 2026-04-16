@@ -1,21 +1,16 @@
 {
-  "data_path": "ircadb",
+  "data_path": "ircad_liver",
   "labels_file": null,
-  "name": "3D-IRCADb-01",
+  "name": "3D-IRCADb-01 (Liver)",
   "pi": "Luc Soler",
   "institution": [
     "IRCAD, Strasbourg, France"
   ],
-  "biological_scale": "organ_system",
+  "biological_scale": "organ",
   "organ_system": [
-    "torso",
-    "lung",
-    "kidney",
-    "bone",
-    "vasculature",
-    "abdominal"
+    "liver"
   ],
-  "description": "3D-IRCADb-01: CT-segmented surface meshes from 20 patients (10 women, 10 men), hepatic tumours in 75% of cases, covering up to 47 organ types per patient.",
+  "description": "Liver surface meshes extracted from the 3D-IRCADb-01 dataset: 20 patients, including liver parenchyma, cysts, and tumours where present.",
   "mesh_format": "VTK",
   "references": [
     "https://www.ircad.fr/research/data-sets/liver-segmentation-3d-ircadb-01/",

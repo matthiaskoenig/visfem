@@ -40,6 +40,8 @@ class MeshMetadata(BaseModel):
     fields: dict[str, FieldInfo]
     bounds: tuple[float, float, float, float, float, float] | None = None
     # xmin, xmax, ymin, ymax, zmin, zmax -- None if not precomputed
+    scalar_bounds: dict[str, list[float]] = {}
+    # field_name -> [global_min, global_max] across all timesteps
 
 
 def compute_mesh_metadata_hash() -> str:
@@ -84,6 +86,7 @@ class OrganSystem(StrEnum):
     LIVER           = "liver"
     LUNG            = "lung"
     MUSCULOSKELETAL = "musculoskeletal"
+    TORSO           = "torso"
     VASCULATURE     = "vasculature"
 
 

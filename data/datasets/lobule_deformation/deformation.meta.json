@@ -1,5 +1,5 @@
 {
-  "schema_hash": "6bf31a33",
+  "schema_hash": "8fa7351b",
   "format": "fenics_xdmf",
   "n_steps": 10,
   "times": [
@@ -45,5 +45,15 @@
       ]
     }
   },
-  "bounds": null
+  "bounds": null,
+  "scalar_bounds": {
+    "f": [
+      0.0,
+      2000.0
+    ],
+    "n_f": [
+      0.3,
+      0.3
+    ]
+  }
 }

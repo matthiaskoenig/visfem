@@ -339,23 +339,24 @@ def select_patient(
     ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
+    dataset_key: str,
     patient: int,
 ) -> None:
-    """Load and render a specific IRCADb patient."""
-    state.active_dataset = "ircadb"  
-    state.active_patient = patient  
-    state.active_xdmf = None  
-    state.available_scalar_fields = []  
-    state.active_scalar_field = None  
-    state.scalar_bar = None  
-    state.n_steps = 1  
-    state.active_step = 0  
-    state.step_times = []  
-    opacity = float(state.ctrl_opacity)  
-    state.trame__busy = True  
+    """Load and render a specific patient from a multi-patient dataset."""
+    state.active_dataset = dataset_key
+    state.active_patient = patient
+    state.active_xdmf = None
+    state.available_scalar_fields = []
+    state.active_scalar_field = None
+    state.scalar_bar = None
+    state.n_steps = 1
+    state.active_step = 0
+    state.step_times = []
+    opacity = float(state.ctrl_opacity)
+    state.trame__busy = True
     try:
-        ircadb_meta = project_metadata["ircadb"]
-        patient_dir = dataset_dir(ircadb_meta) / f"patient_{patient:02d}"
+        meta = project_metadata[dataset_key]
+        patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
         legend, stats = redraw_ircadb(
             plotter, ctrl, patient_dir,
             dark_mode=state.dark_mode,
@@ -364,9 +365,9 @@ def select_patient(
         )
         state.legend_items = legend
         state.mesh_stats = stats
-        state.active_meta = meta_to_state(project_metadata["ircadb"])
+        state.active_meta = meta_to_state(meta)
     finally:
-        state.trame__busy = False  
+        state.trame__busy = False
 
 
 def select_color_scheme(
@@ -384,12 +385,10 @@ def select_color_scheme(
     opacity = float(state.ctrl_opacity)  
     state.trame__busy = True  
     try:
-        if key == "ircadb":
-            patient: int | None = state.active_patient  
-            if patient is None:
-                return
-            ircadb_meta = project_metadata["ircadb"]
-            patient_dir = dataset_dir(ircadb_meta) / f"patient_{patient:02d}"
+        if state.active_patient is not None:
+            patient: int = state.active_patient
+            meta = project_metadata[key]
+            patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
             legend, stats = redraw_ircadb(
                 plotter, ctrl, patient_dir,
                 dark_mode=state.dark_mode,

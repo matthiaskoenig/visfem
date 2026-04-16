@@ -60,13 +60,13 @@ def load_project_metadata() -> dict[str, ProjectMetadata]:
 def group_by_organ_system(
     metadata: dict[str, ProjectMetadata],
 ) -> dict[str, list[tuple[str, ProjectMetadata]]]:
-    """Group datasets by first organ_system value."""
+    """Group datasets by first organ_system value, sorted alphabetically by name."""
     groups: dict[str, list[tuple[str, ProjectMetadata]]] = {}
     for key, meta in metadata.items():
         system = meta.organ_system[0].value
         groups.setdefault(system, [])
         groups[system].append((key, meta))
-    return groups
+    return {system: sorted(items, key=lambda t: t[1].name) for system, items in sorted(groups.items())}
 
 
 def dataset_dir(meta: ProjectMetadata) -> Path:

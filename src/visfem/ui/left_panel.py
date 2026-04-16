@@ -6,7 +6,7 @@ from visfem.engine.discovery import dataset_dir, discover_xdmf, xdmf_display_nam
 from visfem.models import ProjectMetadata
 from visfem.ui.theme import (
     ACCENT, ACCENT_DIM,
-    FS_XS, FS_SM2, FS_SM3, FS_MD, FS_MD2, FS_MD3, FS_MD4, FS_LG,
+    FS_XS, FS_SM3, FS_MD, FS_MD2, FS_MD3, FS_MD4, FS_LG,
     FW_BOLD, LS_WIDE, LS_WIDER, LS_WIDEST,
     RADIUS_MD,
 )
@@ -17,7 +17,7 @@ _ICON_GAP = "display:flex; align-items:center; gap:6px;"
 
 def build_left_panel(
     organ_groups: dict[str, list[tuple[str, ProjectMetadata]]],
-    ircadb_patients: list[int],
+    patients_by_dataset: dict[str, list[int]],
     on_select_dataset: object,
     on_select_xdmf: object,
     on_select_patient: object,
@@ -66,12 +66,12 @@ def build_left_panel(
                             ddir = dataset_dir(meta)
                             xdmf_files = discover_xdmf(ddir)
 
-                            if key == "ircadb":
-                                with v3.VListGroup(value="ircadb"):
+                            if key in patients_by_dataset:
+                                with v3.VListGroup(value=key):
                                     with v3.Template(v_slot_activator="{ props }"):
                                         with v3.VListItem(
                                             v_bind="props", density="compact",
-                                            active=("active_dataset === 'ircadb'",),
+                                            active=(f"active_dataset === '{key}'",),
                                             active_color=ACCENT, rounded="lg",
                                             style="padding-left:12px;",
                                         ):
@@ -79,12 +79,12 @@ def build_left_panel(
                                                 with html.Div(style=_ICON_GAP):
                                                     v3.VIcon("mdi-circle-medium", size="x-small", style="opacity:0.45; flex-shrink:0;")
                                                     html.Span(meta.name, style=f"font-size:{FS_MD4};")
-                                    for patient in ircadb_patients:
+                                    for patient in patients_by_dataset[key]:
                                         with v3.VListItem(
                                             density="compact",
-                                            active=(f"active_dataset === 'ircadb' && active_patient === {patient}",),
+                                            active=(f"active_dataset === '{key}' && active_patient === {patient}",),
                                             active_color=ACCENT, rounded="lg",
-                                            click=(on_select_patient, f"[{patient}]"),
+                                            click=(on_select_patient, f"['{key}', {patient}]"),
                                             style="padding-left:24px;",
                                         ):
                                             with v3.Template(v_slot_title=""):
@@ -256,25 +256,6 @@ def build_left_panel(
                     ):
                         html.Div("{{ ref }}", style=f"font-size:{FS_SM3}; opacity:0.75;")
 
-                # Region legend
-                with html.Div(
-                    v_if="legend_items && legend_items.length > 0",
-                    style="margin-top:10px;",
-                ):
-                    v3.VDivider(style="margin-bottom:8px;")
-                    _label("Regions")
-                    with html.Div(style="display:flex; flex-direction:column; gap:5px; margin-top:4px;"):
-                        with html.Div(
-                            v_for="item in legend_items",
-                            key="item.names[0]",
-                            style="display:flex; align-items:center; gap:6px;",
-                        ):
-                            html.Span(
-                                style=("'width:10px; height:10px; border-radius:50%; flex-shrink:0; background:' + item.color",),
-                            )
-                            with html.Div():
-                                with html.Div(v_for="n in item.names", key="n"):
-                                    html.Span("{{ n }}", style=f"font-size:{FS_SM2}; line-height:1.6;")
 
 
 def _label(text: str) -> None:

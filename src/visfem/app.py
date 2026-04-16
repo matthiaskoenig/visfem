@@ -69,6 +69,8 @@ class VisfemApp(TrameApp):
             on_toggle_xr=self.toggle_xr,
             on_enter_xr=self._on_enter_xr,
             on_exit_xr=self._on_exit_xr,
+            on_toggle_left_panel=self.toggle_left_panel,
+            on_toggle_right_panel=self.toggle_right_panel,
         )
         self.ctrl.on_client_connected.add(self._reset_xr_state)
 
@@ -93,12 +95,21 @@ class VisfemApp(TrameApp):
             "active_dataset": None,
             "active_patient": None,
             "active_xdmf": None,
-            "panel_datasets_open": True,
+            "left_panel_open": True,
+            "right_panel_open": True,
+            "active_organ_group_open": [],
+            "left_datasets_section_open": True,
+            "left_info_section_open": True,
+            "right_view_open": True,
+            "right_fibers_open": True,
+            "right_scalar_field_open": True,
+            "right_color_open": True,
+            "right_playback_open": True,
+            "right_scalar_bar_open": True,
             "legend_items": [],
             "ctrl_opacity": 0.9,
             "active_meta": None,
             "mesh_stats": None,
-            "panel_info_open": True,
             "show_fibers": False,
             "scalar_bar": None,
             "available_scalar_fields": [],
@@ -112,6 +123,16 @@ class VisfemApp(TrameApp):
             "categorical_palette_meta": CATEGORICAL_META,
             "continuous_cmap_meta": CONTINUOUS_META,
         })
+
+    # ---- Panel toggles ----
+
+    def toggle_left_panel(self) -> None:
+        """Toggle the left dataset panel open/closed."""
+        self.state.left_panel_open = not self.state.left_panel_open
+
+    def toggle_right_panel(self) -> None:
+        """Toggle the right view-controls panel open/closed."""
+        self.state.right_panel_open = not self.state.right_panel_open
 
     # ---- Theme ----
 
@@ -163,6 +184,17 @@ class VisfemApp(TrameApp):
             return
         apply_opacity(self.plotter, float(ctrl_opacity))
         self.ctrl.view_update()
+
+    @change("active_organ_group_open")
+    def _on_organ_group_change(self, active_organ_group_open: list, **_: object) -> None:
+        """Accordion: keep only the most-recently-opened organ system group open."""
+        top_level = set(self._organ_groups.keys())
+        open_top = [v for v in active_organ_group_open if v in top_level]
+        if len(open_top) > 1:
+            keep = open_top[-1]
+            self.state.active_organ_group_open = [
+                v for v in active_organ_group_open if v not in top_level or v == keep
+            ]
 
     @change("show_fibers")
     def _on_show_fibers_change(self, show_fibers: bool, **_: object) -> None:

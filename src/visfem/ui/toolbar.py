@@ -1,11 +1,11 @@
 """Toolbar UI for VisFEM."""
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
-from visfem.ui.theme import ACCENT, FS_XL, FW_SEMI, LS_NORMAL
+from visfem.ui.theme import ACCENT, FS_XL, FW_SEMI, LS_NORMAL, SEP_DIM
 
 # Thin vertical rule that visually separates the panel toggles from the center cluster.
 _SEP_STYLE = (
-    "width:1px; height:18px; background:rgba(128,128,128,0.22); "
+    f"width:1px; height:18px; background:{SEP_DIM}; "
     "margin:0 8px; align-self:center; flex-shrink:0;"
 )
 
@@ -22,7 +22,7 @@ def build_toolbar(
         active=("trame__busy",), color=ACCENT, height=2,
     )
 
-    # ── Left edge ──────────────────────────────────────────────────────────
+    #  Left edge 
     html.Div(style="width:15px;")
 
     with v3.VTooltip(text="Toggle data panel", location="bottom"):
@@ -38,12 +38,12 @@ def build_toolbar(
     # Separator between left toggle and center cluster
     html.Span(style=_SEP_STYLE)
 
-    # ── Center: logo + title ───────────────────────────────────────────────
+    #  Center: logo + title
     v3.VIcon("mdi-vector-triangle", color=ACCENT, classes="mr-2")
     html.Span("VisFEM", style=f"font-size:{FS_XL}; font-weight:{FW_SEMI}; letter-spacing:{LS_NORMAL};")
     v3.VSpacer()
 
-    # ── Right cluster: theme + VR ──────────────────────────────────────────
+    #  Right cluster: theme + VR
     with v3.VTooltip(text="Toggle theme", location="bottom"):
         with v3.Template(v_slot_activator="{ props }"):
             v3.VBtn(
@@ -72,5 +72,5 @@ def build_toolbar(
                 style=("right_panel_open ? '' : 'opacity:0.35'",),
             )
 
-    # ── Right edge ─────────────────────────────────────────────────────────
+    #  Right edge ─
     html.Div(style="width:15px;")

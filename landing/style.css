@@ -6,6 +6,7 @@
   --accent-hover:  #00796b;
   --accent-dim:    rgba(0, 137, 123, 0.15);
   --accent-glow:   rgba(0, 137, 123, 0.25);
+  --accent-mesh:   rgba(0, 137, 123, 0.07);
 
   --bg:            #141a1a;   /* BG_DARK_BOTTOM */
   --bg-top:        #212929;   /* BG_DARK_TOP    */
@@ -153,8 +154,8 @@ a { color: inherit; text-decoration: none; }
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(0,137,123,0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,137,123,0.07) 1px, transparent 1px);
+    linear-gradient(var(--accent-mesh) 1px, transparent 1px),
+    linear-gradient(90deg, var(--accent-mesh) 1px, transparent 1px);
   background-size: 48px 48px;
   mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 30%, transparent 100%);
   -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 30%, transparent 100%);

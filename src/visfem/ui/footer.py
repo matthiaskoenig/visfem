@@ -1,7 +1,7 @@
 """Footer UI for VisFEM."""
 from trame.widgets import html
 
-from visfem.ui.theme import ACCENT, FS_XS
+from visfem.ui.theme import ACCENT, FS_XS, OP_DIM
 
 FOOTER_STYLE = (
     "display:flex; align-items:center; justify-content:center; flex-wrap:wrap; "
@@ -11,7 +11,7 @@ FOOTER_STYLE = (
 )
 
 _LINK_STYLE = f"color:{ACCENT}; text-decoration:none; font-size:{FS_XS};"
-_TEXT_STYLE = f"font-size:{FS_XS}; opacity:0.6;"
+_TEXT_STYLE = f"font-size:{FS_XS}; opacity:{OP_DIM};"
 _SEP = "\u2002\u00b7\u2002"  # en-space · en-space
 
 

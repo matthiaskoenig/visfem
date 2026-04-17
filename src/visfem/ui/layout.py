@@ -12,7 +12,7 @@ from visfem.ui.footer import FOOTER_STYLE, build_footer
 from visfem.ui.left_panel import build_left_panel
 from visfem.ui.right_panel import build_right_panel
 from visfem.ui.toolbar import build_toolbar
-from visfem.ui.theme import LEFT_PANEL_WIDTH, RIGHT_PANEL_WIDTH
+from visfem.ui.theme import LEFT_PANEL_WIDTH, RIGHT_PANEL_WIDTH, BG_DARK, BG_LIGHT
 
 
 def build_ui(
@@ -84,8 +84,8 @@ def build_ui(
                 # clear during panel-resize transitions shows the right color, not black.
                 with html.Div(
                     style=(
-                        "'flex:1; min-width:0; height:100%; position:relative; "
-                        "background-color:' + (dark_mode ? 'rgb(20,26,26)' : 'rgb(209,214,214)')",
+                        f"'flex:1; min-width:0; height:100%; position:relative; "
+                        f"background-color:' + (dark_mode ? '{BG_DARK}' : '{BG_LIGHT}')",
                     ),
                 ):
                     with VtkLocalView(

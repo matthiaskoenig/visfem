@@ -95,3 +95,4 @@ if __name__ == "__main__":
     # print_part_ids()
     # plot_tibia_parts()
     # plot_tibia_simulation()
+    pass

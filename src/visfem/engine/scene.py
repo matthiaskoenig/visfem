@@ -18,6 +18,10 @@ from visfem.models import MeshMetadata, ProjectMetadata
 
 logger = get_logger(__name__)
 
+_FIBER_SUBSAMPLE: int = 5
+_GLYPH_SCALE: float = 1.5
+_PERCENTILE_CLAMP: int = 95
+
 
 class TrameCtrl(Protocol):
     def view_push_camera(self) -> None: ...
@@ -83,7 +87,7 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
     }
 
 
-# ---- Scene state ----
+# Scene state
 
 def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
     """Remove all actors and reset renderer state before each render.
@@ -114,7 +118,7 @@ def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) 
     ctrl.view_update()  
 
 
-# ---- Renderers ----
+# Renderers
 
 def redraw_xdmf(
     plotter: pv.Plotter,
@@ -293,14 +297,13 @@ def redraw_heart(
         interpolate_before_map=False,
     )
 
-    # Build fiber glyph overlay - hidden by default, toggled via show_fibers state.
+    # Build fiber glyph overlay; hidden by default, toggled via show_fibers state.
     fiber_actor: vtkActor | None = None
     if "Fiber" in mesh.cell_data.keys():
-        subsample = 5
-        cell_idx = np.arange(0, mesh.n_cells, subsample)
+        cell_idx = np.arange(0, mesh.n_cells, _FIBER_SUBSAMPLE)
         centers = mesh.extract_cells(cell_idx).cell_centers()
         centers["Fiber"] = mesh.cell_data["Fiber"][cell_idx]
-        glyphs = centers.glyph(orient="Fiber", scale=False, factor=1.5)
+        glyphs = centers.glyph(orient="Fiber", scale=False, factor=_GLYPH_SCALE)
         fiber_actor = plotter.add_mesh(
             glyphs,
             color="#484848",
@@ -521,9 +524,9 @@ def redraw_tibia_simulation(
         ]
         return legend, stats, None
     else:
-        # Continuous: clamp colormap to 95th percentile to avoid outlier washout.
+        # Continuous: clamp to nth percentile to avoid outlier washout.
         data = mesh.cell_data[field]
-        clim = [float(data.min()), float(np.percentile(data, 95))]
+        clim = [float(data.min()), float(np.percentile(data, _PERCENTILE_CLAMP))]
         plotter.add_mesh(
             mesh,
             scalars=field,

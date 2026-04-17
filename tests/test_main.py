@@ -1,5 +1,5 @@
-from visfem.main import print_something
+from visfem.app import VisfemApp
 
 
-def test_print_something() -> None:
-    assert print_something() == "Hello, World!"
+def test_visfem_app_importable() -> None:
+    assert VisfemApp is not None

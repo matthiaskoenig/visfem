@@ -24,6 +24,9 @@ from visfem.ui.layout import build_ui
 
 logger = get_logger(__name__)
 
+_TARGET_FRAMES: int = 100   # target rendered frames for autoplay
+_FRAME_SLEEP: float = 0.15  # seconds between frames
+
 
 class VisfemApp(TrameApp):
     """Main Trame application for VisFEM."""
@@ -212,7 +215,7 @@ class VisfemApp(TrameApp):
 
     def select_dataset(self, key: str) -> None:
         """Route to the correct redraw based on dataset key."""
-        self.state.autoplay = False  # stop any running autoplay before switching
+        self.state.autoplay = False
         self._fiber_actor = select_dataset(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key,
@@ -220,7 +223,7 @@ class VisfemApp(TrameApp):
 
     def select_xdmf(self, key: str, stem: str) -> None:
         """Load and render a specific XDMF file within a multi-file dataset."""
-        self.state.autoplay = False  # stop any running autoplay before switching
+        self.state.autoplay = False
         select_xdmf(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key, stem,
@@ -228,7 +231,7 @@ class VisfemApp(TrameApp):
 
     def select_patient(self, dataset_key: str, patient: int) -> None:
         """Load and render a specific patient from a multi-patient dataset."""
-        self.state.autoplay = False  # stop any running autoplay before switching
+        self.state.autoplay = False
         select_patient(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, dataset_key, patient,
@@ -236,7 +239,7 @@ class VisfemApp(TrameApp):
 
     def select_scalar_field(self, field: str) -> None:
         """Re-render the current dataset with the given scalar field."""
-        self.state.autoplay = False  # stop autoplay and reset slider on field change
+        self.state.autoplay = False
         self.state.active_step = 0
         select_scalar_field(
             self.plotter, self.ctrl, self.state,
@@ -269,9 +272,8 @@ class VisfemApp(TrameApp):
         """Start or stop automatic step playback."""
         if self.state.autoplay:
             self.state.autoplay = False
-            # The running task checks autoplay on each iteration and will exit.
         else:
-            # Guard against creating a second task while one is still winding down.
+            # Guard against double-start while previous task winds down.
             if self._autoplay_task is not None and not self._autoplay_task.done():
                 return
             self.state.autoplay = True
@@ -283,8 +285,7 @@ class VisfemApp(TrameApp):
             while self.state.autoplay:
                 step = int(self.state.active_step)
                 n = int(self.state.n_steps)
-                # Target ~100 rendered frames; increment >1 for large datasets.
-                inc = math.ceil(n / 100)
+                inc = math.ceil(n / _TARGET_FRAMES)
                 next_step = 0 if step + inc >= n else step + inc
                 select_step(
                     self.plotter, self.ctrl, self.state,
@@ -292,7 +293,7 @@ class VisfemApp(TrameApp):
                 )
                 with self.state:
                     pass
-                await asyncio.sleep(0.15)
+                await asyncio.sleep(_FRAME_SLEEP)
         finally:
             self.state.autoplay = False
 

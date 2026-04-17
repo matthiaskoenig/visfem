@@ -8,8 +8,8 @@
   --accent-glow:   rgba(0, 137, 123, 0.25);
   --accent-mesh:   rgba(0, 137, 123, 0.07);
 
-  --bg:            #141a1a;   /* BG_DARK_BOTTOM */
-  --bg-top:        #212929;   /* BG_DARK_TOP    */
+  --bg:            #141a1a;
+  --bg-top:        #212929;
   --surface:       #1c2626;
   --surface-2:     #233030;
   --border:        rgba(255, 255, 255, 0.07);
@@ -21,6 +21,9 @@
   --radius:        12px;
   --radius-sm:     8px;
   --font:          'Inter', system-ui, sans-serif;
+
+  --bp-two-col:    700px;
+  --bp-mobile:     600px;
 }
 
 html { scroll-behavior: smooth; }
@@ -149,7 +152,6 @@ a { color: inherit; text-decoration: none; }
   background: linear-gradient(160deg, var(--bg-top) 0%, var(--bg) 60%);
 }
 
-/* Mesh grid background */
 .hero-bg-mesh {
   position: absolute;
   inset: 0;
@@ -333,10 +335,6 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.footer-tagline {
-  font-size: 0.85rem;
-  color: var(--text-subtle);
 }
 .footer-links {
   display: flex;

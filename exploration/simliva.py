@@ -1,11 +1,4 @@
-"""Exploration script for the SPP SimLivA datasets.
-
-Perfusion / deformation (lobule_perfusion/, lobule_deformation/)
-    FEniCS XDMF timeseries - scalars, vectors, deformation fields.
-
-Convergence (lobule_convergence/)
-    6 mesh resolutions of the same wedge lobule - for resolution comparison.
-"""
+"""Exploration utilities for SPP SimLivA liver lobule datasets (perfusion, deformation, convergence)."""
 
 import math
 from pathlib import Path
@@ -19,7 +12,7 @@ from plot_utils import animate_field, preview_field_animation  # noqa: F401
 from visfem.mesh import get_metadata, load_mesh
 
 
-# ---- Paths ----
+# Paths
 
 _DATA_BASE      = Path(__file__).parents[1] / "data" / "datasets"
 PERFUSION_DIR   = _DATA_BASE / "lobule_perfusion"
@@ -43,16 +36,19 @@ CONV_FILES: dict[str, Path] = {
 }
 
 
+def _get_scalar_fields(meta: object) -> list[str]:
+    """Return names of scalar (shape==[1]) fields from metadata."""
+    return [name for name, info in meta.fields.items() if info.shape == [1]]
+
+
 def _grid_shape(n: int) -> tuple[int, int]:
     """Return a tight (nrows, ncols) grid for n subplots, max 4 columns."""
     sqrt = int(math.isqrt(n))
     if sqrt * sqrt == n:
         return sqrt, sqrt
     ncols = min(n, 4)
-    return -(-n // ncols), ncols
+    return math.ceil(n / ncols), ncols
 
-
-# ---- Inspection ----
 
 def print_metadata_all(files: dict[str, Path] = SPP_FILES) -> None:
     """Print metadata summary for all files in the given dict."""
@@ -83,8 +79,6 @@ def print_mesh_at_step(stem: str, step: int = 0, files: dict[str, Path] = SPP_FI
     print(f"  cell fields:  {list(mesh.cell_data.keys())}")
 
 
-# ---- Visualization ----
-
 def plot_field_at_step(stem: str, field: str, step: int = 0, files: dict[str, Path] = SPP_FILES) -> None:
     """Plot a single field at a given step."""
     path = files[stem]
@@ -104,7 +98,7 @@ def plot_all_scalar_fields(stem: str, step: int = 0, files: dict[str, Path] = SP
     mesh = load_mesh(path, step=step)
     timestamp = meta.times[step]
 
-    scalar_fields = [name for name, info in meta.fields.items() if info.shape == [1]]
+    scalar_fields = _get_scalar_fields(meta)
     if not scalar_fields:
         print(f"No scalar fields found in {stem} at step {step}.")
         return
@@ -216,9 +210,6 @@ if __name__ == "__main__":
     CONV_STEP  = 150
     CONV_FIELD = "pressure"
     CONV_STEPS = [0, 100, 200, 400, 500, 600, 700, 800]
-
-    print(f"SPP files:  {list(SPP_FILES.keys())}")
-    print(f"Conv files: {list(CONV_FILES.keys())}")
 
     # Inspection - SPP (perfusion / deformation)
     # print_metadata_all(SPP_FILES)

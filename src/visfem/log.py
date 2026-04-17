@@ -1,7 +1,4 @@
-"""Module for logging.
-
-Using rich for output formating.
-"""
+"""Logging setup using rich for output formatting."""
 
 import logging
 
@@ -17,7 +14,6 @@ def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
         datefmt="[%X]",
     )
 
-    # handler = logging.StreamHandler()
     handler = RichHandler(
         markup=False, rich_tracebacks=True, show_time=False, console=console
     )

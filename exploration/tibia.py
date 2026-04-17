@@ -1,9 +1,4 @@
-"""Exploratory script for the tibia dataset (SPP Use Case 1).
-
-Mesh and simulation results from orthopedic trauma surgery digital twin.
-Data from Annchristin Andres, Applied Mechanics / Biomechanics, Uni Saarland.
-Reference: 'Advantages of digital twin technology in orthopedic trauma Surgery'
-"""
+"""Exploration utilities for the tibia orthopedic trauma surgery dataset (mesh and simulation)."""
 
 from pathlib import Path
 
@@ -13,14 +8,15 @@ import pyvista as pv
 from visfem.mesh import get_metadata, load_mesh
 
 
-# ---- Paths ----
+# Paths
 
 _DATA_BASE = Path(__file__).parents[1] / "data" / "datasets"
 MESH_PATH  = _DATA_BASE / "tibia_mesh" / "Tibia_Mesh.vtk"
 SIM_PATH   = _DATA_BASE / "tibia_simulation" / "Tibia_Simulation.vtk"
 
+# PartId -> color for tibia mesh regions
+_PART_COLORS: dict[int, str] = {1: "#e8e0d0", 2: "#e8603c", 3: "#4363d8"}  # bone, callus, implant
 
-# ---- Inspection ----
 
 def print_summary() -> None:
     """Print basic info for both tibia VTK files."""
@@ -50,7 +46,6 @@ def print_part_ids() -> None:
             for val, cnt in zip(unique, counts):
                 print(f"    {val:>4}  {cnt:>8} cells  ({100*cnt/mesh.n_cells:.1f}%)")
 
-    # Also check value ranges for key simulation fields
     print("\n=== Tibia_Simulation.vtk field ranges ===")
     sim = load_mesh(SIM_PATH)
     for name in ("vonMises_stress", "vonMises_equivalent_strain",
@@ -60,20 +55,17 @@ def print_part_ids() -> None:
             print(f"  {name:<35} min={arr.min():.4f}  max={arr.max():.4f}")
 
 
-# ---- Visualization ----
-
 def plot_tibia_parts() -> None:
     """Render Tibia_Mesh colored by PartId to identify regions visually."""
     mesh = load_mesh(MESH_PATH)
     part_ids = mesh.cell_data["PartId"].astype(int)
     unique_ids = sorted(np.unique(part_ids))
-
-    colors = ["#e8e0d0", "#e8603c", "#4363d8"]  # bone=beige, callus/fracture=orange, implant=blue
+    colors = [_PART_COLORS.get(pid, "#aaaaaa") for pid in unique_ids]
     plotter = pv.Plotter()
-    for i, pid in enumerate(unique_ids):
+    for pid, color in zip(unique_ids, colors):
         mask = part_ids == pid
         submesh = mesh.extract_cells(mask)
-        plotter.add_mesh(submesh, color=colors[i], label=f"PartId {pid}", show_edges=False)
+        plotter.add_mesh(submesh, color=color, label=f"PartId {pid}", show_edges=False)
     plotter.add_legend(bcolor="black", border=False)
     plotter.add_title("Tibia_Mesh colored by PartId", font_size=9)
     plotter.show()
@@ -91,8 +83,8 @@ def plot_tibia_simulation() -> None:
 
 
 if __name__ == "__main__":
-    # print_summary()
+    print_summary()
     # print_part_ids()
     # plot_tibia_parts()
     # plot_tibia_simulation()
-    pass
+

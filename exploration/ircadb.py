@@ -1,9 +1,4 @@
-"""Exploratory script for the 3D-IRCADb-01 dataset.
-
-Static VTK surface meshes of segmented organs, 20 patients.
-Structure: patient_01/ .. patient_20/*.vtk
-Run sections by uncommenting the relevant call at the bottom.
-"""
+"""Exploration utilities for the 3D-IRCADb-01 dataset (20 patients, segmented organ meshes)."""
 
 import shutil
 from pathlib import Path
@@ -12,8 +7,6 @@ import pyvista as pv
 
 from visfem.mesh import get_metadata, load_mesh
 
-
-# ---- Paths ----
 
 _DATA_BASE = Path(__file__).parents[1] / "data" / "datasets"
 IRCADB_DIR = _DATA_BASE / "ircadb"
@@ -34,8 +27,6 @@ def get_organ_names(patient: int) -> list[str]:
     """Return sorted organ names available for a given patient."""
     return sorted(f.stem for f in _patient_dir(patient).glob("*.vtk"))
 
-
-# ---- Inspection ----
 
 def print_organ_inventory() -> None:
     """Print which organs are available across all patients."""
@@ -83,8 +74,6 @@ def generate_all_metadata() -> None:
         generate_metadata(patient)
 
 
-# ---- Visualization ----
-
 def plot_organ(patient: int, organ: str) -> None:
     """Load and display a single organ mesh."""
     mesh = load_mesh(_patient_dir(patient) / f"{organ}.vtk")
@@ -123,8 +112,6 @@ def plot_all_organs(patient: int, opacity: float = 0.5) -> None:
     print(f"\nRendering all {len(organs)} organs for patient {patient}...")
     plot_organs_combined(patient, organs, opacity=opacity)
 
-
-# ---- Data preparation ----
 
 _SUBSETS = [
     ("liver",  _DATA_BASE / "ircad_liver"),

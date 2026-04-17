@@ -1,16 +1,4 @@
-"""Exploration script for heart datasets.
-
-Static meshes
--------------
-  M.vtu   mechanical volumetric mesh (~129k tetra, 12 material regions)
-  EP.vtu  electrophysiology volumetric mesh (640 MB, 7.4M cells)
-  surfaces/  pre-extracted STL cavity / epicardium surfaces
-
-Timeseries (IV)
----------------
-  IV.pvd  PVD index ~1600 timesteps
-  IV_vtu/ per-timestep VTU files
-"""
+"""Exploration utilities for heart datasets (mechanical M.vtu, electrophysiology EP.vtu, IV timeseries)."""
 
 from pathlib import Path
 
@@ -20,7 +8,7 @@ import pyvista as pv
 from visfem.mesh import get_metadata, load_mesh
 
 
-# ---- Paths ----
+# Paths
 _DATA_BASE = Path(__file__).parents[1] / "data" / "datasets"
 
 # Static meshes
@@ -107,7 +95,7 @@ _EP_MATERIAL_COLORS: dict[int, str] = {
 }
 
 
-# ---- Inspection ----
+# Inspection
 
 
 def print_metadata() -> None:
@@ -137,7 +125,7 @@ def print_material_distribution() -> None:
 
 
 def print_ep_material_distribution() -> None:
-    """Print cell count per EP material ID (loads full 640 MB mesh, ~10 s)."""
+    """Print cell count per EP material ID. Loads the full 640 MB EP mesh (~10 s)."""
     ep_mesh = load_mesh(EP_MESH_PATH)
     material_ids = ep_mesh.cell_data["Material"]
     unique_ids, cell_counts = np.unique(material_ids, return_counts=True)
@@ -207,8 +195,6 @@ def print_heart_data_summary() -> None:
         print("  NOT FOUND. Run extract_ep_surface() first")
 
 
-# Inspection IV timeseries (PVD)
-
 def print_iv_metadata() -> None:
     """Print metadata summary for the IV.pvd timeseries."""
     meta = get_metadata(PVD_PATH)
@@ -243,7 +229,7 @@ def inspect_iv_step(step: int = 0) -> pv.DataSet:
 
 
 def check_iv_topology_consistency(steps: list[int] = IV_SAMPLE_STEPS) -> None:
-    """Verify mesh topology (n_points, n_cells, point coords) is identical across steps."""
+    """Verify n_points, n_cells, and point coordinates are identical across sampled IV steps."""
     print("\nIV topology consistency check")
     reference: tuple[int, int] | None = None
     reference_points: np.ndarray | None = None
@@ -351,7 +337,6 @@ def plot_fiber_orientation(subsample: int = 5) -> None:
     plotter.show()
 
 
-# Visualization - surfaces (STL)
 def plot_surface(name: str) -> None:
     """Render a single STL surface mesh."""
     path = SURFACES.get(name)
@@ -399,7 +384,6 @@ def plot_mesh_with_surface_overlay(
     plotter.show()
 
 
-# Visualization - EP.vtu (electrophysiology mesh)
 def plot_ep_surface_per_region() -> None:
     """Extract EP.vtu surface and render with per-region colors (~15 s total)."""
     ep_mesh = load_mesh(EP_MESH_PATH)
@@ -441,7 +425,7 @@ def plot_ep_single_region(mat_id: int) -> None:
     plotter.show()
 
 
-# ---- Utility ----
+# Utility
 
 def extract_ep_surface() -> None:
     """Extract EP.vtu outer surface and save as ep_surface.vtp.

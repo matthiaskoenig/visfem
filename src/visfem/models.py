@@ -1,8 +1,7 @@
 """Pydantic models for mesh and project metadata validation.
 
-Two distinct metadata types:
-  MeshMetadata     -- auto-generated from mesh files, cached as .meta.json sidecars
-  ProjectMetadata  -- hand-authored per dataset, stored in data/datasets/**/*.json
+MeshMetadata is auto-generated from mesh files and cached as .meta.json sidecars.
+ProjectMetadata is hand-authored per dataset, stored in data/datasets/**/*.json.
 """
 
 import hashlib
@@ -12,10 +11,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 
-# ===========================================================================
 # MeshMetadata
-# Auto-generated from mesh files and cached as .meta.json sidecars.
-# ===========================================================================
 
 class FieldInfo(BaseModel):
     """Descriptor for one scalar/vector/tensor field on a mesh."""
@@ -23,12 +19,14 @@ class FieldInfo(BaseModel):
     shape: list[int]  # [1] scalar, [3] vector, [3, 3] tensor
 
 
-class MeshMetadata(BaseModel):
-    """Auto-generated metadata for a single mesh file.
+Bounds3D = tuple[float, float, float, float, float, float]
+"""(xmin, xmax, ymin, ymax, zmin, zmax) bounding box."""
 
-    Cached as a .meta.json sidecar to avoid re-parsing the (potentially large)
-    mesh file on every startup. Sidecars are automatically invalidated and
-    regenerated when the schema changes, detected via schema_hash.
+
+class MeshMetadata(BaseModel):
+    """Auto-generated metadata for a single mesh file, cached as a .meta.json sidecar.
+
+    Sidecars are invalidated and regenerated when the schema changes (detected via schema_hash).
     """
     schema_hash: str = ""
     format: str           # fenics_xdmf | timeseries_xdmf | pyvista_native | meshio_fallback
@@ -38,15 +36,14 @@ class MeshMetadata(BaseModel):
     n_cells: int = Field(ge=0)
     cell_types: list[str]
     fields: dict[str, FieldInfo]
-    bounds: tuple[float, float, float, float, float, float] | None = None
-    # xmin, xmax, ymin, ymax, zmin, zmax -- None if not precomputed
+    bounds: Bounds3D | None = None
     scalar_bounds: dict[str, list[float]] = {}
     # field_name -> [global_min, global_max] across all timesteps
 
 
 def compute_mesh_metadata_hash() -> str:
-    """
-    Return an 8-char hash of MeshMetadata field names and types.
+    """Return an 8-char hash of MeshMetadata field names and types.
+
     Changes automatically whenever fields are added, removed, or retyped.
     """
     fields = {
@@ -63,10 +60,7 @@ def compute_mesh_metadata_hash() -> str:
 MESH_METADATA_HASH: str = compute_mesh_metadata_hash()
 
 
-# ===========================================================================
 # ProjectMetadata
-# Hand-authored per dataset, stored in data/datasets/**/*.json.
-# ===========================================================================
 
 class BiologicalScale(StrEnum):
     """Biological scale at which the model operates."""
@@ -91,8 +85,8 @@ class OrganSystem(StrEnum):
 
 
 class ProjectMetadata(BaseModel):
-    """
-    Hand-authored descriptor for a dataset, stored in data/metadata/*.json.
+    """Hand-authored descriptor for a dataset, stored in data/metadata/*.json.
+
     Captures scientific context for UI display.
     """
     data_path: str

@@ -21,7 +21,7 @@ from visfem.models import MESH_METADATA_HASH, MeshMetadata
 logger = get_logger(__name__)
 
 
-# ---- Constants ----
+# Constants
 
 # File extensions that PyVista can read natively
 _PYVISTA_NATIVE: frozenset[str] = frozenset(
@@ -60,7 +60,7 @@ if "PolyLine" not in _xdmf_common.xdmf_to_meshio_type:
     _xdmf_common.meshio_to_xdmf_type["line"] = ("PolyLine",)
 
 
-# ---- Internal utilities ----
+# Internal utilities
 
 def _require(element: ET.Element | None, tag: str, context: str) -> ET.Element:
     """Return element or raise ValueError if None."""
@@ -104,7 +104,7 @@ def _parse_xdmf_base_grid(
     return domain, topology_elem, topo_item, geo_item
 
 
-# ---- Format detection ----
+# Format detection
 
 def _detect_format(path: Path) -> str:
     """Return a format string for the given file path.
@@ -144,7 +144,7 @@ def _detect_xdmf_subtype(path: Path) -> str:
     return "fenics_xdmf"
 
 
-# ---- PVD helpers ----
+# PVD helpers
 
 def _parse_pvd(path: Path) -> list[tuple[float, Path]]:
     """Parse a PVD file and return (timestep, abs_vtu_path) pairs sorted by time."""
@@ -160,7 +160,7 @@ def _parse_pvd(path: Path) -> list[tuple[float, Path]]:
     return sorted(entries, key=lambda x: x[0])
 
 
-# ---- Metadata extraction ----
+# Metadata extraction
 
 def get_metadata(path: Path) -> MeshMetadata:
     """Return a format-agnostic metadata descriptor for any supported mesh file.
@@ -324,7 +324,6 @@ def _metadata_static(path: Path, fmt: str) -> dict:
     )
 
     def _field_shape(arr: np.ndarray) -> list[int]:
-        """Return [1] for scalar arrays, [n] for vector/tensor arrays."""
         return list(arr.shape[1:]) if arr.ndim > 1 else [1]
 
     return {
@@ -343,7 +342,7 @@ def _metadata_static(path: Path, fmt: str) -> dict:
     }
 
 
-# ---- Global scalar bounds ----
+# Global scalar bounds
 
 def _compute_scalar_bounds(
     path: Path,
@@ -446,7 +445,7 @@ def _compute_scalar_bounds(
     }
 
 
-# ---- Mesh loaders ----
+# Mesh loaders
 
 def _load_pvd(path: Path, step: int = 0) -> pv.DataSet:
     """Load one VTU from a PVD timeseries by step index."""
@@ -511,7 +510,6 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
             if data_item is None:
                 continue
             center   = attr.get("Center", "Node").lower()
-            # DataItem text is "filename.h5:/path/to/dataset"; take the dataset path
             hdf5_key = (data_item.text or "").strip().split(":/")[1]
             try:
                 field_array = hdf5[hdf5_key][:]

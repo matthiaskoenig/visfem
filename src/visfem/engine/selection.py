@@ -1,5 +1,6 @@
 """Dataset selection handlers for VisFEM."""
 from pathlib import Path
+
 import pyvista as pv
 from typing import Any
 from vtkmodules.vtkRenderingCore import vtkActor
@@ -54,7 +55,17 @@ def _timeseries_path(
 
 def _resolve_cmap(state: Any) -> str:
     """Return the active continuous colormap name from state."""
-    return str(state.active_continuous_cmap)  
+    return str(state.active_continuous_cmap)
+
+
+def _reset_selection_state(state: Any) -> None:
+    """Reset per-dataset selection state before loading a new dataset."""
+    state.available_scalar_fields = []
+    state.active_scalar_field = None
+    state.active_xdmf = None
+    state.n_steps = 1
+    state.active_step = 0
+    state.step_times = []
 
 
 def select_dataset(
@@ -70,17 +81,12 @@ def select_dataset(
     Returns the fiber glyph actor when key=='heart', otherwise None.
     Sets per-dataset palette/cmap defaults before rendering.
     """
-    state.active_dataset = key  
-    state.active_patient = None  
-    state.active_xdmf = None  
-    state.show_fibers = False  
-    state.available_scalar_fields = []  
-    state.active_scalar_field = None  
-    state.n_steps = 1  
-    state.active_step = 0  
-    state.step_times = []  
+    state.active_dataset = key
+    state.active_patient = None
+    state.show_fibers = False
+    _reset_selection_state(state)
 
-    # Reset color defaults per dataset type
+    # Default color scheme per dataset type
     if key in ("tibia_simulation", "tibia_mesh"):
         state.active_categorical_palette = "clinical"  
     else:
@@ -207,15 +213,11 @@ def select_xdmf(
     stem: str,
 ) -> None:
     """Load and render a specific XDMF file within a multi-file dataset."""
-    state.active_dataset = key  
-    state.active_xdmf = stem  
-    state.active_patient = None  
-    state.available_scalar_fields = []  
-    state.active_scalar_field = None  
-    state.n_steps = 1  
-    state.active_step = 0  
-    state.step_times = []  
-    opacity = float(state.ctrl_opacity)  
+    state.active_dataset = key
+    state.active_xdmf = stem
+    state.active_patient = None
+    _reset_selection_state(state)
+    opacity = float(state.ctrl_opacity)
     state.trame__busy = True  
     try:
         meta = project_metadata[key]
@@ -345,13 +347,8 @@ def select_patient(
     """Load and render a specific patient from a multi-patient dataset."""
     state.active_dataset = dataset_key
     state.active_patient = patient
-    state.active_xdmf = None
-    state.available_scalar_fields = []
-    state.active_scalar_field = None
     state.scalar_bar = None
-    state.n_steps = 1
-    state.active_step = 0
-    state.step_times = []
+    _reset_selection_state(state)
     opacity = float(state.ctrl_opacity)
     state.trame__busy = True
     try:

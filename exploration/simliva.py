@@ -10,6 +10,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent))
 from plot_utils import animate_field, preview_field_animation  # noqa: F401
 from visfem.mesh import get_metadata, load_mesh
+from visfem.models import MeshMetadata
 
 
 # Paths
@@ -36,7 +37,7 @@ CONV_FILES: dict[str, Path] = {
 }
 
 
-def _get_scalar_fields(meta: object) -> list[str]:
+def _get_scalar_fields(meta: MeshMetadata) -> list[str]:
     """Return names of scalar (shape==[1]) fields from metadata."""
     return [name for name, info in meta.fields.items() if info.shape == [1]]
 

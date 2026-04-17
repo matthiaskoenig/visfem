@@ -145,7 +145,7 @@ a { color: inherit; text-decoration: none; }
 .hero {
   position: relative;
   overflow: hidden;
-  padding: 100px 24px 80px;
+  padding: 52px 24px 36px;
   background: linear-gradient(160deg, var(--bg-top) 0%, var(--bg) 60%);
 }
 
@@ -170,7 +170,7 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
+  gap: 16px;
 }
 
 .hero-badge {
@@ -193,6 +193,7 @@ a { color: inherit; text-decoration: none; }
   color: var(--text);
 }
 .accent { color: var(--accent); }
+.hero-title .accent { font-size: clamp(1.55rem, 3.8vw, 2.6rem); }
 
 .hero-subtitle {
   max-width: 560px;
@@ -211,8 +212,8 @@ a { color: inherit; text-decoration: none; }
 /* Preview placeholder */
 .hero-preview {
   width: 100%;
-  max-width: 760px;
-  margin-top: 16px;
+  max-width: 700px;
+  margin-top: 4px;
   border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid var(--border);
@@ -278,7 +279,8 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* Citation */
-.cite-section { background: var(--bg); }
+.cite-section { background: var(--bg); padding-top: 56px; padding-bottom: 56px; }
+.cite-section .section-title { margin-bottom: 20px; }
 .cite-intro {
   text-align: center;
   color: var(--text-muted);

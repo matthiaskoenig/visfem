@@ -77,6 +77,7 @@ class VisfemApp(TrameApp):
             on_exit_xr=self._on_exit_xr,
             on_toggle_left_panel=self.toggle_left_panel,
             on_toggle_right_panel=self.toggle_right_panel,
+            on_toggle_render_mode=self.toggle_render_mode,
         )
         self.ctrl.on_client_connected.add(self._reset_xr_state)
 
@@ -129,6 +130,8 @@ class VisfemApp(TrameApp):
             "active_continuous_cmap": "viridis",
             "categorical_palette_meta": CATEGORICAL_META,
             "continuous_cmap_meta": CONTINUOUS_META,
+            "render_mode": "local",
+            "fullscreen": False,
         })
 
     # ---- Panel toggles ----
@@ -173,6 +176,11 @@ class VisfemApp(TrameApp):
     def _on_exit_xr(self) -> None:
         """Called when XR session ends."""
         self.state.xr_active = False
+        self.ctrl.view_update()
+
+    def toggle_render_mode(self) -> None:
+        """Switch between local (browser WebGL) and remote (server JPEG stream) rendering."""
+        self.state.render_mode = "remote" if self.state.render_mode == "local" else "local"
         self.ctrl.view_update()
 
     def toggle_xr(self) -> None:

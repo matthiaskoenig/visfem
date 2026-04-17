@@ -5,7 +5,8 @@ from typing import Any
 import pyvista as pv
 from trame.ui.vuetify3 import SinglePageLayout
 from trame.widgets import html
-from trame.widgets.vtk import VtkLocalView, VtkWebXRHelper
+from trame.widgets.vtk import VtkRemoteLocalView, VtkWebXRHelper
+from trame_client.widgets.trame import Script
 
 from visfem.models import ProjectMetadata
 from visfem.ui.footer import FOOTER_STYLE, build_footer
@@ -35,6 +36,7 @@ def build_ui(
     on_exit_xr: object,
     on_toggle_left_panel: object,
     on_toggle_right_panel: object,
+    on_toggle_render_mode: object,
 ) -> SinglePageLayout:
     """Assemble the full SinglePageLayout and return it."""
     with SinglePageLayout(server, theme=("dark_mode ? 'dark' : 'light'",)) as layout:
@@ -45,12 +47,20 @@ def build_ui(
             toolbar.density = "compact"
             toolbar.style = "background-color: color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%);"
             toolbar.elevation = 0
-            build_toolbar(on_toggle_theme, on_toggle_xr, on_toggle_left_panel, on_toggle_right_panel)
+            build_toolbar(on_toggle_theme, on_toggle_xr, on_toggle_left_panel, on_toggle_right_panel, on_toggle_render_mode)
 
         layout.footer.clear()
         with layout.footer as footer:
             footer.style = FOOTER_STYLE
             build_footer()
+
+        Script(
+            "document.addEventListener('fullscreenchange', function() {"
+            "  if (window.trame && window.trame.state) {"
+            "    window.trame.state.set('fullscreen', !!document.fullscreenElement);"
+            "  }"
+            "});"
+        )
 
         with layout.content:
             with html.Div(
@@ -80,16 +90,18 @@ def build_ui(
                     )
 
                 # ---- VTK viewport (fills remaining space) ----
-                # background-color matches the scene background so WebGL's framebuffer
-                # clear during panel-resize transitions shows the right color, not black.
                 with html.Div(
                     style=(
                         f"'flex:1; min-width:0; height:100%; position:relative; "
                         f"background-color:' + (dark_mode ? '{BG_DARK}' : '{BG_LIGHT}')",
                     ),
                 ):
-                    with VtkLocalView(
-                        plotter.render_window, ref="view", camera="camera"
+                    with VtkRemoteLocalView(
+                        plotter.render_window,
+                        namespace="view",
+                        mode=("render_mode", "local"),
+                        ref="view",
+                        camera="camera",
                     ) as view:
                         ctrl.reset_camera = view.reset_camera
                         ctrl.view_push_camera = view.push_camera

@@ -7,15 +7,17 @@ Reference: 'Advantages of digital twin technology in orthopedic trauma Surgery'
 
 from pathlib import Path
 
+import numpy as np
 import pyvista as pv
+
+from visfem.mesh import get_metadata, load_mesh
 
 
 # ---- Paths ----
 
-_DATA_BASE = Path(__file__).parents[1] / "data" / "fem_data"
-TIBIA_DIR  = _DATA_BASE / "tibia"
-MESH_PATH  = TIBIA_DIR / "Tibia_Mesh.vtk"
-SIM_PATH   = TIBIA_DIR / "Tibia_Simulation.vtk"
+_DATA_BASE = Path(__file__).parents[1] / "data" / "datasets"
+MESH_PATH  = _DATA_BASE / "tibia_mesh" / "Tibia_Mesh.vtk"
+SIM_PATH   = _DATA_BASE / "tibia_simulation" / "Tibia_Simulation.vtk"
 
 
 # ---- Inspection ----
@@ -23,28 +25,21 @@ SIM_PATH   = TIBIA_DIR / "Tibia_Simulation.vtk"
 def print_summary() -> None:
     """Print basic info for both tibia VTK files."""
     for path in (MESH_PATH, SIM_PATH):
+        meta = get_metadata(path)
         print(f"\n=== {path.name} ===")
-        mesh = pv.read(str(path))
-        print(f"  type       : {type(mesh).__name__}")
-        print(f"  points     : {mesh.n_points}")
-        print(f"  cells      : {mesh.n_cells}")
-        print(f"  bounds     : x=[{mesh.bounds[0]:.1f}, {mesh.bounds[1]:.1f}]  "
-              f"y=[{mesh.bounds[2]:.1f}, {mesh.bounds[3]:.1f}]  "
-              f"z=[{mesh.bounds[4]:.1f}, {mesh.bounds[5]:.1f}]")
-        print(f"  cell_types : {list(set(str(ct) for ct in mesh.celltypes))}")
-        print(f"  point_data : {list(mesh.point_data.keys())}")
-        print(f"  cell_data  : {list(mesh.cell_data.keys())}")
-        for name, arr in mesh.point_data.items():
-            print(f"    [point] {name:<30} shape={arr.shape}  dtype={arr.dtype}")
-        for name, arr in mesh.cell_data.items():
-            print(f"    [cell]  {name:<30} shape={arr.shape}  dtype={arr.dtype}")
+        print(f"  format     : {meta.format}")
+        print(f"  n_points   : {meta.n_points}")
+        print(f"  n_cells    : {meta.n_cells}")
+        print(f"  bounds     : {meta.bounds}")
+        print(f"  cell_types : {meta.cell_types}")
+        print(f"  fields ({len(meta.fields)}):")
+        for name, info in meta.fields.items():
+            print(f"    {name:<30} center={info.center}  shape={info.shape}")
 
 def print_part_ids() -> None:
     """Print unique PartId and PartIdTo values for both meshes."""
-    import numpy as np
-
     for path in (MESH_PATH, SIM_PATH):
-        mesh = pv.read(str(path))
+        mesh = load_mesh(path)
         print(f"\n=== {path.name} ===")
         for array_name in ("PartId", "PartIdTo", "Mask_ID"):
             if array_name not in mesh.cell_data:
@@ -57,18 +52,19 @@ def print_part_ids() -> None:
 
     # Also check value ranges for key simulation fields
     print("\n=== Tibia_Simulation.vtk field ranges ===")
-    sim = pv.read(str(SIM_PATH))
+    sim = load_mesh(SIM_PATH)
     for name in ("vonMises_stress", "vonMises_equivalent_strain",
                  "Claes_window", "Frost_window", "Mask_ID"):
         if name in sim.cell_data:
             arr = sim.cell_data[name]
             print(f"  {name:<35} min={arr.min():.4f}  max={arr.max():.4f}")
 
+
+# ---- Visualization ----
+
 def plot_tibia_parts() -> None:
     """Render Tibia_Mesh colored by PartId to identify regions visually."""
-    import numpy as np
-
-    mesh = pv.read(str(MESH_PATH))
+    mesh = load_mesh(MESH_PATH)
     part_ids = mesh.cell_data["PartId"].astype(int)
     unique_ids = sorted(np.unique(part_ids))
 
@@ -85,11 +81,11 @@ def plot_tibia_parts() -> None:
 
 def plot_tibia_simulation() -> None:
     """Render Tibia_Simulation colored by vonMises_stress."""
-    sim = pv.read(str(SIM_PATH))
+    sim = load_mesh(SIM_PATH)
     plotter = pv.Plotter()
     plotter.add_mesh(sim, scalars="vonMises_stress", cmap="turbo",
                      show_edges=False, show_scalar_bar=True)
-    plotter.add_title("Tibia Simulation — von Mises stress", font_size=9)
+    plotter.add_title("Tibia Simulation - von Mises stress", font_size=9)
     plotter.show()
 
 
@@ -98,4 +94,4 @@ if __name__ == "__main__":
     # print_summary()
     # print_part_ids()
     # plot_tibia_parts()
-    plot_tibia_simulation()
+    # plot_tibia_simulation()

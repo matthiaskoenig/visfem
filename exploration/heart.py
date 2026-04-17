@@ -13,17 +13,14 @@ Timeseries (IV)
 """
 
 from pathlib import Path
-from typing import cast
-import xml.etree.ElementTree as ET
 
 import numpy as np
 import pyvista as pv
 
-from visfem.console import console
 from visfem.mesh import get_metadata, load_mesh
 
 
-# Paths
+# ---- Paths ----
 _DATA_BASE = Path(__file__).parents[1] / "data" / "datasets"
 
 # Static meshes
@@ -110,7 +107,7 @@ _EP_MATERIAL_COLORS: dict[int, str] = {
 }
 
 
-# Inspection static meshes (M.vtu / EP.vtu / surfaces)
+# ---- Inspection ----
 
 
 def print_metadata() -> None:
@@ -141,7 +138,7 @@ def print_material_distribution() -> None:
 
 def print_ep_material_distribution() -> None:
     """Print cell count per EP material ID (loads full 640 MB mesh, ~10 s)."""
-    ep_mesh = cast(pv.DataSet, pv.read(str(EP_MESH_PATH)))
+    ep_mesh = load_mesh(EP_MESH_PATH)
     material_ids = ep_mesh.cell_data["Material"]
     unique_ids, cell_counts = np.unique(material_ids, return_counts=True)
     print(f"\nEP material distribution ({ep_mesh.n_cells} total cells):")
@@ -157,7 +154,7 @@ def print_surface_summary() -> None:
     print("\nSurface meshes:")
     for name, path in SURFACES.items():
         if path.exists():
-            mesh = cast(pv.DataSet, pv.read(str(path)))
+            mesh = load_mesh(path)
             print(f"  {name:<15}  {mesh.n_points:>6} pts  {mesh.n_cells:>6} cells")
         else:
             print(f"  {name:<15}  NOT FOUND")
@@ -166,7 +163,7 @@ def print_surface_summary() -> None:
 def print_heart_data_summary() -> None:
     """Print a full summary of all heart data files (M, EP, surfaces, ep_surface)."""
     print("\n=== M.vtu (mechanical volumetric mesh) ===")
-    m = pv.read(str(MESH_PATH))
+    m = load_mesh(MESH_PATH)
     print(f"  points: {m.n_points}, cells: {m.n_cells}")
     print(f"  arrays: {m.array_names}")
     for mid, cnt in zip(
@@ -177,7 +174,7 @@ def print_heart_data_summary() -> None:
         )
 
     print("\n=== EP.vtu (electrophysiology volumetric mesh) ===")
-    ep = pv.read(str(EP_MESH_PATH))
+    ep = load_mesh(EP_MESH_PATH)
     print(f"  points: {ep.n_points}, cells: {ep.n_cells}")
     print(f"  arrays: {ep.array_names}")
     for mid, cnt in zip(
@@ -189,7 +186,7 @@ def print_heart_data_summary() -> None:
 
     print("\n=== surfaces/ STL files (pre-extracted surfaces) ===")
     for name, path in SURFACES.items():
-        mesh = pv.read(str(path))
+        mesh = load_mesh(path)
         print(
             f"  {name:<20} {mesh.n_points:>7} pts  {mesh.n_cells:>7} cells  arrays={mesh.array_names}"
         )
@@ -197,7 +194,7 @@ def print_heart_data_summary() -> None:
     print("\n=== ep_surface.vtp (extracted EP outer surface) ===")
     ep_surf_path = SURFACE_DIR / "ep_surface.vtp"
     if ep_surf_path.exists():
-        ep_surf = pv.read(str(ep_surf_path))
+        ep_surf = load_mesh(ep_surf_path)
         print(f"  points: {ep_surf.n_points}, cells: {ep_surf.n_cells}")
         print(f"  arrays: {ep_surf.array_names}")
         for mid, cnt in zip(
@@ -207,89 +204,71 @@ def print_heart_data_summary() -> None:
                 f"    Material {int(mid):>3}  {EP_MATERIAL_NAMES.get(int(mid), 'unknown'):<35} {cnt:>7} cells"
             )
     else:
-        print("  NOT FOUND. un extract_ep_surface() first")
+        print("  NOT FOUND. Run extract_ep_surface() first")
 
 
-# Inspection IV timeseries (PVD + VTU)
-def inspect_pvd(pvd_path: Path = PVD_PATH) -> dict[int, Path]:
-    """Parse PVD index, print summary, return step -> vtu_path mapping."""
-    console.rule("[bold]PVD index")
-    tree = ET.parse(pvd_path)
-    datasets = tree.findall(".//DataSet")
-    console.print(f"Total timesteps: {len(datasets)}")
-    console.print(f"t_start: {datasets[0].attrib.get('timestep')}")
-    console.print(f"t_end:   {datasets[-1].attrib.get('timestep')}")
-    return {i: pvd_path.parent / ds.attrib["file"] for i, ds in enumerate(datasets)}
+# Inspection IV timeseries (PVD)
+
+def print_iv_metadata() -> None:
+    """Print metadata summary for the IV.pvd timeseries."""
+    meta = get_metadata(PVD_PATH)
+    print(f"\nIV.pvd  ({meta.format})")
+    print(f"  n_steps  : {meta.n_steps}")
+    print(f"  t_start  : {meta.times[0]:.6g}")
+    print(f"  t_end    : {meta.times[-1]:.6g}")
+    print(f"  n_points : {meta.n_points}")
+    print(f"  n_cells  : {meta.n_cells}")
+    print(f"  fields ({len(meta.fields)}):")
+    for name, info in meta.fields.items():
+        print(f"    {name:<30} center={info.center}  shape={info.shape}")
 
 
-def inspect_vtu_fields(vtu_path: Path) -> pv.UnstructuredGrid:
-    """Load a VTU and print mesh + field info."""
-    console.rule(f"[bold]VTU: {vtu_path.name}")
-    mesh = pv.read(vtu_path)
-    console.print(f"Type:       {type(mesh).__name__}")
-    console.print(f"n_points:   {mesh.n_points}")
-    console.print(f"n_cells:    {mesh.n_cells}")
-    console.print(f"Bounds:     {[round(b, 4) for b in mesh.bounds]}")
-    console.print(f"Cell types: {set(mesh.celltypes.tolist())}")
-
-    console.print("\n[bold]Point data fields:")
+def inspect_iv_step(step: int = 0) -> pv.DataSet:
+    """Load one IV step and print mesh + field info."""
+    meta = get_metadata(PVD_PATH)
+    mesh = load_mesh(PVD_PATH, step=step)
+    print(f"\nIV step {step}  (t={meta.times[step]:.6g})")
+    print(f"  n_points   : {mesh.n_points}")
+    print(f"  n_cells    : {mesh.n_cells}")
+    print(f"  bounds     : {[round(b, 4) for b in mesh.bounds]}")
+    print("\n  Point data:")
     for name, arr in mesh.point_data.items():
-        console.print(
-            f"  {name:<30} shape={str(arr.shape):<18} dtype={arr.dtype}  "
-            f"min={arr.min():.4g}  max={arr.max():.4g}"
-        )
-
-    console.print("\n[bold]Cell data fields:")
+        print(f"    {name:<30} shape={str(arr.shape):<18} dtype={arr.dtype}  "
+              f"min={arr.min():.4g}  max={arr.max():.4g}")
+    print("\n  Cell data:")
     for name, arr in mesh.cell_data.items():
-        console.print(
-            f"  {name:<30} shape={str(arr.shape):<18} dtype={arr.dtype}  "
-            f"min={arr.min():.4g}  max={arr.max():.4g}"
-        )
+        print(f"    {name:<30} shape={str(arr.shape):<18} dtype={arr.dtype}  "
+              f"min={arr.min():.4g}  max={arr.max():.4g}")
     return mesh
 
 
-def check_iv_topology_consistency(
-    step_to_path: dict[int, Path],
-    steps: list[int] = IV_SAMPLE_STEPS,
-) -> None:
+def check_iv_topology_consistency(steps: list[int] = IV_SAMPLE_STEPS) -> None:
     """Verify mesh topology (n_points, n_cells, point coords) is identical across steps."""
-    console.rule("[bold]IV topology consistency check")
+    print("\nIV topology consistency check")
     reference: tuple[int, int] | None = None
     reference_points: np.ndarray | None = None
 
     for step in steps:
-        mesh = pv.read(step_to_path[step])
+        mesh = load_mesh(PVD_PATH, step=step)
         if reference is None:
             reference = (mesh.n_points, mesh.n_cells)
             reference_points = mesh.points.copy()
-            console.print(
-                f"  Step {step:>4}: reference  -  n_points={mesh.n_points}  n_cells={mesh.n_cells}"
-            )
+            print(f"  Step {step:>4}: reference  n_points={mesh.n_points}  n_cells={mesh.n_cells}")
             continue
         assert reference_points is not None
-        points_identical = np.allclose(mesh.points, reference_points)
-        topology_match = (mesh.n_points, mesh.n_cells) == reference
-        status = (
-            "[green]OK[/green]"
-            if (topology_match and points_identical)
-            else "[red]MISMATCH[/red]"
-        )
-        console.print(
-            f"  Step {step:>4}: {status}  -  n_points={mesh.n_points}  n_cells={mesh.n_cells}  points_identical={points_identical}"
-        )
+        ok = (mesh.n_points, mesh.n_cells) == reference and np.allclose(mesh.points, reference_points)
+        print(f"  Step {step:>4}: {'OK' if ok else 'MISMATCH'}  "
+              f"n_points={mesh.n_points}  n_cells={mesh.n_cells}")
 
 
-def inspect_iv_field_ranges(
-    step_to_path: dict[int, Path],
-    steps: list[int] = IV_SAMPLE_STEPS,
-) -> None:
+def inspect_iv_field_ranges(steps: list[int] = IV_SAMPLE_STEPS) -> None:
     """Print min/max of each field across sampled IV steps."""
-    console.rule("[bold]IV field ranges across sampled steps")
+    print(f"\nIV field ranges  (sampled steps: {steps})")
     point_ranges: dict[str, list] = {}
     cell_ranges: dict[str, list] = {}
 
     for step in steps:
-        mesh = pv.read(step_to_path[step])
+        mesh = load_mesh(PVD_PATH, step=step)
         for name, arr in mesh.point_data.items():
             point_ranges.setdefault(name, [np.inf, -np.inf])
             point_ranges[name][0] = min(point_ranges[name][0], float(arr.min()))
@@ -299,16 +278,16 @@ def inspect_iv_field_ranges(
             cell_ranges[name][0] = min(cell_ranges[name][0], float(arr.min()))
             cell_ranges[name][1] = max(cell_ranges[name][1], float(arr.max()))
 
-    console.print(f"Sampled steps: {steps}\n")
-    console.print("[bold]Point data:")
+    print("\n  Point data:")
     for name, (lo, hi) in point_ranges.items():
-        console.print(f"  {name:<30} min={lo:.4g}  max={hi:.4g}")
-    console.print("\n[bold]Cell data:")
+        print(f"    {name:<30} min={lo:.4g}  max={hi:.4g}")
+    print("\n  Cell data:")
     for name, (lo, hi) in cell_ranges.items():
-        console.print(f"  {name:<30} min={lo:.4g}  max={hi:.4g}")
+        print(f"    {name:<30} min={lo:.4g}  max={hi:.4g}")
 
 
-# Visualization M.vtu (mechanical mesh)
+# ---- Visualization ----
+
 def plot_material_colored() -> None:
     """Render M.vtu colored by MaterialID scalar."""
     mesh = load_mesh(MESH_PATH)
@@ -372,14 +351,14 @@ def plot_fiber_orientation(subsample: int = 5) -> None:
     plotter.show()
 
 
-# Visualization surfaces (STL)
+# Visualization - surfaces (STL)
 def plot_surface(name: str) -> None:
     """Render a single STL surface mesh."""
     path = SURFACES.get(name)
     if path is None or not path.exists():
         print(f"Surface '{name}' not found. Available: {list(SURFACES.keys())}")
         return
-    mesh = cast(pv.DataSet, pv.read(str(path)))
+    mesh = load_mesh(path)
     plotter = pv.Plotter()
     plotter.add_mesh(mesh, show_edges=True)
     plotter.add_title(f"Surface: {name}", font_size=9)
@@ -398,7 +377,7 @@ def plot_cavities_combined(opacity: float = 0.6) -> None:
     for name, color in cavity_colors.items():
         path = SURFACES.get(name)
         if path and path.exists():
-            mesh = cast(pv.DataSet, pv.read(str(path)))
+            mesh = load_mesh(path)
             plotter.add_mesh(mesh, color=color, opacity=opacity, label=name)
     plotter.add_legend(bcolor="black", border=False)
     plotter.add_title("Four cardiac cavities", font_size=9)
@@ -414,16 +393,16 @@ def plot_mesh_with_surface_overlay(
     plotter = pv.Plotter()
     plotter.add_mesh(mesh, scalars="Material", show_edges=False, cmap="tab20")
     if path and path.exists():
-        surface_mesh = cast(pv.DataSet, pv.read(str(path)))
+        surface_mesh = load_mesh(path)
         plotter.add_mesh(surface_mesh, opacity=opacity, color="white", show_edges=False)
     plotter.add_title(f"M.vtu + {surface_name} overlay", font_size=9)
     plotter.show()
 
 
-# Visualization EP.vtu (electrophysiology mesh)
+# Visualization - EP.vtu (electrophysiology mesh)
 def plot_ep_surface_per_region() -> None:
     """Extract EP.vtu surface and render with per-region colors (~15 s total)."""
-    ep_mesh = cast(pv.DataSet, pv.read(str(EP_MESH_PATH)))
+    ep_mesh = load_mesh(EP_MESH_PATH)
     surface_mesh = ep_mesh.extract_surface(algorithm="dataset_surface")
     material_ids = surface_mesh.cell_data["Material"]
     plotter = pv.Plotter()
@@ -445,7 +424,7 @@ def plot_ep_surface_per_region() -> None:
 
 def plot_ep_single_region(mat_id: int) -> None:
     """Extract one EP region from the surface and render with ghost context."""
-    ep_mesh = cast(pv.DataSet, pv.read(str(EP_MESH_PATH)))
+    ep_mesh = load_mesh(EP_MESH_PATH)
     surface_mesh = ep_mesh.extract_surface(algorithm="dataset_surface")
     material_ids = surface_mesh.cell_data["Material"]
     mask = material_ids == mat_id
@@ -462,19 +441,20 @@ def plot_ep_single_region(mat_id: int) -> None:
     plotter.show()
 
 
-# Utility
+# ---- Utility ----
+
 def extract_ep_surface() -> None:
     """Extract EP.vtu outer surface and save as ep_surface.vtp.
 
     Preserves the Material cell array for per-region coloring in the app.
-    Output: data/fem_data/heart/surfaces/ep_surface.vtp
+    Output: data/datasets/heart_ep/surfaces/ep_surface.vtp
     """
     out_path = SURFACE_DIR / "ep_surface.vtp"
     if out_path.exists():
         print(f"Already exists: {out_path}")
         return
     print("Loading EP.vtu (~640 MB) ...")
-    ep_mesh = pv.read(str(EP_MESH_PATH))
+    ep_mesh = load_mesh(EP_MESH_PATH)
     print(f"  {ep_mesh.n_points} points, {ep_mesh.n_cells} cells")
     print("Extracting surface ...")
     surface = ep_mesh.extract_surface(algorithm="dataset_surface")
@@ -489,41 +469,34 @@ def extract_ep_surface() -> None:
 
 
 if __name__ == "__main__":
-    # --- Basic data summary (always on) ---
     print_heart_data_summary()
 
-    # Inspection static meshes
-
+    # Inspection - static meshes
     # print_metadata()
     # print_material_distribution()
     # print_ep_material_distribution()
     # print_surface_summary()
 
-    # Inspection IV timeseries
+    # Inspection - IV timeseries
+    # print_iv_metadata()
+    # inspect_iv_step(0)
+    # check_iv_topology_consistency()
+    # inspect_iv_field_ranges()
 
-    # step_to_path = inspect_pvd()
-    # inspect_vtu_fields(step_to_path[0])
-    # check_iv_topology_consistency(step_to_path)
-    # inspect_iv_field_ranges(step_to_path)
-
-    # Visualization M.vtu
-
+    # Visualization - M.vtu
     # plot_material_colored()
     # plot_material_colored_per_region()
     # plot_single_material(30)  # Left ventricle
     # plot_fiber_orientation(subsample=5)
 
-    # Visualization surfaces (STL)
-
+    # Visualization - surfaces (STL)
     # plot_surface("epicard")
     # plot_cavities_combined()
     # plot_mesh_with_surface_overlay("epicard")
 
-    # Visualization EP.vtu
-
+    # Visualization - EP.vtu
     # plot_ep_surface_per_region()
     # plot_ep_single_region(73)  # Sinus node
 
     # Utility
-
-    extract_ep_surface()
+    # extract_ep_surface()

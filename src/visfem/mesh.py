@@ -354,7 +354,7 @@ def _compute_scalar_bounds(
     """Return {field: [global_min, global_max]} for every scalar field across all timesteps.
 
     Called once during metadata extraction; result is persisted in the .meta.json sidecar.
-    Only scalar fields (shape [1]) are scanned — vector/tensor fields are skipped.
+    Only scalar fields (shape [1]) are scanned - vector/tensor fields are skipped.
     """
     scalar_fields = [name for name, info in fields.items() if info.get("shape") == [1]]
     if not scalar_fields:
@@ -426,7 +426,7 @@ def _compute_scalar_bounds(
                 logger.warning(f"Skipping '{vtu_path.name}' during bounds scan: {e}")
 
     else:
-        # Static / single-step — load once
+        # Static / single-step - load once
         try:
             mesh = _load_static(path)
             for name in scalar_fields:

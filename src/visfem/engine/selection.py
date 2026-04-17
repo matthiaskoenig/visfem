@@ -274,7 +274,7 @@ def select_scalar_field(
             state.mesh_stats = stats
             state.scalar_bar = scalar_bar
         else:
-            # XDMF or PVD dataset — resolve the active timeseries file path.
+            # XDMF or PVD dataset - resolve the active timeseries file path.
             meta = project_metadata[active_dataset]
             xdmf_files = discover_xdmf(dataset_dir(meta))
             path = _timeseries_path(meta, state, xdmf_files)

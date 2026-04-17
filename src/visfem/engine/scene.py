@@ -293,7 +293,7 @@ def redraw_heart(
         interpolate_before_map=False,
     )
 
-    # Build fiber glyph overlay — hidden by default, toggled via show_fibers state.
+    # Build fiber glyph overlay - hidden by default, toggled via show_fibers state.
     fiber_actor: vtkActor | None = None
     if "Fiber" in mesh.cell_data.keys():
         subsample = 5

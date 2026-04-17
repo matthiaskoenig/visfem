@@ -16,7 +16,7 @@ _TABLEAU: list[str] = [
     "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
 ]
 
-# Wong (2011) — "Points of view: Color blindness", Nature Methods 8:441.
+# Wong (2011) - "Points of view: Color blindness", Nature Methods 8:441.
 _WONG: list[str] = [
     "#000000", "#e69f00", "#56b4e9", "#009e73",
     "#f0e442", "#0072b2", "#d55e00", "#cc79a7",
@@ -37,7 +37,7 @@ CATEGORICAL_PALETTES: dict[str, list[str]] = {
 }
 
 # UI metadata for the palette picker (name, display label, preview swatches).
-_SWATCH_COUNT = 5  # normalized count — all palettes show same number of dots
+_SWATCH_COUNT = 5  # normalized count - all palettes show same number of dots
 
 CATEGORICAL_META: list[dict] = [
     {"name": "clinical",   "label": "Clinical",   "swatches": _CLINICAL[:_SWATCH_COUNT]},

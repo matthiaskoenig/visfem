@@ -1,10 +1,10 @@
 """Exploration script for the SPP SimLivA datasets.
 
 Perfusion / deformation (lobule_perfusion/, lobule_deformation/)
-    FEniCS XDMF timeseries — scalars, vectors, deformation fields.
+    FEniCS XDMF timeseries - scalars, vectors, deformation fields.
 
 Convergence (lobule_convergence/)
-    4 mesh resolutions of the same wedge lobule — for resolution comparison.
+    6 mesh resolutions of the same wedge lobule - for resolution comparison.
 """
 
 import math
@@ -13,16 +13,18 @@ from typing import Literal
 
 import pyvista as pv
 
+import sys
+sys.path.insert(0, str(Path(__file__).parent))
 from plot_utils import animate_field, preview_field_animation  # noqa: F401
 from visfem.mesh import get_metadata, load_mesh
 
 
-# Paths
+# ---- Paths ----
 
-_DATA_BASE      = Path(__file__).parents[1] / "data" / "fem_data"
-PERFUSION_DIR   = _DATA_BASE / "simliva" / "lobule_perfusion"
-DEFORMATION_DIR = _DATA_BASE / "simliva" / "lobule_deformation"
-CONVERGENCE_DIR = _DATA_BASE / "simliva" / "lobule_convergence"
+_DATA_BASE      = Path(__file__).parents[1] / "data" / "datasets"
+PERFUSION_DIR   = _DATA_BASE / "lobule_perfusion"
+DEFORMATION_DIR = _DATA_BASE / "lobule_deformation"
+CONVERGENCE_DIR = _DATA_BASE / "lobule_convergence"
 OUTPUT_DIR      = Path(__file__).parents[1] / "data" / "results"
 
 # Perfusion + deformation XDMF files
@@ -33,7 +35,7 @@ SPP_FILES: dict[str, Path] = {
     if p.with_suffix(".h5").exists()
 }
 
-# Convergence XDMF files (4 mesh resolutions)
+# Convergence XDMF files (6 mesh resolutions)
 CONV_FILES: dict[str, Path] = {
     p.stem: p
     for p in sorted(CONVERGENCE_DIR.glob("*.xdmf"))
@@ -50,7 +52,7 @@ def _grid_shape(n: int) -> tuple[int, int]:
     return -(-n // ncols), ncols
 
 
-# Inspection
+# ---- Inspection ----
 
 def print_metadata_all(files: dict[str, Path] = SPP_FILES) -> None:
     """Print metadata summary for all files in the given dict."""
@@ -81,7 +83,7 @@ def print_mesh_at_step(stem: str, step: int = 0, files: dict[str, Path] = SPP_FI
     print(f"  cell fields:  {list(mesh.cell_data.keys())}")
 
 
-# Visualization
+# ---- Visualization ----
 
 def plot_field_at_step(stem: str, field: str, step: int = 0, files: dict[str, Path] = SPP_FILES) -> None:
     """Plot a single field at a given step."""
@@ -145,8 +147,6 @@ def plot_field_time_evolution(stem: str, field: str, steps: list[int], files: di
     plotter.show()
 
 
-# Visualization
-
 def plot_deformation_vectors(field: str = "u", step: int = 0) -> None:
     """Plot the deformation mesh with a vector field shown as arrow glyphs."""
     stem = "deformation"
@@ -167,8 +167,6 @@ def plot_deformation_vectors(field: str = "u", step: int = 0) -> None:
     plotter.add_title(f"deformation  {field} glyphs  t={timestamp:.4g}", font_size=9)
     plotter.show()
 
-
-# Visualization
 
 def plot_all_resolutions(field: str, step: int = 0) -> None:
     """Plot all convergence resolutions side by side with linked cameras."""
@@ -219,24 +217,19 @@ if __name__ == "__main__":
     CONV_FIELD = "pressure"
     CONV_STEPS = [0, 100, 200, 400, 500, 600, 700, 800]
 
-    # --- Basic data summary (always on) ---
     print(f"SPP files:  {list(SPP_FILES.keys())}")
     print(f"Conv files: {list(CONV_FILES.keys())}")
 
-    
-    # Inspection — SPP (perfusion / deformation)
-    
+    # Inspection - SPP (perfusion / deformation)
     # print_metadata_all(SPP_FILES)
     # print_mesh_at_step("lobule_spt_p1", step=SPP_STEP)
     # print_mesh_at_step("deformation",   step=SPP_STEP)
 
-    
-    # Inspection
-    
+    # Inspection - convergence
     # print_metadata_all(CONV_FILES)
     # print_mesh_at_step("lobule_sixth_000025", step=CONV_STEP, files=CONV_FILES)
 
-
+    # Visualization - SPP
     # plot_field_at_step("lobule_spt_p1",  field=SPP_FIELD,       step=SPP_STEP)
     # plot_field_at_step("deformation",    field="n_f",            step=SPP_STEP)
     # plot_field_at_step("scan_64_p1",     field="active_state",   step=SPP_STEP)
@@ -246,18 +239,14 @@ if __name__ == "__main__":
     # plot_field_time_evolution("scan_64_p1",     field="active_state",  steps=SPP_STEPS)
     # plot_deformation_vectors(field="u", step=SPP_STEP)
 
-    
-    # Visualization
-    
+    # Visualization - convergence
     # plot_field_at_step("lobule_sixth_000025", field=CONV_FIELD, step=CONV_STEP, files=CONV_FILES)
     # plot_all_scalar_fields("lobule_sixth_000025", step=CONV_STEP, files=CONV_FILES)
     # plot_all_resolutions(field=CONV_FIELD, step=CONV_STEP)
     # plot_slice("lobule_sixth_000025", field=CONV_FIELD, step=CONV_STEP, normal="z")
     # plot_field_time_evolution("lobule_sixth_000025", field=CONV_FIELD, steps=CONV_STEPS, files=CONV_FILES)
 
-    
     # GIF animation
-    
     # animate_field(SPP_FILES["lobule_spt_p1"],      field="necrosis",    output_path=OUTPUT_DIR / "lobule_p1_necrosis.gif",      every_nth=5)
     # animate_field(CONV_FILES["lobule_sixth_000025"], field=CONV_FIELD,  output_path=OUTPUT_DIR / "convergence_pressure.gif",    every_nth=10)
     # preview_field_animation(SPP_FILES["lobule_spt_p1"],       field="necrosis",   every_nth=2)

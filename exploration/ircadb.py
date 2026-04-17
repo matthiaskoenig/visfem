@@ -5,6 +5,7 @@ Structure: patient_01/ .. patient_20/*.vtk
 Run sections by uncommenting the relevant call at the bottom.
 """
 
+import shutil
 from pathlib import Path
 
 import pyvista as pv
@@ -14,7 +15,7 @@ from visfem.mesh import get_metadata, load_mesh
 
 # ---- Paths ----
 
-_DATA_BASE = Path(__file__).parents[1] / "data" / "fem_data"
+_DATA_BASE = Path(__file__).parents[1] / "data" / "datasets"
 IRCADB_DIR = _DATA_BASE / "ircadb"
 
 PATIENTS: list[int] = sorted(
@@ -123,15 +124,52 @@ def plot_all_organs(patient: int, opacity: float = 0.5) -> None:
     plot_organs_combined(patient, organs, opacity=opacity)
 
 
+# ---- Data preparation ----
+
+_SUBSETS = [
+    ("liver",  _DATA_BASE / "ircad_liver"),
+    ("kidney", _DATA_BASE / "ircad_kidney"),
+]
+
+
+def _copy_subset(keyword: str, output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    total = 0
+    for patient_dir in sorted(IRCADB_DIR.glob("patient_*")):
+        if not patient_dir.is_dir():
+            continue
+        matches = sorted(
+            vtk for vtk in patient_dir.glob("*.vtk")
+            if keyword in vtk.stem.lower()
+        )
+        if not matches:
+            continue
+        dest_dir = output_dir / patient_dir.name
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for vtk in matches:
+            shutil.copy2(vtk, dest_dir / vtk.name)
+            print(f"  {patient_dir.name}/{vtk.name}")
+        total += len(matches)
+    print(f"  → {total} file(s) copied to {output_dir.name}\n")
+
+
+def prep_subsets() -> None:
+    """Create organ-specific subsets (ircad_liver, ircad_kidney) from the full ircadb dataset."""
+    for keyword, output_dir in _SUBSETS:
+        print(f"[{keyword}] → {output_dir.name}/")
+        _copy_subset(keyword, output_dir)
+    print("Done.")
+
+
 if __name__ == "__main__":
     PATIENT = 1      # change to any patient 1 to 20
     ORGAN = "liver"  # use print_organ_inventory() or print_patient_summary() to see available organs
 
     # Inspection
-    print_organ_inventory()
+    # print_organ_inventory()
     # print_patient_summary(PATIENT)
     # generate_metadata(PATIENT)
-    generate_all_metadata()
+    # generate_all_metadata()
 
     # Single organ
     # plot_organ(PATIENT, ORGAN)
@@ -142,3 +180,6 @@ if __name__ == "__main__":
     # All organs for one patient
     # plot_all_organs(PATIENT)
     # plot_all_organs(PATIENT, opacity=0.3)
+
+    # Data preparation
+    # prep_subsets()

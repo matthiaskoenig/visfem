@@ -271,6 +271,7 @@ def select_scalar_field(
                 field=field,
                 palette=_resolve_palette(state),
                 cmap=_resolve_cmap(state),
+                reset_camera=False,
             )
             state.legend_items = legend
             state.mesh_stats = stats
@@ -391,6 +392,7 @@ def select_color_scheme(
                 dark_mode=state.dark_mode,
                 opacity=opacity,
                 palette=_resolve_palette(state),
+                reset_camera=False,
             )
             state.legend_items = legend
             state.mesh_stats = stats
@@ -402,6 +404,7 @@ def select_color_scheme(
                 dark_mode=state.dark_mode,
                 opacity=opacity,
                 palette=_resolve_palette(state),
+                reset_camera=False,
             )
             state.legend_items = legend
             state.mesh_stats = stats
@@ -413,6 +416,7 @@ def select_color_scheme(
                 dark_mode=state.dark_mode,
                 opacity=opacity,
                 palette=_resolve_palette(state),
+                reset_camera=False,
             )
             state.legend_items = legend
             state.mesh_stats = stats
@@ -424,12 +428,13 @@ def select_color_scheme(
                 dark_mode=state.dark_mode,
                 opacity=opacity,
                 palette=_resolve_palette(state),
+                reset_camera=False,
             )
             state.legend_items = legend
             state.mesh_stats = stats
         elif key == "tibia_simulation":
             meta = project_metadata["tibia_simulation"]
-            field: str = state.active_scalar_field  
+            field: str = state.active_scalar_field
             legend, stats, scalar_bar = redraw_tibia_simulation(
                 plotter, ctrl, dataset_dir(meta),
                 dark_mode=state.dark_mode,
@@ -437,6 +442,7 @@ def select_color_scheme(
                 field=field,
                 palette=_resolve_palette(state),
                 cmap=_resolve_cmap(state),
+                reset_camera=False,
             )
             state.legend_items = legend
             state.mesh_stats = stats

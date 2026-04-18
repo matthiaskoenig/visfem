@@ -191,6 +191,7 @@ def redraw_ircadb(
     dark_mode: bool,
     opacity: float,
     palette: list[str] | None = None,
+    reset_camera: bool = True,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Load all organ meshes for a patient and render as one merged actor.
 
@@ -235,7 +236,7 @@ def redraw_ircadb(
         )
         stats = {"n_cells": merged.n_cells, "n_points": merged.n_points}
     apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
     legend = [
         {"names": [format_organ_name(organ)], "color": colors[i]}
         for i, organ in enumerate(loaded_organs)
@@ -251,6 +252,7 @@ def redraw_heart(
     dark_mode: bool,
     opacity: float,
     palette: list[str] | None = None,
+    reset_camera: bool = True,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, vtkActor | None]:
     """Render the heart mesh colored by material region.
 
@@ -313,7 +315,7 @@ def redraw_heart(
         fiber_actor.SetVisibility(False)
 
     apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
     legend = [
         {"names": label_map.get(mid, [f"Region {mid}"]), "color": colors[i]}
         for i, mid in enumerate(unique_ids)
@@ -329,6 +331,7 @@ def redraw_heart_ep(
     dark_mode: bool,
     opacity: float,
     palette: list[str] | None = None,
+    reset_camera: bool = True,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Render the EP heart surface colored by EP material region."""
     ep_path = dataset_dir / "surfaces" / "ep_surface.vtp"
@@ -383,7 +386,7 @@ def redraw_heart_ep(
         interpolate_before_map=False,
     )
     apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
 
     legend = [
         {"names": [ep_label_map.get(mid, f"Region {mid}")], "color": colors[i]}
@@ -401,6 +404,7 @@ def redraw_tibia_mesh(
     dark_mode: bool,
     opacity: float,
     palette: list[str] | None = None,
+    reset_camera: bool = True,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Render Tibia_Mesh.vtk colored by PartId region."""
     mesh_path = dataset_dir / "Tibia_Mesh.vtk"
@@ -443,7 +447,7 @@ def redraw_tibia_mesh(
         interpolate_before_map=False,
     )
     apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
 
     legend = [
         {"names": [part_names.get(pid, f"Part {pid}")], "color": colors[i]}
@@ -472,6 +476,7 @@ def redraw_tibia_simulation(
     field: str = "vonMises_stress",
     palette: list[str] | None = None,
     cmap: str = "turbo",
+    reset_camera: bool = True,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
     """Render Tibia_Simulation.vtk with the given scalar field.
 
@@ -517,7 +522,7 @@ def redraw_tibia_simulation(
             interpolate_before_map=False,
         )
         apply_opacity(plotter, opacity)
-        push_scene(plotter, ctrl)
+        push_scene(plotter, ctrl, reset_camera=reset_camera)
         legend = [
             {"names": [_CLAES_LABELS.get(z, f"Zone {z}")], "color": colors[i]}
             for i, z in enumerate(zone_ids)
@@ -538,6 +543,6 @@ def redraw_tibia_simulation(
             copy_mesh=True,
         )
         apply_opacity(plotter, opacity)
-        push_scene(plotter, ctrl)
+        push_scene(plotter, ctrl, reset_camera=reset_camera)
         scalar_bar = _scalar_bar_dict(field, clim, cmap)
         return [], stats, scalar_bar

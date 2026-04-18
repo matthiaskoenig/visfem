@@ -5,6 +5,7 @@ get_metadata(path)     -> MeshMetadata
 """
 
 import xml.etree.ElementTree as ET
+from collections import OrderedDict
 from pathlib import Path
 from typing import cast
 
@@ -58,6 +59,23 @@ _XDMF_TO_MESHIO_CELLTYPE: dict[str, str] = {
 if "PolyLine" not in _xdmf_common.xdmf_to_meshio_type:
     _xdmf_common.xdmf_to_meshio_type["PolyLine"] = "line"
     _xdmf_common.meshio_to_xdmf_type["line"] = ("PolyLine",)
+
+
+# Mesh cache — static meshes cached indefinitely; time-series steps use a bounded LRU
+_STEP_CACHE_SIZE: int = 16
+_static_cache: dict[Path, pv.DataSet] = {}
+_step_cache: OrderedDict[tuple[Path, int], pv.DataSet] = OrderedDict()
+
+
+def mesh_cache_info() -> dict:
+    """Return current cache state for debugging and verification."""
+    return {
+        "static_cached": [p.name for p in _static_cache],
+        "static_count": len(_static_cache),
+        "step_cached": [(p.name, s) for p, s in _step_cache],
+        "step_count": len(_step_cache),
+        "step_max": _STEP_CACHE_SIZE,
+    }
 
 
 # Internal utilities
@@ -558,28 +576,38 @@ def _load_static(path: Path) -> pv.DataSet:
 
 
 def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
-    """Load any supported mesh file and return a PyVista dataset.
-
-    Dispatches to the correct private loader based on detected format.
-    All fields at the given timestep are attached to the returned mesh.
-    """
+    """Load any supported mesh file and return a PyVista dataset."""
     fmt = _detect_format(path)
     logger.debug(f"Loading '{path.name}' as '{fmt}' step {step}")
+
+    if fmt in ("pyvista_native", "meshio_fallback"):
+        if path not in _static_cache:
+            logger.info(f"[mesh cache miss] loading '{path.name}' from disk")
+            _static_cache[path] = _load_static(path)
+        else:
+            logger.info(f"[mesh cache hit] '{path.name}' served from memory")
+        return _static_cache[path].copy(deep=False)
+
+    key = (path, step)
+    if key in _step_cache:
+        _step_cache.move_to_end(key)
+        logger.info(f"[mesh cache hit] '{path.name}' step {step} served from memory")
+        return _step_cache[key].copy(deep=False)
+
+    logger.info(f"[mesh cache miss] loading '{path.name}' step {step} from disk")
     if fmt == "pvd_timeseries":
-        return _load_pvd(path, step)
-    if fmt == "fenics_xdmf":
-        return _load_fenics_xdmf(path, step)
-    if fmt == "timeseries_xdmf":
-        return _load_timeseries_xdmf(path, step)
-    return _load_static(path)
+        mesh = _load_pvd(path, step)
+    elif fmt == "fenics_xdmf":
+        mesh = _load_fenics_xdmf(path, step)
+    else:
+        mesh = _load_timeseries_xdmf(path, step)
+    _step_cache[key] = mesh
+    if len(_step_cache) > _STEP_CACHE_SIZE:
+        _step_cache.popitem(last=False)
+    return mesh.copy(deep=False)
 
 def parse_labels_file(path: Path) -> dict[str, dict[int, list[str]]]:
-    """Parse a LabelIDs.txt file into per-mesh material ID → name mappings.
-
-    Returns dict keyed by mesh filename (e.g. 'M.vtu'), each value
-    is a dict of MaterialID -> list of anatomical names (multiple structures
-    can share one MaterialID).
-    """
+    """Parse a LabelIDs.txt file into per-mesh material ID → name mappings."""
     import re
 
     # Accumulate all names per material ID before joining

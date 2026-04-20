@@ -5,11 +5,13 @@ import pyvista as pv
 from typing import Any
 from vtkmodules.vtkRenderingCore import vtkActor
 
+from visfem.engine.colors import region_colors
 from visfem.engine.palettes import CATEGORICAL_PALETTES
 from visfem.engine.scene import (
     TIBIA_SIM_FIELDS, TrameCtrl,
     clear_scene, field_label, redraw_heart, redraw_heart_ep,
     redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
+    get_active_actor, update_actor_palette, update_tibia_sim_field, update_xdmf_step,
 )
 from visfem.log import get_logger
 from visfem.models import MeshMetadata, ProjectMetadata
@@ -214,9 +216,9 @@ def select_xdmf(
 ) -> None:
     """Load and render a specific XDMF file within a multi-file dataset."""
     state.active_dataset = key
-    state.active_xdmf = stem
     state.active_patient = None
     _reset_selection_state(state)
+    state.active_xdmf = stem
     opacity = float(state.ctrl_opacity)
     state.trame__busy = True  
     try:
@@ -263,6 +265,17 @@ def select_scalar_field(
     try:
         active_dataset: str = state.active_dataset  
         if active_dataset == "tibia_simulation":
+            if get_active_actor() is not None:
+                meta = project_metadata["tibia_simulation"]
+                legend, scalar_bar = update_tibia_sim_field(
+                    plotter, ctrl, dataset_dir(meta),
+                    field=field,
+                    palette=_resolve_palette(state),
+                    cmap=_resolve_cmap(state),
+                )
+                state.legend_items = legend
+                state.scalar_bar = scalar_bar
+                return
             meta = project_metadata["tibia_simulation"]
             legend, stats, scalar_bar = redraw_tibia_simulation(
                 plotter, ctrl, dataset_dir(meta),
@@ -321,18 +334,25 @@ def select_step(
         if path is None:
             logger.error(f"No timeseries file found for dataset '{active_dataset}'")
             return
-        field: str | None = state.active_scalar_field  
-        _legend, stats, scalar_bar = redraw_xdmf(
+        field: str | None = state.active_scalar_field
+        cmap = _resolve_cmap(state)
+        success, stats, scalar_bar = update_xdmf_step(
             plotter, ctrl, path, xdmf_meta,
-            dark_mode=state.dark_mode,
-            opacity=opacity,
-            field=field,
-            step=step,
-            reset_camera=False,  # preserve the user's current camera position
-            cmap=_resolve_cmap(state),
+            step=step, field=field, cmap=cmap,
         )
+        if not success:
+            _legend, stats, scalar_bar = redraw_xdmf(
+                plotter, ctrl, path, xdmf_meta,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
+                field=field,
+                step=step,
+                reset_camera=False,
+                cmap=cmap,
+            )
         state.mesh_stats = stats
-        state.scalar_bar = scalar_bar
+        if scalar_bar is not None:
+            state.scalar_bar = scalar_bar
     finally:
         state.trame__busy = False  
 
@@ -384,6 +404,15 @@ def select_color_scheme(
     state.trame__busy = True  
     try:
         if state.active_patient is not None:
+            if get_active_actor() is not None:
+                n = len(state.legend_items)
+                colors = region_colors(n, _resolve_palette(state))
+                update_actor_palette(plotter, ctrl, colors, n)
+                state.legend_items = [
+                    {**item, "color": colors[i]}
+                    for i, item in enumerate(state.legend_items)
+                ]
+                return
             patient: int = state.active_patient
             meta = project_metadata[key]
             patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
@@ -397,6 +426,15 @@ def select_color_scheme(
             state.legend_items = legend
             state.mesh_stats = stats
         elif key == "heart":
+            if get_active_actor() is not None:
+                n = len(state.legend_items)
+                colors = region_colors(n, _resolve_palette(state))
+                update_actor_palette(plotter, ctrl, colors, n)
+                state.legend_items = [
+                    {**item, "color": colors[i]}
+                    for i, item in enumerate(state.legend_items)
+                ]
+                return
             meta = project_metadata["heart"]
             ddir = dataset_dir(meta)
             legend, stats, _ = redraw_heart(
@@ -409,6 +447,15 @@ def select_color_scheme(
             state.legend_items = legend
             state.mesh_stats = stats
         elif key == "heart_ep":
+            if get_active_actor() is not None:
+                n = len(state.legend_items)
+                colors = region_colors(n, _resolve_palette(state))
+                update_actor_palette(plotter, ctrl, colors, n)
+                state.legend_items = [
+                    {**item, "color": colors[i]}
+                    for i, item in enumerate(state.legend_items)
+                ]
+                return
             meta = project_metadata["heart_ep"]
             ddir = dataset_dir(meta)
             legend, stats = redraw_heart_ep(
@@ -421,6 +468,15 @@ def select_color_scheme(
             state.legend_items = legend
             state.mesh_stats = stats
         elif key == "tibia_mesh":
+            if get_active_actor() is not None:
+                n = len(state.legend_items)
+                colors = region_colors(n, _resolve_palette(state))
+                update_actor_palette(plotter, ctrl, colors, n)
+                state.legend_items = [
+                    {**item, "color": colors[i]}
+                    for i, item in enumerate(state.legend_items)
+                ]
+                return
             meta = project_metadata["tibia_mesh"]
             ddir = dataset_dir(meta)
             legend, stats = redraw_tibia_mesh(
@@ -433,6 +489,17 @@ def select_color_scheme(
             state.legend_items = legend
             state.mesh_stats = stats
         elif key == "tibia_simulation":
+            if get_active_actor() is not None:
+                meta = project_metadata["tibia_simulation"]
+                legend, scalar_bar = update_tibia_sim_field(
+                    plotter, ctrl, dataset_dir(meta),
+                    field=state.active_scalar_field,
+                    palette=_resolve_palette(state),
+                    cmap=_resolve_cmap(state),
+                )
+                state.legend_items = legend
+                state.scalar_bar = scalar_bar
+                return
             meta = project_metadata["tibia_simulation"]
             field: str = state.active_scalar_field
             legend, stats, scalar_bar = redraw_tibia_simulation(

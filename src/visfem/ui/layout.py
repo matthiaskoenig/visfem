@@ -102,6 +102,8 @@ def build_ui(
                         mode=("render_mode", "local"),
                         ref="view",
                         camera="camera",
+                        still_quality=100,
+                        interactive_quality=100,
                     ) as view:
                         ctrl.reset_camera = view.reset_camera
                         ctrl.view_push_camera = view.push_camera

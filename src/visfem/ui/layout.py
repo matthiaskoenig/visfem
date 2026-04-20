@@ -38,6 +38,7 @@ def build_ui(
     on_toggle_left_panel: object,
     on_toggle_right_panel: object,
     on_toggle_render_mode: object,
+    on_take_screenshot: object,
 ) -> SinglePageLayout:
     """Assemble the full SinglePageLayout and return it."""
     with SinglePageLayout(server, theme=("dark_mode ? 'dark' : 'light'",)) as layout:
@@ -48,7 +49,7 @@ def build_ui(
             toolbar.density = "compact"
             toolbar.style = "background-color: color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%);"
             toolbar.elevation = 0
-            build_toolbar(on_toggle_theme, on_toggle_xr, on_toggle_left_panel, on_toggle_right_panel, on_toggle_render_mode)
+            build_toolbar(on_toggle_theme, on_toggle_xr, on_toggle_left_panel, on_toggle_right_panel, on_toggle_render_mode, on_take_screenshot)
 
         layout.footer.clear()
         with layout.footer as footer:
@@ -106,10 +107,12 @@ def build_ui(
                         still_quality=100,
                         interactive_quality=100,
                         disable_auto_switch=True,
+                        on_local_image_capture="utils.download(`screenshot_${new Date().toISOString().slice(0,19).replace(/[T:]/g,'-')}.png`, $event)",
                     ) as view:
                         ctrl.reset_camera = view.reset_camera
                         ctrl.view_push_camera = view.push_camera
                         ctrl.view_update = view.update
+                        ctrl.capture_screenshot = view.capture_image
                         webxr_helper = VtkWebXRHelper(
                             draw_controllers_ray=True,
                             enter_xr=(on_enter_xr,),

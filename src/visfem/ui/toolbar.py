@@ -16,8 +16,9 @@ def build_toolbar(
     toggle_left_panel: object,
     toggle_right_panel: object,
     toggle_render_mode: object,
+    take_screenshot: object,
 ) -> None:
-    """Render toolbar: panel toggles, logo, render-mode, theme, VR, and fullscreen buttons."""
+    """Render toolbar: panel toggles, logo, render-mode, theme, VR, fullscreen, and screenshot buttons."""
     #  Left edge
     html.Div(style="width:15px;")
 
@@ -79,6 +80,15 @@ def build_toolbar(
                     ": $event.currentTarget.ownerDocument.exitFullscreen()"
                 ),
                 v_bind="props", classes="ml-2",
+            )
+
+    with v3.VTooltip(text="Save screenshot", location="bottom"):
+        with v3.Template(v_slot_activator="{ props }"):
+            v3.VBtn(
+                icon="mdi-camera-outline",
+                variant="text", density="compact",
+                click=take_screenshot, v_bind="props", classes="ml-2",
+                disabled=("active_dataset === null",),
             )
 
     # Separator between center cluster and right toggle

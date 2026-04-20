@@ -33,6 +33,7 @@ class VisfemApp(TrameApp):
     """Main Trame application for VisFEM."""
 
     def __init__(self, server: object = None) -> None:
+        """Load project metadata, build plotter and state, assemble UI."""
         super().__init__(server)
         self._fiber_actor: vtkActor | None = None
         self._initial_camera: object = None
@@ -83,6 +84,7 @@ class VisfemApp(TrameApp):
             on_toggle_left_panel=self.toggle_left_panel,
             on_toggle_right_panel=self.toggle_right_panel,
             on_toggle_render_mode=self.toggle_render_mode,
+            on_take_screenshot=self.take_screenshot,
         )
         self.ctrl.on_client_connected.add(self._reset_xr_state)
 
@@ -94,6 +96,7 @@ class VisfemApp(TrameApp):
 
     @staticmethod
     def _favicon_data_uri() -> str:
+        """Return the favicon as a base64 data URI for the browser tab."""
         data = importlib.resources.files("visfem.assets").joinpath("favicon.png").read_bytes()
         return f"data:image/png;base64,{base64.b64encode(data).decode()}"
 
@@ -172,6 +175,10 @@ class VisfemApp(TrameApp):
         self.ctrl.view_push_camera()
         self.ctrl.view_update()
 
+    def take_screenshot(self) -> None:
+        """Trigger vtk.js canvas capture and browser PNG download."""
+        self.ctrl.capture_screenshot()
+
     # ---- XR ----
 
     def _reset_xr_state(self, **_kwargs: object) -> None:
@@ -202,11 +209,13 @@ class VisfemApp(TrameApp):
     # ---- Step pre-loading ----
 
     def _cancel_preload(self) -> None:
+        """Cancel any running background step-preload task."""
         if self._preload_task is not None and not self._preload_task.done():
             self._preload_task.cancel()
         self._preload_task = None
 
     async def _preload_steps(self, path: Path, steps: list[int]) -> None:
+        """Load mesh steps into the LRU cache in the background without blocking the UI."""
         loop = asyncio.get_running_loop()
         for step in steps:
             try:
@@ -219,6 +228,7 @@ class VisfemApp(TrameApp):
                 pass
 
     def _cancel_warmup(self) -> None:
+        """Cancel any running vtk.js warmup task and clear the loading flag."""
         self._warmup_gen += 1
         if self._warmup_task is not None and not self._warmup_task.done():
             self._warmup_task.cancel()
@@ -226,6 +236,7 @@ class VisfemApp(TrameApp):
         self.state.loading = False
 
     def _start_vtkjs_warmup(self) -> None:
+        """Start the vtk.js SHA-cache warmup task, or clear loading immediately for static datasets."""
         n_steps = int(self.state.n_steps)
         if n_steps <= 1:
             with self.state:
@@ -238,6 +249,7 @@ class VisfemApp(TrameApp):
         self._warmup_task = asyncio.ensure_future(self._vtkjs_warmup(gen))
 
     async def _vtkjs_warmup(self, gen: int) -> None:
+        """Cycle through keyframes under the loading overlay to pre-populate the vtk.js SHA cache."""
         n_steps = int(self.state.n_steps)
         if n_steps <= 1:
             return
@@ -262,6 +274,7 @@ class VisfemApp(TrameApp):
                     self.state.loading = False
 
     def _start_preload_from_state(self) -> None:
+        """Kick off background preloading for all keyframes of the currently active dataset."""
         n_steps = int(self.state.n_steps)
         if n_steps <= 1:
             return

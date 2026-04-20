@@ -51,7 +51,7 @@ def build_left_panel(
                 bg_color="transparent",
                 opened=("active_organ_group_open",),
                 update_opened="active_organ_group_open = $event",
-                style="padding:0 6px;",
+                style="padding:0 6px; --v-list-item-min-height: 28px;",
             ):
                 for system, datasets in organ_groups.items():
                     with v3.VListGroup(

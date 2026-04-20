@@ -35,6 +35,7 @@ class VisfemApp(TrameApp):
     def __init__(self, server: object = None) -> None:
         super().__init__(server)
         self._fiber_actor: vtkActor | None = None
+        self._initial_camera: object = None
         self._autoplay_task: asyncio.Task | None = None
         self._preload_task: asyncio.Task | None = None
         self._warmup_task: asyncio.Task | None = None
@@ -164,10 +165,11 @@ class VisfemApp(TrameApp):
     # ---- Camera ----
 
     def reset_camera(self) -> None:
-        """Reset camera to fit current scene."""
-        self.plotter.reset_camera()
+        """Restore the camera to the initial pose captured at dataset load."""
+        if self._initial_camera is None:
+            return
+        self.plotter.camera_position = self._initial_camera
         self.ctrl.view_push_camera()
-        self.ctrl.reset_camera()
         self.ctrl.view_update()
 
     # ---- XR ----
@@ -313,41 +315,52 @@ class VisfemApp(TrameApp):
 
     # ---- Dataset selection ----
 
-    def select_dataset(self, key: str) -> None:
+    async def select_dataset(self, key: str) -> None:
         """Route to the correct redraw based on dataset key."""
         self.state.autoplay = False
         self._cancel_warmup()
         self._cancel_preload()
         self.state.loading = True
+        self.state.flush()
+        await asyncio.sleep(0.05)
         self._fiber_actor = select_dataset(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key,
         )
+        self._initial_camera = self.plotter.camera_position
         self._start_preload_from_state()
         self._start_vtkjs_warmup()
 
-    def select_xdmf(self, key: str, stem: str) -> None:
+    async def select_xdmf(self, key: str, stem: str) -> None:
         """Load and render a specific XDMF file within a multi-file dataset."""
         self.state.autoplay = False
         self._cancel_warmup()
         self._cancel_preload()
         self.state.loading = True
+        self.state.flush()
+        await asyncio.sleep(0.05)
         select_xdmf(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key, stem,
         )
+        self._initial_camera = self.plotter.camera_position
         self._start_preload_from_state()
         self._start_vtkjs_warmup()
 
-    def select_patient(self, dataset_key: str, patient: int) -> None:
+    async def select_patient(self, dataset_key: str, patient: int) -> None:
         """Load and render a specific patient from a multi-patient dataset."""
         self.state.autoplay = False
         self._cancel_warmup()
         self._cancel_preload()
+        self.state.loading = True
+        self.state.flush()
+        await asyncio.sleep(0.05)
         select_patient(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, dataset_key, patient,
         )
+        self._initial_camera = self.plotter.camera_position
+        self._start_vtkjs_warmup()
 
     def select_scalar_field(self, field: str) -> None:
         """Re-render the current dataset with the given scalar field."""

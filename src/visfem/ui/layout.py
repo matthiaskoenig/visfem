@@ -122,11 +122,15 @@ def build_ui(
                         v_if="loading",
                         style=(
                             "position:absolute; inset:0; z-index:10; "
-                            "display:flex; align-items:center; justify-content:center; "
-                            "background:rgba(0,0,0,0.45);"
+                            "display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; "
+                            "background:rgba(0,0,0,0.35);"
                         ),
                     ):
-                        v3.VProgressCircular(indeterminate=True, color=ACCENT, size="48")
+                        v3.VProgressCircular(indeterminate=True, color=ACCENT, size="36", width="2")
+                        html.Span(
+                            "Loading",
+                            style=f"font-size:0.7rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;",
+                        )
 
                 # ---- Right panel ----
                 with html.Div(

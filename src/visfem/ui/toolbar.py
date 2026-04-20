@@ -18,12 +18,7 @@ def build_toolbar(
     toggle_render_mode: object,
 ) -> None:
     """Build the main toolbar with theme, render mode, VR, and panel toggle buttons."""
-    v3.VProgressLinear(
-        indeterminate=True, absolute=True, bottom=True,
-        active=("trame__busy",), color=ACCENT, height=2,
-    )
-
-    #  Left edge 
+    #  Left edge
     html.Div(style="width:15px;")
 
     with v3.VTooltip(text="Toggle data panel", location="bottom"):

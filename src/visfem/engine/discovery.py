@@ -38,10 +38,8 @@ def xdmf_display_name(stem: str) -> str:
     """Convert an XDMF stem to a readable display name."""
     if stem.startswith("lobule_sixth_"):
         suffix = stem[len("lobule_sixth_"):]
-        try:
-            return f"Resolution {int(suffix)}"
-        except ValueError:
-            pass
+        if suffix:
+            return suffix
     return stem.replace("_", " ").title()
 
 

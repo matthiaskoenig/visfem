@@ -164,28 +164,30 @@ def build_right_panel(
                         icon=("autoplay ? 'mdi-pause' : 'mdi-play'",),
                         variant=("autoplay ? 'tonal' : 'text'",),
                         density="compact", size="x-small",
+                        disabled=("loading",),
                         click=on_toggle_autoplay,
                     )
                     v3.VBtn(
                         icon="mdi-chevron-left", variant="text",
                         density="compact", size="x-small",
-                        disabled=("active_step === 0",),
-                        click=(on_select_step, "[active_step - 1]"),
+                        disabled=("loading || active_step === 0",),
+                        click=(on_select_step, "[Math.max(0, active_step - step_inc)]"),
                     )
                     v3.VSlider(
                         v_model=("active_step", 0),
-                        min=0, max=("n_steps - 1",), step=1,
+                        min=0, max=("n_steps - 1",), step=("step_inc",),
                         density="compact", hide_details=True,
                         color=ACCENT, track_color=TRACK_DARK,
                         thumb_label=False,
+                        disabled=("loading",),
                         style="flex:1; margin:0; padding:0;",
                         end=(on_select_step, "[active_step]"),
                     )
                     v3.VBtn(
                         icon="mdi-chevron-right", variant="text",
                         density="compact", size="x-small",
-                        disabled=("active_step >= n_steps - 1",),
-                        click=(on_select_step, "[active_step + 1]"),
+                        disabled=("loading || active_step + step_inc >= n_steps",),
+                        click=(on_select_step, "[Math.min(n_steps - 1, active_step + step_inc)]"),
                     )
 
                 html.Span(

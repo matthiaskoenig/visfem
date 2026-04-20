@@ -93,6 +93,7 @@ def build_left_panel(
                                             active=(f"active_dataset === '{key}' && active_patient === {patient}",),
                                             active_color=ACCENT, rounded="lg",
                                             click=(on_select_patient, f"['{key}', {patient}]"),
+                                            disabled=("loading",),
                                             style="padding-left:24px;",
                                         ):
                                             with v3.Template(v_slot_title=""):
@@ -106,6 +107,7 @@ def build_left_panel(
                                     active=(f"active_dataset === '{key}'",),
                                     active_color=ACCENT, rounded="lg",
                                     click=(on_select_dataset, f"['{key}']"),
+                                    disabled=("loading",),
                                     style="padding-left:12px;",
                                 ):
                                     with v3.Template(v_slot_title=""):
@@ -136,6 +138,7 @@ def build_left_panel(
                                             active=(f"active_dataset === '{key}' && active_xdmf === '{stem}'",),
                                             active_color=ACCENT, rounded="lg",
                                             click=(on_select_xdmf, f"['{key}', '{stem}']"),
+                                            disabled=("loading",),
                                             style="padding-left:24px;",
                                         ):
                                             with v3.Template(v_slot_title=""):

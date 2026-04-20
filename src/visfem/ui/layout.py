@@ -5,6 +5,7 @@ from typing import Any
 import pyvista as pv
 from trame.ui.vuetify3 import SinglePageLayout
 from trame.widgets import html
+from trame.widgets import vuetify3 as v3
 from trame.widgets.vtk import VtkRemoteLocalView, VtkWebXRHelper
 from trame_client.widgets.trame import Script
 
@@ -13,7 +14,7 @@ from visfem.ui.footer import FOOTER_STYLE, build_footer
 from visfem.ui.left_panel import build_left_panel
 from visfem.ui.right_panel import build_right_panel
 from visfem.ui.toolbar import build_toolbar
-from visfem.ui.theme import LEFT_PANEL_WIDTH, RIGHT_PANEL_WIDTH, BG_DARK, BG_LIGHT
+from visfem.ui.theme import ACCENT, LEFT_PANEL_WIDTH, RIGHT_PANEL_WIDTH, BG_DARK, BG_LIGHT
 
 
 def build_ui(
@@ -104,6 +105,7 @@ def build_ui(
                         camera="camera",
                         still_quality=100,
                         interactive_quality=100,
+                        disable_auto_switch=True,
                     ) as view:
                         ctrl.reset_camera = view.reset_camera
                         ctrl.view_push_camera = view.push_camera
@@ -115,6 +117,16 @@ def build_ui(
                         )
                         ctrl.start_xr = webxr_helper.start_xr
                         ctrl.stop_xr = webxr_helper.stop_xr
+
+                    with html.Div(
+                        v_if="loading",
+                        style=(
+                            "position:absolute; inset:0; z-index:10; "
+                            "display:flex; align-items:center; justify-content:center; "
+                            "background:rgba(0,0,0,0.45);"
+                        ),
+                    ):
+                        v3.VProgressCircular(indeterminate=True, color=ACCENT, size="48")
 
                 # ---- Right panel ----
                 with html.Div(

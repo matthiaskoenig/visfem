@@ -37,6 +37,8 @@ class VisfemApp(TrameApp):
         self._fiber_actor: vtkActor | None = None
         self._autoplay_task: asyncio.Task | None = None
         self._preload_task: asyncio.Task | None = None
+        self._warmup_task: asyncio.Task | None = None
+        self._warmup_gen: int = 0
         self._project_metadata = load_project_metadata()
         self._organ_groups = group_by_organ_system(self._project_metadata)
         self._xdmf_meta: dict[str, MeshMetadata] = {}
@@ -126,6 +128,7 @@ class VisfemApp(TrameApp):
             "active_scalar_field": None,
             "n_steps": 1,
             "active_step": 0,
+            "step_inc": 1,
             "step_times": [],
             "autoplay": False,
             "active_categorical_palette": "paired",
@@ -134,6 +137,7 @@ class VisfemApp(TrameApp):
             "continuous_cmap_meta": CONTINUOUS_META,
             "render_mode": "local",
             "fullscreen": False,
+            "loading": False,
         })
 
     # ---- Panel toggles ----
@@ -164,6 +168,7 @@ class VisfemApp(TrameApp):
         self.plotter.reset_camera()
         self.ctrl.view_push_camera()
         self.ctrl.reset_camera()
+        self.ctrl.view_update()
 
     # ---- XR ----
 
@@ -210,6 +215,49 @@ class VisfemApp(TrameApp):
                 await loop.run_in_executor(None, load_mesh, path, step)
             except Exception:
                 pass
+
+    def _cancel_warmup(self) -> None:
+        self._warmup_gen += 1
+        if self._warmup_task is not None and not self._warmup_task.done():
+            self._warmup_task.cancel()
+        self._warmup_task = None
+        self.state.loading = False
+
+    def _start_vtkjs_warmup(self) -> None:
+        n_steps = int(self.state.n_steps)
+        if n_steps <= 1:
+            with self.state:
+                self.state.step_inc = 1
+                self.state.loading = False
+            return
+        inc = math.ceil(n_steps / _TARGET_FRAMES)
+        self.state.step_inc = inc
+        gen = self._warmup_gen
+        self._warmup_task = asyncio.ensure_future(self._vtkjs_warmup(gen))
+
+    async def _vtkjs_warmup(self, gen: int) -> None:
+        n_steps = int(self.state.n_steps)
+        if n_steps <= 1:
+            return
+        inc = math.ceil(n_steps / _TARGET_FRAMES)
+        steps = list(range(0, n_steps, inc))
+        try:
+            for step in steps:
+                await asyncio.sleep(0)
+                select_step(self.plotter, self.ctrl, self.state,
+                            self._project_metadata, self._xdmf_meta, step)
+                with self.state:
+                    self.state.active_step = 0  # keep slider pinned at 0 during warmup
+                await asyncio.sleep(0.04)
+            if int(self.state.active_step) != 0:
+                select_step(self.plotter, self.ctrl, self.state,
+                            self._project_metadata, self._xdmf_meta, 0)
+                with self.state:
+                    pass
+        finally:
+            if self._warmup_gen == gen:
+                with self.state:
+                    self.state.loading = False
 
     def _start_preload_from_state(self) -> None:
         n_steps = int(self.state.n_steps)
@@ -268,26 +316,33 @@ class VisfemApp(TrameApp):
     def select_dataset(self, key: str) -> None:
         """Route to the correct redraw based on dataset key."""
         self.state.autoplay = False
+        self._cancel_warmup()
         self._cancel_preload()
+        self.state.loading = True
         self._fiber_actor = select_dataset(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key,
         )
         self._start_preload_from_state()
+        self._start_vtkjs_warmup()
 
     def select_xdmf(self, key: str, stem: str) -> None:
         """Load and render a specific XDMF file within a multi-file dataset."""
         self.state.autoplay = False
+        self._cancel_warmup()
         self._cancel_preload()
+        self.state.loading = True
         select_xdmf(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key, stem,
         )
         self._start_preload_from_state()
+        self._start_vtkjs_warmup()
 
     def select_patient(self, dataset_key: str, patient: int) -> None:
         """Load and render a specific patient from a multi-patient dataset."""
         self.state.autoplay = False
+        self._cancel_warmup()
         self._cancel_preload()
         select_patient(
             self.plotter, self.ctrl, self.state,
@@ -297,6 +352,7 @@ class VisfemApp(TrameApp):
     def select_scalar_field(self, field: str) -> None:
         """Re-render the current dataset with the given scalar field."""
         self.state.autoplay = False
+        self._cancel_warmup()
         self.state.active_step = 0
         select_scalar_field(
             self.plotter, self.ctrl, self.state,
@@ -327,6 +383,7 @@ class VisfemApp(TrameApp):
 
     def toggle_autoplay(self) -> None:
         """Start or stop automatic step playback."""
+        self._cancel_warmup()
         if self.state.autoplay:
             self.state.autoplay = False
         else:
@@ -342,7 +399,7 @@ class VisfemApp(TrameApp):
             while self.state.autoplay:
                 step = int(self.state.active_step)
                 n = int(self.state.n_steps)
-                inc = math.ceil(n / _TARGET_FRAMES)
+                inc = int(self.state.step_inc)
                 next_step = 0 if step + inc >= n else step + inc
                 select_step(
                     self.plotter, self.ctrl, self.state,

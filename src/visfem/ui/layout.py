@@ -14,7 +14,7 @@ from visfem.ui.footer import FOOTER_STYLE, build_footer
 from visfem.ui.left_panel import build_left_panel
 from visfem.ui.right_panel import build_right_panel
 from visfem.ui.toolbar import build_toolbar
-from visfem.ui.theme import ACCENT, LEFT_PANEL_WIDTH, RIGHT_PANEL_WIDTH, BG_DARK, BG_LIGHT
+from visfem.ui.theme import ACCENT, BG_DARK, BG_LIGHT, LEFT_PANEL_WIDTH, PAD_LG, RIGHT_PANEL_WIDTH
 
 
 def build_ui(
@@ -122,7 +122,7 @@ def build_ui(
                         v_if="loading",
                         style=(
                             "position:absolute; inset:0; z-index:10; "
-                            "display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; "
+                            f"display:flex; flex-direction:column; align-items:center; justify-content:center; gap:{PAD_LG}; "
                             "background:rgba(0,0,0,0.35);"
                         ),
                     ):

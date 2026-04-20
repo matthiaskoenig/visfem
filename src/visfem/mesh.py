@@ -220,10 +220,7 @@ def get_metadata(path: Path) -> MeshMetadata:
 
 
 def _metadata_timeseries_xdmf(path: Path, fmt: str) -> dict:
-    """Extract metadata from a meshio-style XDMF time series.
-
-    Reads all steps to collect timestamps; field shapes are taken from step 0.
-    """
+    """Extract metadata from a meshio-style XDMF time series (timestamps + field shapes)."""
     with meshio.xdmf.TimeSeriesReader(path) as reader:
         points, cells = reader.read_points_cells()
         num_steps = reader.num_steps
@@ -317,7 +314,7 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> dict:
                     data_item = attr.find("DataItem")
                     if data_item is not None:
                         # DataItem text is "filename.h5:/path/to/dataset"; take the dataset path
-                        hdf5_key = (data_item.text or "").strip().split(":/")[1]
+                        hdf5_key = (data_item.text or "").strip().split(":/", 1)[-1]
                         try:
                             shape = list(hdf5[hdf5_key].shape[1:] or [1])
                         except KeyError:
@@ -424,7 +421,7 @@ def _compute_scalar_bounds(
                     data_item = attr.find("DataItem")
                     if data_item is None:
                         continue
-                    hdf5_key = (data_item.text or "").strip().split(":/")[1]
+                    hdf5_key = (data_item.text or "").strip().split(":/", 1)[-1]
                     try:
                         _update(field_name, hdf5[hdf5_key][:])
                     except KeyError:
@@ -530,7 +527,7 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
             if data_item is None:
                 continue
             center   = attr.get("Center", "Node").lower()
-            hdf5_key = (data_item.text or "").strip().split(":/")[1]
+            hdf5_key = (data_item.text or "").strip().split(":/", 1)[-1]
             try:
                 field_array = hdf5[hdf5_key][:]
                 # Squeeze trailing size-1 dim: (n, 1) -> (n,) for scalars

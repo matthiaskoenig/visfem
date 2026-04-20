@@ -1,12 +1,12 @@
 """Toolbar UI for VisFEM."""
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
-from visfem.ui.theme import ACCENT, FS_XL, FW_SEMI, LS_NORMAL, SEP_DIM
+from visfem.ui.theme import ACCENT, FS_XL, FW_SEMI, GAP_LG, LS_NORMAL, SEP_DIM
 
 # Thin vertical rule that visually separates the panel toggles from the center cluster.
 _SEP_STYLE = (
     f"width:1px; height:18px; background:{SEP_DIM}; "
-    "margin:0 8px; align-self:center; flex-shrink:0;"
+    f"margin:0 {GAP_LG}; align-self:center; flex-shrink:0;"
 )
 
 
@@ -17,7 +17,7 @@ def build_toolbar(
     toggle_right_panel: object,
     toggle_render_mode: object,
 ) -> None:
-    """Build the main toolbar with theme, render mode, VR, and panel toggle buttons."""
+    """Render toolbar: panel toggles, logo, render-mode, theme, VR, and fullscreen buttons."""
     #  Left edge
     html.Div(style="width:15px;")
 

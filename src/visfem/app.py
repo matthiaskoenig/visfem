@@ -3,6 +3,7 @@ import asyncio
 import base64
 import importlib.resources
 import math
+from pathlib import Path
 import pyvista as pv
 from trame.app import TrameApp
 from trame.decorators import change
@@ -18,14 +19,14 @@ from visfem.engine.selection import (
     select_scalar_field, select_step, select_xdmf,
 )
 from visfem.log import get_logger
-from visfem.mesh import get_metadata
+from visfem.mesh import get_metadata, load_mesh
 from visfem.models import MeshMetadata
 from visfem.ui.layout import build_ui
 
 logger = get_logger(__name__)
 
-_TARGET_FRAMES: int = 100   # target rendered frames for autoplay
-_FRAME_SLEEP: float = 0.15  # seconds between frames
+_TARGET_FRAMES: int = 30    # max rendered frames for autoplay
+_FRAME_SLEEP: float = 0.2   # seconds between frames
 
 
 class VisfemApp(TrameApp):
@@ -35,6 +36,7 @@ class VisfemApp(TrameApp):
         super().__init__(server)
         self._fiber_actor: vtkActor | None = None
         self._autoplay_task: asyncio.Task | None = None
+        self._preload_task: asyncio.Task | None = None
         self._project_metadata = load_project_metadata()
         self._organ_groups = group_by_organ_system(self._project_metadata)
         self._xdmf_meta: dict[str, MeshMetadata] = {}
@@ -190,6 +192,48 @@ class VisfemApp(TrameApp):
         else:
             self.ctrl.start_xr(VtkWebXRHelper.XrSessionTypes.HmdVR)
 
+    # ---- Step pre-loading ----
+
+    def _cancel_preload(self) -> None:
+        if self._preload_task is not None and not self._preload_task.done():
+            self._preload_task.cancel()
+        self._preload_task = None
+
+    async def _preload_steps(self, path: Path, steps: list[int]) -> None:
+        loop = asyncio.get_running_loop()
+        for step in steps:
+            try:
+                await asyncio.sleep(0)
+            except asyncio.CancelledError:
+                return
+            try:
+                await loop.run_in_executor(None, load_mesh, path, step)
+            except Exception:
+                pass
+
+    def _start_preload_from_state(self) -> None:
+        n_steps = int(self.state.n_steps)
+        if n_steps <= 1:
+            return
+        key: str | None = self.state.active_dataset
+        if not key or key not in self._project_metadata:
+            return
+        meta = self._project_metadata[key]
+        if meta.mesh_format == "PVD":
+            path = pvd_file_path(meta)
+        else:
+            stem: str | None = self.state.active_xdmf
+            xdmf_files = discover_xdmf(dataset_dir(meta))
+            path = xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
+        if path is None:
+            return
+        inc = math.ceil(n_steps / _TARGET_FRAMES)
+        steps = list(range(inc, n_steps, inc))  # step 0 already loaded by initial render
+        if not steps:
+            return
+        self._cancel_preload()
+        self._preload_task = asyncio.ensure_future(self._preload_steps(path, steps))
+
     # ---- Reactive callbacks ----
 
     @change("ctrl_opacity")
@@ -224,22 +268,27 @@ class VisfemApp(TrameApp):
     def select_dataset(self, key: str) -> None:
         """Route to the correct redraw based on dataset key."""
         self.state.autoplay = False
+        self._cancel_preload()
         self._fiber_actor = select_dataset(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key,
         )
+        self._start_preload_from_state()
 
     def select_xdmf(self, key: str, stem: str) -> None:
         """Load and render a specific XDMF file within a multi-file dataset."""
         self.state.autoplay = False
+        self._cancel_preload()
         select_xdmf(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key, stem,
         )
+        self._start_preload_from_state()
 
     def select_patient(self, dataset_key: str, patient: int) -> None:
         """Load and render a specific patient from a multi-patient dataset."""
         self.state.autoplay = False
+        self._cancel_preload()
         select_patient(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, dataset_key, patient,

@@ -22,6 +22,15 @@ _FIBER_SUBSAMPLE: int = 5
 _GLYPH_SCALE: float = 1.5
 _PERCENTILE_CLAMP: int = 95
 
+_active_actor: vtkActor | None = None
+_xdmf_mesh: pv.DataSet | None = None
+_xdmf_actor: vtkActor | None = None
+
+
+def get_active_actor() -> vtkActor | None:
+    """Return the currently tracked main mesh actor, or None if no dataset is loaded."""
+    return _active_actor
+
 
 class TrameCtrl(Protocol):
     def view_push_camera(self) -> None: ...
@@ -90,11 +99,11 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
 # Scene state
 
 def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
-    """Remove all actors and reset renderer state before each render.
-
-    plotter.clear() resets the full renderer including LUT/colormap state,
-    preventing stale color accumulation across dataset switches.
-    """
+    """Remove all actors and reset renderer state before each render."""
+    global _active_actor, _xdmf_mesh, _xdmf_actor
+    _active_actor = None
+    _xdmf_mesh = None
+    _xdmf_actor = None
     plotter.clear()
     if dark_mode:
         plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
@@ -114,8 +123,93 @@ def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) 
     plotter.render()
     if reset_camera:
         plotter.reset_camera()
-        ctrl.view_push_camera()  
-    ctrl.view_update()  
+        ctrl.view_push_camera()
+    ctrl.view_update()
+
+
+# Mapper fast-path helpers — update color/field without rebuilding the scene
+
+def _build_categorical_lut(colors: list[str], n: int) -> pv.LookupTable:
+    """Build a fixed discrete LUT from n hex color strings."""
+    lut = pv.LookupTable(cmap=colors[:n], n_values=n)
+    lut.scalar_range = (0, max(n - 1, 1))
+    return lut
+
+
+def _build_continuous_lut(cmap: str, lo: float, hi: float) -> pv.LookupTable:
+    """Build a 256-entry continuous LUT from a named colormap."""
+    lut = pv.LookupTable(cmap=cmap, n_values=256)
+    lut.scalar_range = (lo, hi)
+    return lut
+
+
+def update_actor_palette(
+    plotter: pv.Plotter, ctrl: TrameCtrl, colors: list[str], n: int
+) -> None:
+    """Swap the categorical LUT on the active actor — no scene rebuild needed.
+
+    Does nothing if no actor is currently tracked (falls back gracefully).
+    Callers are responsible for updating state.legend_items colors.
+    """
+    if _active_actor is None:
+        return
+    mapper = _active_actor.GetMapper()
+    mapper.SetLookupTable(_build_categorical_lut(colors, n))
+    mapper.SetScalarRange(0, max(n - 1, 1))
+    mapper.Modified()
+    plotter.render()
+    ctrl.view_update()
+
+
+def update_tibia_sim_field(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    ddir: Path,
+    field: str,
+    palette: list[str],
+    cmap: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Fast-path field/color update for tibia_simulation.
+
+    Returns (legend_items, scalar_bar_info). Returns ([], None) sentinel when
+    _active_actor is None so callers can fall back to a full redraw.
+    """
+    if _active_actor is None:
+        return [], None
+
+    mapper = _active_actor.GetMapper()
+    mesh = load_mesh(ddir / "Tibia_Simulation.vtk")  # instant from cache
+
+    if field == "Claes_window":
+        zones = mesh.cell_data["Claes_window"].astype(int)
+        zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
+        n = len(zone_ids)
+        colors = region_colors(n, palette)
+        mapper.SelectColorArray("_zone_id")
+        mapper.SetScalarModeToUseCellFieldData()
+        mapper.SetInterpolateScalarsBeforeMapping(False)
+        mapper.SetLookupTable(_build_categorical_lut(colors, n))
+        mapper.SetScalarRange(0, max(n - 1, 1))
+        mapper.Modified()
+        plotter.render()
+        ctrl.view_update()
+        legend = [
+            {"names": [_CLAES_LABELS.get(z, f"Zone {z}")], "color": colors[i]}
+            for i, z in enumerate(zone_ids)
+        ]
+        return legend, None
+    else:
+        data = mesh.cell_data[field]
+        clim = [float(data.min()), float(np.percentile(data, _PERCENTILE_CLAMP))]
+        mapper.SelectColorArray(field)
+        mapper.SetScalarModeToUseCellFieldData()
+        mapper.SetInterpolateScalarsBeforeMapping(True)
+        mapper.SetLookupTable(_build_continuous_lut(cmap, clim[0], clim[1]))
+        mapper.SetScalarRange(*clim)
+        mapper.Modified()
+        plotter.render()
+        ctrl.view_update()
+        return [], _scalar_bar_dict(field, clim, cmap)
 
 
 # Renderers
@@ -139,6 +233,7 @@ def redraw_xdmf(
     user's current view.
     Returns (legend_items, mesh_stats, scalar_bar_info).
     """
+    global _xdmf_mesh, _xdmf_actor
     clear_scene(plotter, dark_mode)
     try:
         mesh = load_mesh(path, step=step)
@@ -146,6 +241,7 @@ def redraw_xdmf(
         logger.error(f"Failed to load '{path.name}' step {step}: {e}")
         return [], None, None
 
+    _xdmf_mesh = mesh
     mesh_meta = xdmf_meta.get(path.stem)
     if field is None:
         field = next(iter(mesh_meta.fields), None) if mesh_meta else None
@@ -156,17 +252,17 @@ def redraw_xdmf(
     if field and mesh_meta and field in mesh_meta.scalar_bounds:
         clim = mesh_meta.scalar_bounds[field]
 
-    plotter.add_mesh(
+    _xdmf_actor = plotter.add_mesh(
         mesh,
         scalars=field,
         cmap=cmap,
         clim=clim,
         show_edges=False,
-        copy_mesh=True,
+        copy_mesh=False,
         show_scalar_bar=False,
         opacity=opacity,
+        render=False,
     )
-    apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl, reset_camera=reset_camera)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
 
@@ -182,6 +278,60 @@ def redraw_xdmf(
             scalar_bar = _scalar_bar_dict(field, clim, cmap)
 
     return [], stats, scalar_bar
+
+
+def update_xdmf_step(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    path: Path,
+    xdmf_meta: dict[str, MeshMetadata],
+    step: int,
+    field: str | None,
+    cmap: str,
+) -> tuple[bool, dict[str, Any] | None, dict[str, Any] | None]:
+    """In-place step update: swap scalars without recreating the actor.
+
+    Returns (True, stats, scalar_bar) on success.
+    Returns (False, None, None) when the persistent actor is not yet built — caller
+    falls back to redraw_xdmf.
+    """
+    if _xdmf_mesh is None or _xdmf_actor is None:
+        return False, None, None
+
+    try:
+        new_mesh = load_mesh(path, step=step)
+    except Exception as e:
+        logger.error(f"Failed to load '{path.name}' step {step}: {e}")
+        return False, None, None
+
+    if new_mesh.n_points != _xdmf_mesh.n_points or new_mesh.n_cells != _xdmf_mesh.n_cells:
+        return False, None, None
+
+    for name in new_mesh.array_names:
+        _xdmf_mesh[name] = new_mesh[name]
+    _xdmf_mesh.points = new_mesh.points
+
+    _xdmf_actor.GetMapper().Modified()
+    plotter.render()
+    ctrl.view_update()
+
+    stats = {"n_cells": new_mesh.n_cells, "n_points": new_mesh.n_points}
+    scalar_bar: dict | None = None
+    if field:
+        mesh_meta = xdmf_meta.get(path.stem)
+        clim: list[float] | None = None
+        if mesh_meta and field in mesh_meta.scalar_bounds:
+            clim = mesh_meta.scalar_bounds[field]
+        if clim is None:
+            try:
+                lo, hi = new_mesh.get_data_range(field)
+                clim = [float(lo), float(hi)]
+            except Exception:
+                pass
+        if clim is not None:
+            scalar_bar = _scalar_bar_dict(field, clim, cmap)
+
+    return True, stats, scalar_bar
 
 
 def redraw_ircadb(
@@ -208,7 +358,7 @@ def redraw_ircadb(
             logger.warning(f"Organ file not found: {vtk_path}, skipping.")
             continue
         try:
-            mesh = load_mesh(vtk_path)
+            mesh = load_mesh(vtk_path).triangulate()
             mesh.clear_data()
             mesh.cell_data["region_id"] = np.full(mesh.n_cells, len(parts), dtype=np.int32)
             parts.append(mesh)
@@ -221,8 +371,9 @@ def redraw_ircadb(
     colors = region_colors(n, _palette)
     stats: dict[str, int] | None = None
     if parts:
+        global _active_actor
         merged = pv.merge(parts)
-        plotter.add_mesh(
+        _active_actor = plotter.add_mesh(
             merged,
             scalars="region_id",
             cmap=colors,
@@ -233,6 +384,7 @@ def redraw_ircadb(
             show_scalar_bar=False,
             copy_mesh=True,
             interpolate_before_map=False,
+            render=False,
         )
         stats = {"n_cells": merged.n_cells, "n_points": merged.n_points}
     apply_opacity(plotter, opacity)
@@ -285,8 +437,9 @@ def redraw_heart(
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     colors = region_colors(len(unique_ids), _palette)
 
+    global _active_actor
     clear_scene(plotter, dark_mode)
-    plotter.add_mesh(
+    _active_actor = plotter.add_mesh(
         mesh,
         scalars="region_id",
         cmap=colors,
@@ -297,6 +450,7 @@ def redraw_heart(
         show_scalar_bar=False,
         copy_mesh=True,
         interpolate_before_map=False,
+        render=False,
     )
 
     # Build fiber glyph overlay; hidden by default, toggled via show_fibers state.
@@ -311,6 +465,7 @@ def redraw_heart(
             color="#484848",
             show_scalar_bar=False,
             copy_mesh=True,
+            render=False,
         )
         fiber_actor.SetVisibility(False)
 
@@ -372,8 +527,9 @@ def redraw_heart_ep(
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     colors = region_colors(len(unique_ids), _palette)
 
+    global _active_actor
     clear_scene(plotter, dark_mode)
-    plotter.add_mesh(
+    _active_actor = plotter.add_mesh(
         mesh,
         scalars="region_id",
         cmap=colors,
@@ -384,6 +540,7 @@ def redraw_heart_ep(
         show_scalar_bar=False,
         copy_mesh=True,
         interpolate_before_map=False,
+        render=False,
     )
     apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl, reset_camera=reset_camera)
@@ -433,8 +590,9 @@ def redraw_tibia_mesh(
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     colors = region_colors(len(unique_ids), _palette)
 
+    global _active_actor
     clear_scene(plotter, dark_mode)
-    plotter.add_mesh(
+    _active_actor = plotter.add_mesh(
         mesh,
         scalars="region_id",
         cmap=colors,
@@ -445,6 +603,7 @@ def redraw_tibia_mesh(
         show_scalar_bar=False,
         copy_mesh=True,
         interpolate_before_map=False,
+        render=False,
     )
     apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl, reset_camera=reset_camera)
@@ -495,21 +654,24 @@ def redraw_tibia_simulation(
         logger.error(f"Failed to load tibia simulation: {e}")
         return [], None, None
 
+    # Always compute _zone_id so the actor's frozen dataset has it regardless of
+    # the initially rendered field — enables fast-path switching to Claes_window later.
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["clinical"]
+    zones = mesh.cell_data["Claes_window"].astype(int)
+    zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
+    zone_map = {z: i for i, z in enumerate(zone_ids)}
+    mesh.cell_data["_zone_id"] = np.array(
+        [zone_map[int(z)] for z in zones], dtype=np.int32
+    )
+
+    global _active_actor
     clear_scene(plotter, dark_mode)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
 
     if field == "Claes_window":
-        # Categorical: map integer zone values to a discrete colormap with a legend.
-        _palette = palette if palette is not None else CATEGORICAL_PALETTES["clinical"]
-        zones = mesh.cell_data["Claes_window"].astype(int)
-        zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
-        zone_map = {z: i for i, z in enumerate(zone_ids)}
-        mesh.cell_data["_zone_id"] = np.array(
-            [zone_map[int(z)] for z in zones], dtype=np.int32
-        )
         colors = region_colors(len(zone_ids), _palette)
         n = len(zone_ids)
-        plotter.add_mesh(
+        _active_actor = plotter.add_mesh(
             mesh,
             scalars="_zone_id",
             cmap=colors,
@@ -520,6 +682,7 @@ def redraw_tibia_simulation(
             show_scalar_bar=False,
             copy_mesh=True,
             interpolate_before_map=False,
+            render=False,
         )
         apply_opacity(plotter, opacity)
         push_scene(plotter, ctrl, reset_camera=reset_camera)
@@ -532,7 +695,7 @@ def redraw_tibia_simulation(
         # Continuous: clamp to nth percentile to avoid outlier washout.
         data = mesh.cell_data[field]
         clim = [float(data.min()), float(np.percentile(data, _PERCENTILE_CLAMP))]
-        plotter.add_mesh(
+        _active_actor = plotter.add_mesh(
             mesh,
             scalars=field,
             cmap=cmap,
@@ -541,6 +704,7 @@ def redraw_tibia_simulation(
             show_edges=False,
             show_scalar_bar=False,
             copy_mesh=True,
+            render=False,
         )
         apply_opacity(plotter, opacity)
         push_scene(plotter, ctrl, reset_camera=reset_camera)

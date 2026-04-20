@@ -62,7 +62,7 @@ if "PolyLine" not in _xdmf_common.xdmf_to_meshio_type:
     _xdmf_common.meshio_to_xdmf_type["line"] = ("PolyLine",)
 
 
-# Mesh cache — static meshes cached indefinitely; time-series steps use a bounded LRU
+# Mesh cache: static meshes cached indefinitely; time-series steps use a bounded LRU
 _STEP_CACHE_SIZE: int = 64
 _static_cache: dict[Path, pv.DataSet] = {}
 _step_cache: OrderedDict[tuple[Path, int], pv.DataSet] = OrderedDict()

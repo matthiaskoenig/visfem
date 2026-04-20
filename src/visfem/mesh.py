@@ -4,6 +4,7 @@ load_mesh(path, step)  -> pv.DataSet
 get_metadata(path)     -> MeshMetadata
 """
 
+import threading
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from pathlib import Path
@@ -62,9 +63,10 @@ if "PolyLine" not in _xdmf_common.xdmf_to_meshio_type:
 
 
 # Mesh cache — static meshes cached indefinitely; time-series steps use a bounded LRU
-_STEP_CACHE_SIZE: int = 16
+_STEP_CACHE_SIZE: int = 64
 _static_cache: dict[Path, pv.DataSet] = {}
 _step_cache: OrderedDict[tuple[Path, int], pv.DataSet] = OrderedDict()
+_step_cache_lock: threading.Lock = threading.Lock()
 
 
 def mesh_cache_info() -> dict:
@@ -589,10 +591,11 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
         return _static_cache[path].copy(deep=False)
 
     key = (path, step)
-    if key in _step_cache:
-        _step_cache.move_to_end(key)
-        logger.info(f"[mesh cache hit] '{path.name}' step {step} served from memory")
-        return _step_cache[key].copy(deep=False)
+    with _step_cache_lock:
+        if key in _step_cache:
+            _step_cache.move_to_end(key)
+            logger.info(f"[mesh cache hit] '{path.name}' step {step} served from memory")
+            return _step_cache[key].copy(deep=False)
 
     logger.info(f"[mesh cache miss] loading '{path.name}' step {step} from disk")
     if fmt == "pvd_timeseries":
@@ -601,9 +604,10 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
         mesh = _load_fenics_xdmf(path, step)
     else:
         mesh = _load_timeseries_xdmf(path, step)
-    _step_cache[key] = mesh
-    if len(_step_cache) > _STEP_CACHE_SIZE:
-        _step_cache.popitem(last=False)
+    with _step_cache_lock:
+        _step_cache[key] = mesh
+        if len(_step_cache) > _STEP_CACHE_SIZE:
+            _step_cache.popitem(last=False)
     return mesh.copy(deep=False)
 
 def parse_labels_file(path: Path) -> dict[str, dict[int, list[str]]]:

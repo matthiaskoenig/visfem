@@ -129,7 +129,7 @@ def build_ui(
                         v3.VProgressCircular(indeterminate=True, color=ACCENT, size="36", width="2")
                         html.Span(
                             "Loading",
-                            style=f"font-size:0.7rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;",
+                            style="font-size:0.7rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;",
                         )
 
                 # ---- Right panel ----

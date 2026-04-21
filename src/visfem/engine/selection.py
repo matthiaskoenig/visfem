@@ -33,8 +33,9 @@ def _scalar_fields_from_meta(mesh_meta: MeshMetadata | None) -> list[dict[str, s
 
 def _resolve_palette(state: Any) -> list[str]:
     """Return the active categorical palette colors from state."""
-    name: str = str(state.active_categorical_palette)  
-    return CATEGORICAL_PALETTES.get(name, CATEGORICAL_PALETTES["paired"])
+    name: str = str(state.active_categorical_palette)
+    colors = CATEGORICAL_PALETTES.get(name, CATEGORICAL_PALETTES["paired"])
+    return list(reversed(colors)) if getattr(state, "color_reversed", False) else colors
 
 
 # Fields present in heart_iv VTUs that are not meaningful for display
@@ -57,7 +58,8 @@ def _timeseries_path(
 
 def _resolve_cmap(state: Any) -> str:
     """Return the active continuous colormap name from state."""
-    return str(state.active_continuous_cmap)
+    cmap = str(state.active_continuous_cmap)
+    return cmap + "_r" if getattr(state, "color_reversed", False) else cmap
 
 
 def _reset_selection_state(state: Any) -> None:

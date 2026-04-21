@@ -18,6 +18,7 @@ def build_right_panel(
     on_reset_camera: object,
     on_select_scalar_field: object,
     on_select_color_scheme: object,
+    on_toggle_color_reversed: object,
     on_select_step: object,
     on_toggle_autoplay: object,
 ) -> None:
@@ -98,9 +99,38 @@ def build_right_panel(
             v3.VDivider(style="margin-bottom:10px;")
 
 
-        # Section: Color
+        # Section: Color — inline header so we can embed the reverse toggle
 
-        _section_header("mdi-palette-outline", "Color", "right_color_open")
+        with html.Div(
+            style=f"display:flex; align-items:center; gap:{GAP_MD}; margin-bottom:6px; user-select:none;",
+        ):
+            # Left: icon + label — clicking this area toggles collapse
+            with html.Div(
+                style="display:flex; align-items:center; gap:6px; flex:1; cursor:pointer;",
+                click="right_color_open = !right_color_open",
+            ):
+                v3.VIcon("mdi-palette-outline", size="small", color=ACCENT)
+                html.Span(
+                    "Color",
+                    style=f"font-size:{FS_MD}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:{OP_SUBDUED};",
+                )
+            # Reverse toggle — isolated so it doesn't trigger collapse
+            with v3.VTooltip(text="Reverse color order", location="bottom"):
+                with v3.Template(v_slot_activator="{ props }"):
+                    v3.VBtn(
+                        icon="mdi-swap-horizontal",
+                        variant=("color_reversed ? 'tonal' : 'text'",),
+                        density="compact",
+                        size="x-small",
+                        color=(f"color_reversed ? '{ACCENT}' : ''",),
+                        disabled=("active_dataset === null || busy",),
+                        click=on_toggle_color_reversed,
+                        v_bind="props",
+                    )
+            # Chevron — clicking this also toggles collapse
+            with html.Div(style="cursor:pointer;", click="right_color_open = !right_color_open"):
+                v3.VIcon("mdi-chevron-down", size="small", v_show="right_color_open")
+                v3.VIcon("mdi-chevron-right", size="small", v_show="!right_color_open")
 
         with html.Div(v_show="right_color_open"):
             # Categorical palettes (no continuous scalar field)
@@ -141,7 +171,7 @@ def build_right_panel(
                             with v3.Template(v_slot_title=""):
                                 with html.Div(style=f"display:flex; align-items:center; gap:{GAP_LG};"):
                                     html.Span("{{ cmap.label }}", style=f"font-size:{FS_MD}; width:52px; flex-shrink:0;")
-                                    html.Div(style=("'flex:1; height:14px; border-radius:4px; background:' + cmap.gradient",))
+                                    html.Div(style=("'flex:1; height:14px; border-radius:4px; background:' + cmap.gradient + '; ' + (color_reversed ? 'transform:scaleX(-1);' : '')",))
 
 
         # Section: Regions (categorical datasets with legend)

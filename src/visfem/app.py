@@ -75,6 +75,7 @@ class VisfemApp(TrameApp):
             on_select_scalar_field=self.select_scalar_field,
             on_select_step=self.select_step,
             on_select_color_scheme=self.select_color_scheme,
+            on_toggle_color_reversed=self.toggle_color_reversed,
             on_toggle_autoplay=self.toggle_autoplay,
             on_toggle_theme=self.toggle_theme,
             on_reset_camera=self.reset_camera,
@@ -144,6 +145,7 @@ class VisfemApp(TrameApp):
             "loading": False,
             "busy": False,
             "camera_resetting": False,
+            "color_reversed": False,
         })
 
     # ---- Panel toggles ----
@@ -182,8 +184,7 @@ class VisfemApp(TrameApp):
         self.plotter.camera_position = self._initial_camera
         self.ctrl.view_push_camera()
         self.ctrl.view_update()
-        # Hold the spinner for a fixed window — the server has no callback for
-        # when the client finishes the WebGL re-render on the new camera pose.
+        # Hold the spinner for a fixed window; the server has no callback for when the client finishes the WebGL re-render on the new camera pose.
         await asyncio.sleep(0.4)
         self.state.camera_resetting = False
         self.state.busy = False
@@ -420,6 +421,22 @@ class VisfemApp(TrameApp):
         select_step(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, int(step),
+        )
+        self.state.busy = False
+
+    async def toggle_color_reversed(self) -> None:
+        """Flip the color order of the active palette or colormap and re-render."""
+        if self.state.active_dataset is None:
+            return
+        if self.state.busy:
+            return
+        self.state.color_reversed = not self.state.color_reversed
+        self.state.busy = True
+        self.state.flush()
+        await asyncio.sleep(0.05)
+        select_color_scheme(
+            self.plotter, self.ctrl, self.state,
+            self._project_metadata, self._xdmf_meta,
         )
         self.state.busy = False
 

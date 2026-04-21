@@ -29,6 +29,7 @@ def build_ui(
     on_select_scalar_field: object,
     on_select_step: object,
     on_select_color_scheme: object,
+    on_toggle_color_reversed: object,
     on_toggle_autoplay: object,
     on_toggle_theme: object,
     on_reset_camera: object,
@@ -156,6 +157,7 @@ def build_ui(
                         on_reset_camera,
                         on_select_scalar_field,
                         on_select_color_scheme,
+                        on_toggle_color_reversed,
                         on_select_step,
                         on_toggle_autoplay,
                     )

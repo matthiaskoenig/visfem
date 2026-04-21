@@ -50,6 +50,13 @@ def build_ui(
             toolbar.style = "background-color: color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%);"
             toolbar.elevation = 0
             build_toolbar(on_toggle_theme, on_toggle_xr, on_toggle_left_panel, on_toggle_right_panel, on_toggle_render_mode, on_take_screenshot)
+            v3.VProgressLinear(
+                v_if="busy",
+                indeterminate=True,
+                color=ACCENT,
+                height=2,
+                style="position:absolute; bottom:0; left:0; right:0; z-index:20;",
+            )
 
         layout.footer.clear()
         with layout.footer as footer:

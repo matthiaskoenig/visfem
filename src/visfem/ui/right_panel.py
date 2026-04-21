@@ -46,7 +46,7 @@ def build_right_panel(
                     density="compact", hide_details=True,
                     color=ACCENT, track_color=TRACK_DARK,
                     thumb_label=False,
-                    disabled=("autoplay",),
+                    disabled=("autoplay || busy",),
                     style="flex:1; margin:0; padding:0;",
                 )
 
@@ -82,6 +82,7 @@ def build_right_panel(
                             click=(on_select_scalar_field, "[field.name]"),
                             active=("active_scalar_field === field.name",),
                             active_color=ACCENT,
+                            disabled=("busy",),
                         ):
                             with v3.Template(v_slot_title=""):
                                 html.Span("{{ field.label }}", style=f"font-size:{FS_MD};")
@@ -105,6 +106,7 @@ def build_right_panel(
                             click=(on_select_color_scheme, "[palette.name]"),
                             active=("active_categorical_palette === palette.name",),
                             active_color=ACCENT,
+                            disabled=("busy",),
                         ):
                             with v3.Template(v_slot_title=""):
                                 with html.Div(style=f"display:flex; align-items:center; gap:{GAP_MD};"):
@@ -125,6 +127,7 @@ def build_right_panel(
                             click=(on_select_color_scheme, "[cmap.name]"),
                             active=("active_continuous_cmap === cmap.name",),
                             active_color=ACCENT,
+                            disabled=("busy",),
                         ):
                             with v3.Template(v_slot_title=""):
                                 with html.Div(style=f"display:flex; align-items:center; gap:{GAP_LG};"):
@@ -164,13 +167,13 @@ def build_right_panel(
                         icon=("autoplay ? 'mdi-pause' : 'mdi-play'",),
                         variant=("autoplay ? 'tonal' : 'text'",),
                         density="compact", size="x-small",
-                        disabled=("loading",),
+                        disabled=("loading || busy",),
                         click=on_toggle_autoplay,
                     )
                     v3.VBtn(
                         icon="mdi-chevron-left", variant="text",
                         density="compact", size="x-small",
-                        disabled=("loading || active_step === 0",),
+                        disabled=("loading || busy || active_step === 0",),
                         click=(on_select_step, "[Math.max(0, active_step - step_inc)]"),
                     )
                     v3.VSlider(
@@ -179,14 +182,14 @@ def build_right_panel(
                         density="compact", hide_details=True,
                         color=ACCENT, track_color=TRACK_DARK,
                         thumb_label=False,
-                        disabled=("loading",),
+                        disabled=("loading || busy",),
                         style="flex:1; margin:0; padding:0;",
                         end=(on_select_step, "[active_step]"),
                     )
                     v3.VBtn(
                         icon="mdi-chevron-right", variant="text",
                         density="compact", size="x-small",
-                        disabled=("loading || active_step + step_inc >= n_steps",),
+                        disabled=("loading || busy || active_step + step_inc >= n_steps",),
                         click=(on_select_step, "[Math.min(n_steps - 1, active_step + step_inc)]"),
                     )
 

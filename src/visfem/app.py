@@ -142,6 +142,7 @@ class VisfemApp(TrameApp):
             "render_mode": "local",
             "fullscreen": False,
             "loading": False,
+            "busy": False,
         })
 
     # ---- Panel toggles ----
@@ -234,6 +235,7 @@ class VisfemApp(TrameApp):
             self._warmup_task.cancel()
         self._warmup_task = None
         self.state.loading = False
+        self.state.busy = False
 
     def _start_vtkjs_warmup(self) -> None:
         """Start the vtk.js SHA-cache warmup task, or clear loading immediately for static datasets."""
@@ -242,6 +244,7 @@ class VisfemApp(TrameApp):
             with self.state:
                 self.state.step_inc = 1
                 self.state.loading = False
+                self.state.busy = False
             return
         inc = math.ceil(n_steps / _TARGET_FRAMES)
         self.state.step_inc = inc
@@ -272,6 +275,7 @@ class VisfemApp(TrameApp):
             if self._warmup_gen == gen:
                 with self.state:
                     self.state.loading = False
+                    self.state.busy = False
 
     def _start_preload_from_state(self) -> None:
         """Kick off background preloading for all keyframes of the currently active dataset."""
@@ -334,6 +338,7 @@ class VisfemApp(TrameApp):
         self._cancel_warmup()
         self._cancel_preload()
         self.state.loading = True
+        self.state.busy = True
         self.state.flush()
         await asyncio.sleep(0.05)
         self._fiber_actor = select_dataset(
@@ -350,6 +355,7 @@ class VisfemApp(TrameApp):
         self._cancel_warmup()
         self._cancel_preload()
         self.state.loading = True
+        self.state.busy = True
         self.state.flush()
         await asyncio.sleep(0.05)
         select_xdmf(
@@ -366,6 +372,7 @@ class VisfemApp(TrameApp):
         self._cancel_warmup()
         self._cancel_preload()
         self.state.loading = True
+        self.state.busy = True
         self.state.flush()
         await asyncio.sleep(0.05)
         select_patient(
@@ -375,35 +382,53 @@ class VisfemApp(TrameApp):
         self._initial_camera = self.plotter.camera_position
         self._start_vtkjs_warmup()
 
-    def select_scalar_field(self, field: str) -> None:
+    async def select_scalar_field(self, field: str) -> None:
         """Re-render the current dataset with the given scalar field."""
+        if self.state.busy:
+            return
         self.state.autoplay = False
         self._cancel_warmup()
         self.state.active_step = 0
+        self.state.busy = True
+        self.state.flush()
+        await asyncio.sleep(0.05)
         select_scalar_field(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, field,
         )
+        self.state.busy = False
 
-    def select_step(self, step: int) -> None:
+    async def select_step(self, step: int) -> None:
         """Navigate the current XDMF dataset to a different timestep."""
+        if self.state.busy:
+            return
+        self.state.busy = True
+        self.state.flush()
+        await asyncio.sleep(0)
         select_step(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, int(step),
         )
+        self.state.busy = False
 
-    def select_color_scheme(self, name: str) -> None:
+    async def select_color_scheme(self, name: str) -> None:
         """Update the active palette/colormap and re-render the current scene."""
         if self.state.active_dataset is None:
+            return
+        if self.state.busy:
             return
         if self.state.scalar_bar is not None:
             self.state.active_continuous_cmap = name
         else:
             self.state.active_categorical_palette = name
+        self.state.busy = True
+        self.state.flush()
+        await asyncio.sleep(0.05)
         select_color_scheme(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta,
         )
+        self.state.busy = False
 
     # ---- Autoplay ----
 

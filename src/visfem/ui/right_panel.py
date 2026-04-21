@@ -150,7 +150,7 @@ def build_right_panel(
                             with v3.Template(v_slot_title=""):
                                 with html.Div(style=f"display:flex; align-items:center; gap:{GAP_MD};"):
                                     html.Span("{{ palette.label }}", style=f"font-size:{FS_MD}; width:72px; flex-shrink:0;")
-                                    with html.Div(style=f"display:flex; gap:{GAP_XS};"):
+                                    with html.Div(style=(f"'display:flex; gap:{GAP_XS}; ' + (color_reversed ? 'flex-direction:row-reverse;' : '')",)):
                                         with html.Div(v_for="(swatch, i) in palette.swatches", key="i"):
                                             html.Div(style=(f"'{SWATCH_STYLE} background:' + swatch + ';'",))
 

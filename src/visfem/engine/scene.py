@@ -88,11 +88,16 @@ def _fmt_value(v: float) -> str:
 
 def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
     """Build the scalar_bar state dict for a continuous field."""
+    reversed_cmap = cmap.endswith("_r")
+    base_cmap = cmap[:-2] if reversed_cmap else cmap
+    gradient = CONTINUOUS_CMAPS.get(base_cmap, "linear-gradient(to right, #222, #fff)")
+    if reversed_cmap:
+        gradient = gradient.replace("to right", "to left")
     return {
         "field_label": _FIELD_LABELS.get(field, field.replace("_", " ")),
         "min_label": _fmt_value(clim[0]),
         "max_label": _fmt_value(clim[1]),
-        "gradient": CONTINUOUS_CMAPS.get(cmap, "linear-gradient(to right, #222, #fff)"),
+        "gradient": gradient,
     }
 
 

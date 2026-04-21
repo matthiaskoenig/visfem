@@ -3,7 +3,6 @@ import asyncio
 import base64
 import importlib.resources
 import math
-from pathlib import Path
 import pyvista as pv
 from trame.app import TrameApp
 from trame.decorators import change
@@ -12,6 +11,7 @@ from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
 from visfem.engine.discovery import dataset_dir, discover_xdmf, group_by_organ_system, load_project_metadata, pvd_file_path
+from visfem.engine.playback import autoplay_loop, preload_steps, vtkjs_warmup
 from visfem.engine.scene import apply_opacity
 from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
 from visfem.engine.selection import (
@@ -19,7 +19,7 @@ from visfem.engine.selection import (
     select_scalar_field, select_step, select_xdmf,
 )
 from visfem.log import get_logger
-from visfem.mesh import get_metadata, load_mesh
+from visfem.mesh import get_metadata
 from visfem.models import MeshMetadata
 from visfem.ui.layout import build_ui
 
@@ -228,19 +228,6 @@ class VisfemApp(TrameApp):
             self._preload_task.cancel()
         self._preload_task = None
 
-    async def _preload_steps(self, path: Path, steps: list[int]) -> None:
-        """Load mesh steps into the LRU cache in the background without blocking the UI."""
-        loop = asyncio.get_running_loop()
-        for step in steps:
-            try:
-                await asyncio.sleep(0)
-            except asyncio.CancelledError:
-                return
-            try:
-                await loop.run_in_executor(None, load_mesh, path, step)
-            except Exception:
-                pass
-
     def _cancel_warmup(self) -> None:
         """Cancel any running vtk.js warmup task and clear the loading flag."""
         self._warmup_gen += 1
@@ -262,33 +249,14 @@ class VisfemApp(TrameApp):
         inc = math.ceil(n_steps / _TARGET_FRAMES)
         self.state.step_inc = inc
         gen = self._warmup_gen
-        self._warmup_task = asyncio.ensure_future(self._vtkjs_warmup(gen))
-
-    async def _vtkjs_warmup(self, gen: int) -> None:
-        """Cycle through keyframes under the loading overlay to pre-populate the vtk.js SHA cache."""
-        n_steps = int(self.state.n_steps)
-        if n_steps <= 1:
-            return
-        inc = math.ceil(n_steps / _TARGET_FRAMES)
-        steps = list(range(0, n_steps, inc))
-        try:
-            for step in steps:
-                await asyncio.sleep(0)
-                select_step(self.plotter, self.ctrl, self.state,
-                            self._project_metadata, self._xdmf_meta, step)
-                with self.state:
-                    self.state.active_step = 0  # keep slider pinned at 0 during warmup
-                await asyncio.sleep(0.04)
-            if int(self.state.active_step) != 0:
-                select_step(self.plotter, self.ctrl, self.state,
-                            self._project_metadata, self._xdmf_meta, 0)
-                with self.state:
-                    pass
-        finally:
-            if self._warmup_gen == gen:
-                with self.state:
-                    self.state.loading = False
-                    self.state.busy = False
+        self._warmup_task = asyncio.ensure_future(
+            vtkjs_warmup(
+                gen, lambda: self._warmup_gen,
+                self.state, self.plotter, self.ctrl,
+                self._project_metadata, self._xdmf_meta,
+                _TARGET_FRAMES,
+            )
+        )
 
     def _start_preload_from_state(self) -> None:
         """Kick off background preloading for all keyframes of the currently active dataset."""
@@ -312,7 +280,7 @@ class VisfemApp(TrameApp):
         if not steps:
             return
         self._cancel_preload()
-        self._preload_task = asyncio.ensure_future(self._preload_steps(path, steps))
+        self._preload_task = asyncio.ensure_future(preload_steps(path, steps))
 
     # ---- Reactive callbacks ----
 
@@ -471,25 +439,13 @@ class VisfemApp(TrameApp):
             if self._autoplay_task is not None and not self._autoplay_task.done():
                 return
             self.state.autoplay = True
-            self._autoplay_task = asyncio.ensure_future(self._autoplay_loop())
-
-    async def _autoplay_loop(self) -> None:
-        """Advance one step at a time until stopped or end."""
-        try:
-            while self.state.autoplay:
-                step = int(self.state.active_step)
-                n = int(self.state.n_steps)
-                inc = int(self.state.step_inc)
-                next_step = 0 if step + inc >= n else step + inc
-                select_step(
-                    self.plotter, self.ctrl, self.state,
-                    self._project_metadata, self._xdmf_meta, next_step,
+            self._autoplay_task = asyncio.ensure_future(
+                autoplay_loop(
+                    self.state, self.plotter, self.ctrl,
+                    self._project_metadata, self._xdmf_meta,
+                    _FRAME_SLEEP,
                 )
-                with self.state:
-                    pass
-                await asyncio.sleep(_FRAME_SLEEP)
-        finally:
-            self.state.autoplay = False
+            )
 
     def sync_camera(self, camera: dict) -> None:
         """Sync client camera state to server plotter."""

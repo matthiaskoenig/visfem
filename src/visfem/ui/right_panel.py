@@ -32,11 +32,20 @@ def build_right_panel(
         with html.Div(v_show="right_view_open"):
             # Single row: [camera reset] | [opacity icon] [opacity slider]
             with html.Div(style=f"display:flex; align-items:center; gap:{GAP_MD}; margin-bottom:12px;"):
-                v3.VIcon(
-                    "mdi-camera-retake-outline",
-                    size="small",
-                    style=f"cursor:pointer; opacity:{OP_BODY}; flex-shrink:0;",
+                v3.VBtn(
+                    v_if="!camera_resetting",
+                    icon="mdi-camera-retake-outline",
+                    variant="text",
+                    density="compact", size="small",
+                    disabled=("busy",),
                     click=on_reset_camera,
+                )
+                v3.VProgressCircular(
+                    v_else=True,
+                    indeterminate=True,
+                    color=ACCENT,
+                    size="20", width="2",
+                    style="flex-shrink:0;",
                 )
                 html.Span(style=f"width:1px; height:18px; background:{SEP_NORMAL}; flex-shrink:0;")
                 v3.VIcon("mdi-circle-opacity", size="small", style=f"opacity:{OP_DIM}; flex-shrink:0;")

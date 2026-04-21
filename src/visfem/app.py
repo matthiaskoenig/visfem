@@ -143,6 +143,7 @@ class VisfemApp(TrameApp):
             "fullscreen": False,
             "loading": False,
             "busy": False,
+            "camera_resetting": False,
         })
 
     # ---- Panel toggles ----
@@ -168,13 +169,24 @@ class VisfemApp(TrameApp):
 
     # ---- Camera ----
 
-    def reset_camera(self) -> None:
+    async def reset_camera(self) -> None:
         """Restore the camera to the initial pose captured at dataset load."""
         if self._initial_camera is None:
             return
+        if self.state.busy:
+            return
+        self.state.busy = True
+        self.state.camera_resetting = True
+        self.state.flush()
+        await asyncio.sleep(0.05)
         self.plotter.camera_position = self._initial_camera
         self.ctrl.view_push_camera()
         self.ctrl.view_update()
+        # Hold the spinner for a fixed window — the server has no callback for
+        # when the client finishes the WebGL re-render on the new camera pose.
+        await asyncio.sleep(0.4)
+        self.state.camera_resetting = False
+        self.state.busy = False
 
     def take_screenshot(self) -> None:
         """Trigger vtk.js canvas capture and browser PNG download."""

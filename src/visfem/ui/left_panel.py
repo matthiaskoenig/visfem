@@ -107,7 +107,7 @@ def build_left_panel(
                                     active=(f"active_dataset === '{key}'",),
                                     active_color=ACCENT, rounded="lg",
                                     click=(on_select_dataset, f"['{key}']"),
-                                    disabled=("loading",),
+                                    disabled=("loading || busy",),
                                     style="padding-left:12px;",
                                 ):
                                     with v3.Template(v_slot_title=""):

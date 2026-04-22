@@ -20,6 +20,17 @@ can be installed via
 pip install visfem
 ```
 
+## Run app
+```bash
+uv run visfem
+```
+
+## Ngrok
+```bash
+ngrok http 8080
+```
+
+
 ## How to cite
 To cite the software repository
 

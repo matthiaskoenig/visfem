@@ -61,11 +61,12 @@ def build_toolbar(
                 click=toggle_theme, v_bind="props", classes="ml-2",
             )
 
-    with v3.VTooltip(text="Toggle VR", location="bottom"):
+    with v3.VTooltip(text=("xr_active ? 'Exit VR' : 'Enter VR'",), location="bottom"):
         with v3.Template(v_slot_activator="{ props }"):
             v3.VBtn(
                 icon="mdi-virtual-reality", variant="text", density="compact",
                 click=toggle_xr, v_bind="props", classes="ml-2",
+                style=("xr_active ? 'color: var(--v-theme-primary)' : ''",),
             )
 
     with v3.VTooltip(text="Toggle fullscreen", location="bottom"):

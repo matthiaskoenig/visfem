@@ -71,6 +71,19 @@ def build_ui(
             "  }"
             "});"
         )
+        Script(
+            "if (navigator.xr) {"
+            "  var _origReq = navigator.xr.requestSession.bind(navigator.xr);"
+            "  navigator.xr.requestSession = function(mode, opts) {"
+            "    return _origReq(mode, opts).then(function(session) {"
+            "      session.addEventListener('end', function() {"
+            "        location.reload();"
+            "      });"
+            "      return session;"
+            "    });"
+            "  };"
+            "}"
+        )
 
         with layout.content:
             with html.Div(
@@ -87,8 +100,8 @@ def build_ui(
                         f"'flex-shrink:0; height:100%; overflow:hidden; "
                         "display:flex; flex-direction:column; "
                         "transition:width 0.22s ease; ' + "
-                        f"(left_panel_open ? 'width:{LEFT_PANEL_WIDTH}; "
-                        "border-right:1px solid rgba(var(--v-border-color), var(--v-border-opacity));' : 'width:0px;')",
+                        f"(xr_active || !left_panel_open ? 'width:0px;' : 'width:{LEFT_PANEL_WIDTH}; "
+                        "border-right:1px solid rgba(var(--v-border-color), var(--v-border-opacity));')",
                     ),
                 ):
                     build_left_panel(
@@ -149,8 +162,8 @@ def build_ui(
                         f"'flex-shrink:0; height:100%; overflow:hidden; "
                         "display:flex; flex-direction:column; "
                         "transition:width 0.22s ease; ' + "
-                        f"(right_panel_open ? 'width:{RIGHT_PANEL_WIDTH}; "
-                        "border-left:1px solid rgba(var(--v-border-color), var(--v-border-opacity));' : 'width:0px;')",
+                        f"(xr_active || !right_panel_open ? 'width:0px;' : 'width:{RIGHT_PANEL_WIDTH}; "
+                        "border-left:1px solid rgba(var(--v-border-color), var(--v-border-opacity));')",
                     ),
                 ):
                     build_right_panel(

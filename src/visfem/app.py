@@ -94,6 +94,7 @@ class VisfemApp(TrameApp):
         self.plotter = pv.Plotter(off_screen=True, theme=pv.themes.DarkTheme())
         self.plotter.enable_depth_peeling(number_of_peels=4)
         self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
+        self.plotter.render_window.SetPhysicalScale(0.001)  # meshes in mm; 1 mm = 0.001 m in XR
 
     @staticmethod
     def _favicon_data_uri() -> str:
@@ -197,16 +198,19 @@ class VisfemApp(TrameApp):
 
     def _reset_xr_state(self, **_kwargs: object) -> None:
         """Reset XR state on client reconnect."""
+        asyncio.ensure_future(self._reset_xr_state_async())
+
+    async def _reset_xr_state_async(self) -> None:
+        await asyncio.sleep(0.3)
         self.state.xr_active = False
 
     def _on_enter_xr(self) -> None:
-        """Called when XR session starts."""
+        """Called when XR session starts (enterXR event from vtk.js)."""
         self.state.xr_active = True
 
     def _on_exit_xr(self) -> None:
-        """Called when XR session ends."""
+        """Called on graceful stop_xr() exit. System-button exit triggers location.reload() instead."""
         self.state.xr_active = False
-        self.ctrl.view_update()
 
     def toggle_render_mode(self) -> None:
         """Switch between local (browser WebGL) and remote (server JPEG stream) rendering."""
@@ -218,6 +222,9 @@ class VisfemApp(TrameApp):
         if self.state.xr_active:
             self.ctrl.stop_xr()
         else:
+            if self.state.render_mode != "local":
+                self.state.render_mode = "local"
+                self.ctrl.view_update()
             self.ctrl.start_xr(VtkWebXRHelper.XrSessionTypes.HmdVR)
 
     # ---- Step pre-loading ----

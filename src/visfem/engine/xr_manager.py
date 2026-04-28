@@ -45,7 +45,6 @@ class XRManager:
             return
         logger.info("[XR] on_enter_xr — setting xr_active=True")
         self.state.xr_active = True
-        # Exit panel disabled: positioning uses desktop camera frame, not headset pose.
         # self._place_exit_panel()
         self.ctrl.view_update()
         logger.info("[XR] view_update sent after entering XR")
@@ -55,8 +54,6 @@ class XRManager:
         self.state.xr_active = False
         # self._remove_exit_panel()
         self.ctrl.view_update()
-        # vtk.js adds controller ray actors client-side during XR; view_update_geometry()
-        # re-syncs the server's clean actor list to the client, flushing the rays.
         asyncio.ensure_future(self._post_exit_refresh())
         logger.info("[XR] view_update sent, geometry refresh scheduled in 250ms")
 
@@ -103,7 +100,6 @@ class XRManager:
         self.state.xr_active = False
         # self._remove_exit_panel()
 
-    # ── private ──────────────────────────────────────────────────────────────
 
     async def _post_exit_refresh(self) -> None:
         """Re-sync geometry from server → client to flush vtk.js-only actors (controller rays)."""

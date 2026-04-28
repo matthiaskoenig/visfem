@@ -30,28 +30,25 @@ async def vtkjs_warmup(
     gen: int,
     get_gen: Callable[[], int],
     state: Any,
-    plotter: pv.Plotter,
-    ctrl: Any,
-    project_metadata: dict[str, ProjectMetadata],
-    xdmf_meta: dict[str, MeshMetadata],
+    path: Path,
     n_frames: int,
 ) -> None:
-    """Cycle through keyframes to pre-populate the vtk.js SHA cache."""
+    """Warm the server-side mesh LRU cache for all keyframes, then clear loading state."""
     n_steps = int(state.n_steps)
     if n_steps <= 1:
         return
+    loop = asyncio.get_running_loop()
     inc = math.ceil(n_steps / n_frames)
     steps = list(range(0, n_steps, inc))
     try:
         for step in steps:
-            await asyncio.sleep(0)
-            select_step(plotter, ctrl, state, project_metadata, xdmf_meta, step)
-            with state:
-                state.active_step = 0  # keep slider pinned at 0 during warmup
-            await asyncio.sleep(0.04)
-        if int(state.active_step) != 0:
-            select_step(plotter, ctrl, state, project_metadata, xdmf_meta, 0)
-            with state:
+            try:
+                await asyncio.sleep(0)
+            except asyncio.CancelledError:
+                return
+            try:
+                await loop.run_in_executor(None, load_mesh, path, step)
+            except Exception:
                 pass
     finally:
         if get_gen() == gen:

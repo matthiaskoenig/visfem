@@ -97,6 +97,8 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
         "field_label": _FIELD_LABELS.get(field, field.replace("_", " ")),
         "min_label": _fmt_value(clim[0]),
         "max_label": _fmt_value(clim[1]),
+        "min_val": clim[0],
+        "max_val": clim[1],
         "gradient": gradient,
     }
 
@@ -215,6 +217,28 @@ def update_tibia_sim_field(
         plotter.render()
         ctrl.view_update()
         return [], _scalar_bar_dict(field, clim, cmap)
+
+
+def update_scalar_range(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    field: str,
+    clim: list[float],
+    cmap: str,
+) -> "dict | None":
+    """Update active actor's scalar range without rebuilding the scene."""
+    actor = _xdmf_actor if _xdmf_actor is not None else _active_actor
+    if actor is None:
+        return None
+    mapper = actor.GetMapper()
+    lut = mapper.GetLookupTable()
+    if lut is not None:
+        lut.SetTableRange(clim[0], clim[1])
+    mapper.SetScalarRange(clim[0], clim[1])
+    mapper.Modified()
+    plotter.render()
+    ctrl.view_update()
+    return _scalar_bar_dict(field, clim, cmap)
 
 
 # Renderers
@@ -467,7 +491,7 @@ def redraw_heart(
         glyphs = centers.glyph(orient="Fiber", scale=False, factor=_GLYPH_SCALE)
         fiber_actor = plotter.add_mesh(
             glyphs,
-            color="#484848",
+            color="black",
             show_scalar_bar=False,
             copy_mesh=True,
             render=False,
@@ -618,6 +642,115 @@ def redraw_tibia_mesh(
         for i, pid in enumerate(unique_ids)
     ]
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+    return legend, stats
+
+
+def redraw_aneurysm(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Render Aneurysm_small_Full geometry as a single surface mesh."""
+    mesh_path = dataset_dir / "Aneurysm_small_Full.stl"
+    if not mesh_path.exists():
+        mesh_path = dataset_dir / "Aneurysm_small_Full.obj"
+    if not mesh_path.exists():
+        logger.error(f"Aneurysm mesh not found in {dataset_dir}")
+        return [], None
+
+    try:
+        mesh = load_mesh(mesh_path)
+    except Exception as e:
+        logger.error(f"Failed to load aneurysm mesh: {e}")
+        return [], None
+
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    color = _palette[0] if _palette else "#d62728"
+
+    global _active_actor
+    clear_scene(plotter, dark_mode)
+    _active_actor = plotter.add_mesh(
+        mesh,
+        color=color,
+        opacity=opacity,
+        show_edges=False,
+        show_scalar_bar=False,
+        copy_mesh=True,
+        render=False,
+    )
+    apply_opacity(plotter, opacity)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
+
+    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+    return [], stats
+
+
+_COIL_PARTS: list[tuple[str, str]] = [
+    ("FramingCoil", "Framing Coil"),
+    ("FillingCoil",  "Filling Coil"),
+]
+
+
+def redraw_aneurysm_coils(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Render FramingCoil and FillingCoil as two categorically colored parts."""
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    colors = region_colors(len(_COIL_PARTS), _palette)
+
+    parts: list[pv.DataSet] = []
+    for i, (stem, _) in enumerate(_COIL_PARTS):
+        path = dataset_dir / f"{stem}.stl"
+        if not path.exists():
+            path = dataset_dir / f"{stem}.obj"
+        if not path.exists():
+            logger.error(f"Coil mesh not found: {path}")
+            return [], None
+        try:
+            part = load_mesh(path).copy()
+        except Exception as e:
+            logger.error(f"Failed to load coil mesh {path}: {e}")
+            return [], None
+        part.cell_data["region_id"] = np.full(part.n_cells, i, dtype=np.int32)
+        parts.append(part)
+
+    mesh = parts[0].merge(parts[1])
+    total_cells = sum(p.n_cells for p in parts)
+    total_points = sum(p.n_points for p in parts)
+
+    global _active_actor
+    clear_scene(plotter, dark_mode)
+    _active_actor = plotter.add_mesh(
+        mesh,
+        scalars="region_id",
+        cmap=colors,
+        clim=[0, len(_COIL_PARTS) - 1],
+        n_colors=len(_COIL_PARTS),
+        opacity=opacity,
+        show_edges=False,
+        show_scalar_bar=False,
+        copy_mesh=True,
+        interpolate_before_map=False,
+        render=False,
+    )
+    apply_opacity(plotter, opacity)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
+
+    legend = [
+        {"names": [label], "color": colors[i]}
+        for i, (_, label) in enumerate(_COIL_PARTS)
+    ]
+    stats = {"n_cells": total_cells, "n_points": total_points}
     return legend, stats
 
 

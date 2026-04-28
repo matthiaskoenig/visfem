@@ -3,16 +3,16 @@ import asyncio
 import base64
 import importlib.resources
 import math
+from pathlib import Path
 import pyvista as pv
 from trame.app import TrameApp
 from trame.decorators import change
-from trame.widgets.vtk import VtkWebXRHelper
-from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
 from visfem.engine.discovery import dataset_dir, discover_xdmf, group_by_organ_system, load_project_metadata, pvd_file_path
 from visfem.engine.playback import autoplay_loop, preload_steps, vtkjs_warmup
-from visfem.engine.scene import apply_opacity
+from visfem.engine.scene import apply_opacity, update_scalar_range
+from visfem.engine.xr_manager import XRManager
 from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
 from visfem.engine.selection import (
     select_color_scheme, select_dataset, select_patient,
@@ -35,12 +35,13 @@ class VisfemApp(TrameApp):
     def __init__(self, server: object = None) -> None:
         """Load project metadata, build plotter and state, assemble UI."""
         super().__init__(server)
-        self._fiber_actor: vtkActor | None = None
+        self._fiber_actor = None
         self._initial_camera: object = None
         self._autoplay_task: asyncio.Task | None = None
         self._preload_task: asyncio.Task | None = None
         self._warmup_task: asyncio.Task | None = None
         self._warmup_gen: int = 0
+        self._opacity_task: asyncio.Task | None = None
         self._project_metadata = load_project_metadata()
         self._organ_groups = group_by_organ_system(self._project_metadata)
         self._xdmf_meta: dict[str, MeshMetadata] = {}
@@ -63,6 +64,7 @@ class VisfemApp(TrameApp):
                 self._patients_by_dataset[key] = patients
         self._setup_plotter()
         self._setup_state()
+        self.xr = XRManager(self.plotter, self.state, self.ctrl)
         self.ui = build_ui(
             server=self.server,
             plotter=self.plotter,
@@ -79,22 +81,25 @@ class VisfemApp(TrameApp):
             on_toggle_autoplay=self.toggle_autoplay,
             on_toggle_theme=self.toggle_theme,
             on_reset_camera=self.reset_camera,
-            on_toggle_xr=self.toggle_xr,
-            on_enter_xr=self._on_enter_xr,
-            on_exit_xr=self._on_exit_xr,
+            on_toggle_xr=self.xr.toggle_xr,
+            on_enter_xr=self.xr.on_enter_xr,
+            on_exit_xr=self.xr.on_exit_xr,
             on_toggle_left_panel=self.toggle_left_panel,
             on_toggle_right_panel=self.toggle_right_panel,
             on_toggle_render_mode=self.toggle_render_mode,
             on_take_screenshot=self.take_screenshot,
+            on_apply_clim=self.apply_clim_override,
         )
-        self.ctrl.on_client_connected.add(self._reset_xr_state)
+        self.ctrl.on_client_connected.add(lambda **_: self.xr.reset_on_reconnect())
 
     def _setup_plotter(self) -> None:
         """Initialize an empty off-screen plotter."""
         self.plotter = pv.Plotter(off_screen=True, theme=pv.themes.DarkTheme())
         self.plotter.enable_depth_peeling(number_of_peels=4)
         self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
-        self.plotter.render_window.SetPhysicalScale(0.001)  # meshes in mm; 1 mm = 0.001 m in XR
+        # Physical scale is NOT set here: Python SetPhysicalScale does not propagate to the
+        # vtk.js client via the trame-vtk sync protocol. The JS selectstart handler already
+        # multiplies XR metres by 1000 to match VTK world mm, which is the correct transform.
 
     @staticmethod
     def _favicon_data_uri() -> str:
@@ -109,6 +114,7 @@ class VisfemApp(TrameApp):
             "trame__favicon": self._favicon_data_uri(),
             "dark_mode": True,
             "xr_active": False,
+            "xr_session_ended": False,
             "active_dataset": None,
             "active_patient": None,
             "active_xdmf": None,
@@ -147,6 +153,12 @@ class VisfemApp(TrameApp):
             "busy": False,
             "camera_resetting": False,
             "color_reversed": False,
+            "exit_btn_pos": [0.0, 0.0, 0.0],
+            "xr_exit_triggered": False,
+            "clim_input_min": "",
+            "clim_input_max": "",
+            "clim_override": None,
+            "opacity_adjusting": False,
         })
 
     # ---- Panel toggles ----
@@ -194,38 +206,55 @@ class VisfemApp(TrameApp):
         """Trigger vtk.js canvas capture and browser PNG download."""
         self.ctrl.capture_screenshot()
 
-    # ---- XR ----
+    # ---- XR (delegated to XRManager) ----
 
-    def _reset_xr_state(self, **_kwargs: object) -> None:
-        """Reset XR state on client reconnect."""
-        asyncio.ensure_future(self._reset_xr_state_async())
+    @change("xr_exit_triggered")
+    def _on_xr_exit_triggered(self, xr_exit_triggered: bool, **_: object) -> None:
+        self.xr.on_exit_triggered(xr_exit_triggered)
 
-    async def _reset_xr_state_async(self) -> None:
-        await asyncio.sleep(0.3)
-        self.state.xr_active = False
+    @change("xr_session_ended")
+    def _on_xr_session_ended(self, xr_session_ended: bool, **_: object) -> None:
+        self.xr.on_session_ended(xr_session_ended)
 
-    def _on_enter_xr(self) -> None:
-        """Called when XR session starts (enterXR event from vtk.js)."""
-        self.state.xr_active = True
+    @change("scalar_bar")
+    def _on_scalar_bar_change(self, scalar_bar: dict | None, **_: object) -> None:
+        """Keep clim text inputs in sync whenever scalar_bar is updated anywhere."""
+        if scalar_bar:
+            # If the user has set a manual override, preserve their input values.
+            if getattr(self.state, "clim_override", None) is None:
+                self.state.clim_input_min = scalar_bar.get("min_label", "")
+                self.state.clim_input_max = scalar_bar.get("max_label", "")
+        else:
+            self.state.clim_input_min = ""
+            self.state.clim_input_max = ""
+            self.state.clim_override = None
 
-    def _on_exit_xr(self) -> None:
-        """Called on graceful stop_xr() exit. System-button exit triggers location.reload() instead."""
-        self.state.xr_active = False
+    def apply_clim_override(self) -> None:
+        """Apply user-entered scalar range to the active continuous field."""
+        if self.state.scalar_bar is None:
+            return
+        try:
+            lo = float(self.state.clim_input_min)
+            hi = float(self.state.clim_input_max)
+        except ValueError:
+            return
+        if lo >= hi:
+            return
+        field = self.state.active_scalar_field
+        if not field:
+            return
+        cmap = str(self.state.active_continuous_cmap)
+        if self.state.color_reversed:
+            cmap += "_r"
+        scalar_bar = update_scalar_range(self.plotter, self.ctrl, field, [lo, hi], cmap)
+        if scalar_bar:
+            self.state.clim_override = [lo, hi]
+            self.state.scalar_bar = scalar_bar
 
     def toggle_render_mode(self) -> None:
         """Switch between local (browser WebGL) and remote (server JPEG stream) rendering."""
         self.state.render_mode = "remote" if self.state.render_mode == "local" else "local"
         self.ctrl.view_update()
-
-    def toggle_xr(self) -> None:
-        """Toggle WebXR session on/off."""
-        if self.state.xr_active:
-            self.ctrl.stop_xr()
-        else:
-            if self.state.render_mode != "local":
-                self.state.render_mode = "local"
-                self.ctrl.view_update()
-            self.ctrl.start_xr(VtkWebXRHelper.XrSessionTypes.HmdVR)
 
     # ---- Step pre-loading ----
 
@@ -244,8 +273,20 @@ class VisfemApp(TrameApp):
         self.state.loading = False
         self.state.busy = False
 
+    def _resolve_active_path(self) -> Path | None:
+        """Return the XDMF/PVD file path for the currently active dataset."""
+        key: str | None = self.state.active_dataset
+        if not key or key not in self._project_metadata:
+            return None
+        meta = self._project_metadata[key]
+        if meta.mesh_format == "PVD":
+            return pvd_file_path(meta)
+        stem: str | None = self.state.active_xdmf
+        xdmf_files = discover_xdmf(dataset_dir(meta))
+        return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
+
     def _start_vtkjs_warmup(self) -> None:
-        """Start the vtk.js SHA-cache warmup task, or clear loading immediately for static datasets."""
+        """Start the mesh-cache warmup task, or clear loading immediately for static datasets."""
         n_steps = int(self.state.n_steps)
         if n_steps <= 1:
             with self.state:
@@ -255,14 +296,15 @@ class VisfemApp(TrameApp):
             return
         inc = math.ceil(n_steps / _TARGET_FRAMES)
         self.state.step_inc = inc
+        path = self._resolve_active_path()
+        if path is None:
+            with self.state:
+                self.state.loading = False
+                self.state.busy = False
+            return
         gen = self._warmup_gen
         self._warmup_task = asyncio.ensure_future(
-            vtkjs_warmup(
-                gen, lambda: self._warmup_gen,
-                self.state, self.plotter, self.ctrl,
-                self._project_metadata, self._xdmf_meta,
-                _TARGET_FRAMES,
-            )
+            vtkjs_warmup(gen, lambda: self._warmup_gen, self.state, path, _TARGET_FRAMES)
         )
 
     def _start_preload_from_state(self) -> None:
@@ -270,16 +312,7 @@ class VisfemApp(TrameApp):
         n_steps = int(self.state.n_steps)
         if n_steps <= 1:
             return
-        key: str | None = self.state.active_dataset
-        if not key or key not in self._project_metadata:
-            return
-        meta = self._project_metadata[key]
-        if meta.mesh_format == "PVD":
-            path = pvd_file_path(meta)
-        else:
-            stem: str | None = self.state.active_xdmf
-            xdmf_files = discover_xdmf(dataset_dir(meta))
-            path = xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
+        path = self._resolve_active_path()
         if path is None:
             return
         inc = math.ceil(n_steps / _TARGET_FRAMES)
@@ -293,11 +326,33 @@ class VisfemApp(TrameApp):
 
     @change("ctrl_opacity")
     def _on_opacity_change(self, ctrl_opacity: float, **_: object) -> None:
-        """Apply opacity to all actors when slider changes."""
+        """Show feedback immediately; debounce the actual render for heavy meshes."""
         if self.state.active_dataset is None:
             return
-        apply_opacity(self.plotter, float(ctrl_opacity))
-        self.ctrl.view_update()
+        if self._opacity_task is not None and not self._opacity_task.done():
+            self._opacity_task.cancel()
+        self.state.opacity_adjusting = True
+        self._opacity_task = asyncio.ensure_future(
+            self._apply_opacity_debounced(float(ctrl_opacity))
+        )
+
+    async def _apply_opacity_debounced(self, opacity: float) -> None:
+        """Apply opacity 150 ms after the last slider movement."""
+        try:
+            await asyncio.sleep(0.15)
+        except asyncio.CancelledError:
+            return  # Still debouncing; new task is already queued — leave spinner up
+        try:
+            apply_opacity(self.plotter, opacity)
+            # Geometry-only push: skips server-side VTK render (depth peeling × 4 passes).
+            # In local mode the browser re-renders with the new opacity value itself.
+            if self.state.render_mode == "local":
+                self.ctrl.view_update_geometry()
+            else:
+                self.ctrl.view_update()
+        finally:
+            self.state.opacity_adjusting = False
+            self.state.flush()
 
     @change("active_organ_group_open")
     def _on_organ_group_change(self, active_organ_group_open: list, **_: object) -> None:
@@ -333,8 +388,8 @@ class VisfemApp(TrameApp):
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key,
         )
+        apply_opacity(self.plotter, float(self.state.ctrl_opacity))
         self._initial_camera = self.plotter.camera_position
-        self._start_preload_from_state()
         self._start_vtkjs_warmup()
 
     async def select_xdmf(self, key: str, stem: str) -> None:
@@ -350,8 +405,8 @@ class VisfemApp(TrameApp):
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, key, stem,
         )
+        apply_opacity(self.plotter, float(self.state.ctrl_opacity))
         self._initial_camera = self.plotter.camera_position
-        self._start_preload_from_state()
         self._start_vtkjs_warmup()
 
     async def select_patient(self, dataset_key: str, patient: int) -> None:
@@ -367,6 +422,7 @@ class VisfemApp(TrameApp):
             self.plotter, self.ctrl, self.state,
             self._project_metadata, dataset_key, patient,
         )
+        apply_opacity(self.plotter, float(self.state.ctrl_opacity))
         self._initial_camera = self.plotter.camera_position
         self._start_vtkjs_warmup()
 
@@ -377,6 +433,7 @@ class VisfemApp(TrameApp):
         self.state.autoplay = False
         self._cancel_warmup()
         self.state.active_step = 0
+        self.state.clim_override = None
         self.state.busy = True
         self.state.flush()
         await asyncio.sleep(0.05)
@@ -406,6 +463,7 @@ class VisfemApp(TrameApp):
         if self.state.busy:
             return
         self.state.color_reversed = not self.state.color_reversed
+        self.state.clim_override = None
         self.state.busy = True
         self.state.flush()
         await asyncio.sleep(0.05)
@@ -425,6 +483,7 @@ class VisfemApp(TrameApp):
             self.state.active_continuous_cmap = name
         else:
             self.state.active_categorical_palette = name
+        self.state.clim_override = None
         self.state.busy = True
         self.state.flush()
         await asyncio.sleep(0.05)

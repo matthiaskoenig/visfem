@@ -8,7 +8,7 @@ from visfem.ui.theme import (
     FS_XS, FS_SM, FS_MD,
     FW_BOLD, LS_WIDEST,
     SEP_NORMAL,
-    OP_BODY, OP_DIM, OP_SUBDUED,
+    OP_DIM, OP_SUBDUED,
     GAP_XS, GAP_SM, GAP_MD, GAP_LG,
     PAD_MD, PAD_LG,
 )
@@ -21,6 +21,7 @@ def build_right_panel(
     on_toggle_color_reversed: object,
     on_select_step: object,
     on_toggle_autoplay: object,
+    on_apply_clim: object,
 ) -> None:
     """Right panel content: opacity, camera, field, color, playback, scalar bar."""
     with html.Div(style=f"padding:{PAD_MD} {PAD_LG}; display:flex; flex-direction:column; height:100%; overflow-y:auto; box-sizing:border-box;"):
@@ -32,15 +33,17 @@ def build_right_panel(
 
         with html.Div(v_show="right_view_open"):
             # Single row: [camera reset] | [opacity icon] [opacity slider]
-            with html.Div(style=f"display:flex; align-items:center; gap:{GAP_MD}; margin-bottom:12px;"):
-                v3.VBtn(
-                    v_if="!camera_resetting",
-                    icon="mdi-camera-retake-outline",
-                    variant="text",
-                    density="compact", size="small",
-                    disabled=("busy",),
-                    click=on_reset_camera,
-                )
+            with html.Div(style=f"display:flex; align-items:center; gap:{GAP_MD}; margin-bottom:12px; padding-right:26px;"):
+                with v3.VTooltip(v_if="!camera_resetting", text="Reset camera", location="bottom"):
+                    with v3.Template(v_slot_activator="{ props }"):
+                        v3.VBtn(
+                            icon="mdi-camera-retake-outline",
+                            variant="text",
+                            density="compact", size="small",
+                            disabled=("busy",),
+                            click=on_reset_camera,
+                            v_bind="props",
+                        )
                 v3.VProgressCircular(
                     v_else=True,
                     indeterminate=True,
@@ -49,7 +52,18 @@ def build_right_panel(
                     style="flex-shrink:0;",
                 )
                 html.Span(style=f"width:1px; height:18px; background:{SEP_NORMAL}; flex-shrink:0;")
-                v3.VIcon("mdi-circle-opacity", size="small", style=f"opacity:{OP_DIM}; flex-shrink:0;")
+                with v3.VTooltip(v_if="!opacity_adjusting", text="Mesh opacity", location="bottom"):
+                    with v3.Template(v_slot_activator="{ props }"):
+                        v3.VIcon("mdi-circle-opacity", size="small",
+                                 style=f"opacity:{OP_DIM}; flex-shrink:0; cursor:default;",
+                                 v_bind="props")
+                v3.VProgressCircular(
+                    v_else=True,
+                    indeterminate=True,
+                    color=ACCENT,
+                    size="20", width="2",
+                    style="flex-shrink:0;",
+                )
                 v3.VSlider(
                     v_model=("ctrl_opacity", 0.9),
                     min=0.05, max=0.95, step=0.05,
@@ -202,19 +216,25 @@ def build_right_panel(
 
             with html.Div(v_show="right_playback_open"):
                 with html.Div(style=f"display:flex; align-items:center; gap:{GAP_SM}; margin-bottom:4px;"):
-                    v3.VBtn(
-                        icon=("autoplay ? 'mdi-pause' : 'mdi-play'",),
-                        variant=("autoplay ? 'tonal' : 'text'",),
-                        density="compact", size="x-small",
-                        disabled=("loading || busy",),
-                        click=on_toggle_autoplay,
-                    )
-                    v3.VBtn(
-                        icon="mdi-chevron-left", variant="text",
-                        density="compact", size="x-small",
-                        disabled=("loading || busy || active_step === 0",),
-                        click=(on_select_step, "[Math.max(0, active_step - step_inc)]"),
-                    )
+                    with v3.VTooltip(text=("autoplay ? 'Pause animation' : 'Play animation'",), location="bottom"):
+                        with v3.Template(v_slot_activator="{ props }"):
+                            v3.VBtn(
+                                icon=("autoplay ? 'mdi-pause' : 'mdi-play'",),
+                                variant=("autoplay ? 'tonal' : 'text'",),
+                                density="compact", size="x-small",
+                                disabled=("loading || busy",),
+                                click=on_toggle_autoplay,
+                                v_bind="props",
+                            )
+                    with v3.VTooltip(text="Previous step", location="bottom"):
+                        with v3.Template(v_slot_activator="{ props }"):
+                            v3.VBtn(
+                                icon="mdi-chevron-left", variant="text",
+                                density="compact", size="x-small",
+                                disabled=("loading || busy || active_step === 0",),
+                                click=(on_select_step, "[Math.max(0, active_step - step_inc)]"),
+                                v_bind="props",
+                            )
                     v3.VSlider(
                         v_model=("active_step", 0),
                         min=0, max=("n_steps - 1",), step=("step_inc",),
@@ -225,12 +245,15 @@ def build_right_panel(
                         style="flex:1; margin:0; padding:0;",
                         end=(on_select_step, "[active_step]"),
                     )
-                    v3.VBtn(
-                        icon="mdi-chevron-right", variant="text",
-                        density="compact", size="x-small",
-                        disabled=("loading || busy || active_step + step_inc >= n_steps",),
-                        click=(on_select_step, "[Math.min(n_steps - 1, active_step + step_inc)]"),
-                    )
+                    with v3.VTooltip(text="Next step", location="bottom"):
+                        with v3.Template(v_slot_activator="{ props }"):
+                            v3.VBtn(
+                                icon="mdi-chevron-right", variant="text",
+                                density="compact", size="x-small",
+                                disabled=("loading || busy || active_step + step_inc >= n_steps",),
+                                click=(on_select_step, "[Math.min(n_steps - 1, active_step + step_inc)]"),
+                                v_bind="props",
+                            )
 
                 html.Span(
                     "{{ step_times.length > 0 ? 't = ' + Number(step_times[active_step]).toFixed(1) : (active_step + 1) + ' / ' + n_steps }}",
@@ -250,16 +273,32 @@ def build_right_panel(
                     style=f"font-size:{FS_SM}; opacity:{OP_DIM}; text-align:center; letter-spacing:0.04em; margin-bottom:5px;",
                 )
                 with html.Div(style=f"display:flex; align-items:center; gap:{GAP_LG};"):
-                    html.Span(
-                        "{{ scalar_bar.min_label }}",
-                        style=f"font-size:{FS_SM}; opacity:{OP_BODY}; flex-shrink:0; font-variant-numeric:tabular-nums;",
+                    html.Input(
+                        type="text",
+                        v_model=("clim_input_min", ""),
+                        style=(
+                            f"width:52px; flex-shrink:0; font-size:{FS_SM}; font-variant-numeric:tabular-nums; "
+                            "background:transparent; border:none; "
+                            "border-bottom:1px solid rgba(var(--v-border-color),var(--v-border-opacity)); "
+                            "color:inherit; outline:none; padding:1px 2px; text-align:center; cursor:text;"
+                        ),
+                        blur=on_apply_clim,
+                        keydown="$event.key === 'Enter' && $event.target.blur()",
                     )
                     html.Div(
-                        style=("'flex:1; height:10px; border-radius:4px; background:' + scalar_bar.gradient",),
+                        style=("'flex:1; height:16px; border-radius:4px; background:' + scalar_bar.gradient",),
                     )
-                    html.Span(
-                        "{{ scalar_bar.max_label }}",
-                        style=f"font-size:{FS_SM}; opacity:{OP_BODY}; flex-shrink:0; font-variant-numeric:tabular-nums;",
+                    html.Input(
+                        type="text",
+                        v_model=("clim_input_max", ""),
+                        style=(
+                            f"width:52px; flex-shrink:0; font-size:{FS_SM}; font-variant-numeric:tabular-nums; "
+                            "background:transparent; border:none; "
+                            "border-bottom:1px solid rgba(var(--v-border-color),var(--v-border-opacity)); "
+                            "color:inherit; outline:none; padding:1px 2px; text-align:center; cursor:text;"
+                        ),
+                        blur=on_apply_clim,
+                        keydown="$event.key === 'Enter' && $event.target.blur()",
                     )
 
 

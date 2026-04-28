@@ -9,7 +9,7 @@ from visfem.engine.colors import region_colors
 from visfem.engine.palettes import CATEGORICAL_PALETTES
 from visfem.engine.scene import (
     TIBIA_SIM_FIELDS, TrameCtrl,
-    clear_scene, field_label, redraw_heart, redraw_heart_ep,
+    clear_scene, field_label, redraw_aneurysm, redraw_aneurysm_coils, redraw_heart, redraw_heart_ep,
     redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
     get_active_actor, update_actor_palette, update_tibia_sim_field, update_xdmf_step,
 )
@@ -21,14 +21,17 @@ logger = get_logger(__name__)
 
 
 def _scalar_fields_from_meta(mesh_meta: MeshMetadata | None) -> list[dict[str, str]]:
-    """Return {name, label} entries for scalar (shape==[1]) fields in *mesh_meta*."""
+    """Return {name, label} entries for scalar (shape==[1]) fields in *mesh_meta*, sorted alphabetically."""
     if mesh_meta is None:
         return []
-    return [
-        {"name": fname, "label": field_label(fname)}
-        for fname, finfo in mesh_meta.fields.items()
-        if finfo.shape == [1]
-    ]
+    return sorted(
+        [
+            {"name": fname, "label": field_label(fname)}
+            for fname, finfo in mesh_meta.fields.items()
+            if finfo.shape == [1]
+        ],
+        key=lambda f: f["label"].lower(),
+    )
 
 
 def _resolve_palette(state: Any) -> list[str]:
@@ -70,6 +73,7 @@ def _reset_selection_state(state: Any) -> None:
     state.n_steps = 1
     state.active_step = 0
     state.step_times = []
+    state.clim_override = None
 
 
 def select_dataset(
@@ -116,6 +120,26 @@ def select_dataset(
             state.scalar_bar = None
         elif key == "tibia_mesh":
             legend, stats = redraw_tibia_mesh(
+                plotter, ctrl, ddir,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
+                palette=_resolve_palette(state),
+            )
+            state.legend_items = legend
+            state.mesh_stats = stats
+            state.scalar_bar = None
+        elif key == "aneurysm":
+            legend, stats = redraw_aneurysm(
+                plotter, ctrl, ddir,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
+                palette=_resolve_palette(state),
+            )
+            state.legend_items = legend
+            state.mesh_stats = stats
+            state.scalar_bar = None
+        elif key == "aneurysm_coils":
+            legend, stats = redraw_aneurysm_coils(
                 plotter, ctrl, ddir,
                 dark_mode=state.dark_mode,
                 opacity=opacity,
@@ -482,6 +506,39 @@ def select_color_scheme(
             meta = project_metadata["tibia_mesh"]
             ddir = dataset_dir(meta)
             legend, stats = redraw_tibia_mesh(
+                plotter, ctrl, ddir,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
+                palette=_resolve_palette(state),
+                reset_camera=False,
+            )
+            state.legend_items = legend
+            state.mesh_stats = stats
+        elif key == "aneurysm":
+            meta = project_metadata["aneurysm"]
+            ddir = dataset_dir(meta)
+            legend, stats = redraw_aneurysm(
+                plotter, ctrl, ddir,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
+                palette=_resolve_palette(state),
+                reset_camera=False,
+            )
+            state.legend_items = legend
+            state.mesh_stats = stats
+        elif key == "aneurysm_coils":
+            if get_active_actor() is not None:
+                n = len(state.legend_items)
+                colors = region_colors(n, _resolve_palette(state))
+                update_actor_palette(plotter, ctrl, colors, n)
+                state.legend_items = [
+                    {**item, "color": colors[i]}
+                    for i, item in enumerate(state.legend_items)
+                ]
+                return
+            meta = project_metadata["aneurysm_coils"]
+            ddir = dataset_dir(meta)
+            legend, stats = redraw_aneurysm_coils(
                 plotter, ctrl, ddir,
                 dark_mode=state.dark_mode,
                 opacity=opacity,

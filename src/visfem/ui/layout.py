@@ -40,6 +40,7 @@ def build_ui(
     on_toggle_right_panel: object,
     on_toggle_render_mode: object,
     on_take_screenshot: object,
+    on_apply_clim: object,
 ) -> SinglePageLayout:
     """Assemble the full SinglePageLayout and return it."""
     with SinglePageLayout(server, theme=("dark_mode ? 'dark' : 'light'",)) as layout:
@@ -52,7 +53,7 @@ def build_ui(
             toolbar.elevation = 0
             build_toolbar(on_toggle_theme, on_toggle_xr, on_toggle_left_panel, on_toggle_right_panel, on_toggle_render_mode, on_take_screenshot)
             v3.VProgressLinear(
-                v_if="busy",
+                v_if="busy || opacity_adjusting",
                 indeterminate=True,
                 color=ACCENT,
                 height=2,
@@ -65,6 +66,23 @@ def build_ui(
             build_footer()
 
         Script(
+            "(function() {"
+            "  var _RO = window.ResizeObserver;"
+            "  window.ResizeObserver = function(cb) {"
+            "    return new _RO(function() {"
+            "      var args = arguments;"
+            "      window.requestAnimationFrame(function() { cb.apply(null, args); });"
+            "    });"
+            "  };"
+            "  window.ResizeObserver.prototype = _RO.prototype;"
+            "  window.addEventListener('error', function(e) {"
+            "    if (e.message && e.message.includes('ResizeObserver')) {"
+            "      e.stopImmediatePropagation();"
+            "    }"
+            "  }, true);"
+            "})();"
+        )
+        Script(
             "document.addEventListener('fullscreenchange', function() {"
             "  if (window.trame && window.trame.state) {"
             "    window.trame.state.set('fullscreen', !!document.fullscreenElement);"
@@ -76,8 +94,40 @@ def build_ui(
             "  var _origReq = navigator.xr.requestSession.bind(navigator.xr);"
             "  navigator.xr.requestSession = function(mode, opts) {"
             "    return _origReq(mode, opts).then(function(session) {"
+            "      var savedRefSpace = null;"
+            "      var _origRRS = session.requestReferenceSpace.bind(session);"
+            "      session.requestReferenceSpace = function(type) {"
+            "        return _origRRS(type).then(function(rs) {"
+            "          if (!savedRefSpace) savedRefSpace = rs;"
+            "          return rs;"
+            "        });"
+            "      };"
+            "      session.addEventListener('selectstart', function(evt) {"
+            "        if (!savedRefSpace) return;"
+            "        var pose = evt.frame.getPose(evt.inputSource.targetRaySpace, savedRefSpace);"
+            "        if (!pose) return;"
+            "        var mat = pose.transform.matrix;"
+            "        var ox=mat[12]*1000, oy=mat[13]*1000, oz=mat[14]*1000;"
+            "        var dx=-mat[8], dy=-mat[9], dz=-mat[10];"
+            "        var state = window.trame && window.trame.state;"
+            "        if (!state) return;"
+            "        var btn = state.get('exit_btn_pos');"
+            "        if (!btn || !btn.length) return;"
+            "        var R=120;"
+            "        var lx=btn[0]-ox, ly=btn[1]-oy, lz=btn[2]-oz;"
+            "        var dL=dx*lx+dy*ly+dz*lz;"
+            "        var disc=dL*dL-(lx*lx+ly*ly+lz*lz-R*R);"
+            "        console.log('[VisFEM-XR] selectstart ox='+ox.toFixed(0)+' oy='+oy.toFixed(0)+' oz='+oz.toFixed(0)"
+            "          +' btn='+btn[0].toFixed(0)+','+btn[1].toFixed(0)+','+btn[2].toFixed(0)"
+            "          +' dL='+dL.toFixed(0)+' disc='+disc.toFixed(0));"
+            "        if (disc >= 0 && dL > 0) {"
+            "          console.log('[VisFEM-XR] exit panel hit');"
+            "          state.set('xr_exit_triggered', true);"
+            "        }"
+            "      });"
             "      session.addEventListener('end', function() {"
-            "        location.reload();"
+            "        var s = window.trame && window.trame.state;"
+            "        if (s) { s.set('xr_session_ended', true); }"
             "      });"
             "      return session;"
             "    });"
@@ -133,6 +183,7 @@ def build_ui(
                         ctrl.reset_camera = view.reset_camera
                         ctrl.view_push_camera = view.push_camera
                         ctrl.view_update = view.update
+                        ctrl.view_update_geometry = view.update_geometry
                         ctrl.capture_screenshot = view.capture_image
                         webxr_helper = VtkWebXRHelper(
                             draw_controllers_ray=True,
@@ -147,7 +198,7 @@ def build_ui(
                         style=(
                             "position:absolute; inset:0; z-index:10; "
                             f"display:flex; flex-direction:column; align-items:center; justify-content:center; gap:{PAD_LG}; "
-                            "background:rgba(0,0,0,0.35);"
+                            "background:rgba(0,0,0,0.88);"
                         ),
                     ):
                         v3.VProgressCircular(indeterminate=True, color=ACCENT, size="36", width="2")
@@ -173,6 +224,7 @@ def build_ui(
                         on_toggle_color_reversed,
                         on_select_step,
                         on_toggle_autoplay,
+                        on_apply_clim,
                     )
 
     return layout

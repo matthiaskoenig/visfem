@@ -42,6 +42,7 @@ dependencies = [
 	"trame-vuetify>=3.2.1",
 	"trame-vtk>=2.11.6",
 	"numpy>=2.4.3",
+	"ipykernel>=7.2.0",
 ]
 
 [project.optional-dependencies]
@@ -55,7 +56,7 @@ dev = [
     "pytest-cov>=7.0.0",
 ]
 
-[project_urls]
+[project.urls]
 Homepage = "https://github.com/matthiaskoenig/visfem"
 Repository = "https://github.com/matthiaskoenig/visfem"
 Documentation = "https://github.com/matthiaskoenig/visfem"
@@ -67,3 +68,6 @@ path = "./src/visfem/__init__.py"
 
 [project.scripts]
 visfem = "visfem.app:main"
+
+[tool.mypy]
+disable_error_code = ["import-not-found"]

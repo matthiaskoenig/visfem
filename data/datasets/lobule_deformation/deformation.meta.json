@@ -1,0 +1,59 @@
+{
+  "schema_hash": "8fa7351b",
+  "format": "fenics_xdmf",
+  "n_steps": 10,
+  "times": [
+    0.1,
+    0.2,
+    0.30000000000000004,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.7999999999999999,
+    0.8999999999999999,
+    0.9999999999999999
+  ],
+  "n_points": 10201,
+  "n_cells": 10000,
+  "cell_types": [
+    "quadrilateral"
+  ],
+  "fields": {
+    "f": {
+      "center": "point",
+      "shape": [
+        1
+      ]
+    },
+    "ws": {
+      "center": "point",
+      "shape": [
+        3
+      ]
+    },
+    "u": {
+      "center": "point",
+      "shape": [
+        3
+      ]
+    },
+    "n_f": {
+      "center": "cell",
+      "shape": [
+        1
+      ]
+    }
+  },
+  "bounds": null,
+  "scalar_bounds": {
+    "f": [
+      0.0,
+      2000.0
+    ],
+    "n_f": [
+      0.3,
+      0.3
+    ]
+  }
+}

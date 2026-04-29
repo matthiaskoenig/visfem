@@ -1,0 +1,22 @@
+{
+  "data_path": "lobule_convergence",
+  "labels_file": null,
+  "name": "Lobule Convergence Study",
+  "pi": "Uta Dahmen, Matthias König, Tim Ricken, Hans-Michael Tautenhahn",
+  "institution": [
+    "Jena University Hospital",
+    "Humboldt-Universität zu Berlin",
+    "University of Stuttgart",
+    "University of Leipzig Medical Center"
+  ],
+  "biological_scale": "tissue",
+  "organ_system": [
+    "liver"
+  ],
+  "description": "Multiscale coupled model of a 3D liver lobule sixth (wedge geometry) using the Theory of Porous Media (TPM) with the SPT cell model for drug metabolism and necrosis. Four mesh resolutions for convergence analysis. Solved with FEBio + libRoadRunner.",
+  "mesh_format": "XDMF+HDF5",
+  "references": [
+    "https://doi.org/10.1101/2024.03.26.586870",
+    "https://doi.org/10.5281/zenodo.10853538"
+  ]
+}

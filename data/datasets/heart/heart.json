@@ -1,0 +1,21 @@
+{
+  "data_path": "heart",
+  "labels_file": "LabelIDs.txt",
+  "name": "Four-Chamber Heart (Mechanical)",
+  "pi": "Christian Wieners, Axel Loewe",
+  "institution": [
+    "Karlsruhe Institute of Technology, Institute of Biomedical Engineering (KIT IBT)",
+    "Karlsruhe Institute of Technology, Institute of Applied and Numerical Mathematics (KIT IANM)"
+  ],
+  "biological_scale": "organ",
+  "organ_system": [
+    "heart"
+  ],
+  "description": "Mechanical mesh of the four-chamber human heart segmented from MRI of a healthy volunteer. Coarse tetrahedral mesh with 12 material regions. Used for fully coupled multi-physics simulation: electrophysiology, mechanics, and closed-loop circulation.",
+  "mesh_format": "VTU",
+  "references": [
+    "https://doi.org/10.5281/zenodo.10526554",
+    "https://doi.org/10.1113/JP285022",
+    "https://doi.org/10.3390/math9111247"
+  ]
+}

@@ -1,0 +1,42 @@
+M.vtu Array explanation:
+
+Anatomical Structure					LabelID	MaterialID
+Ventricles								2		30,31
+Atria									3 		32,33
+Aorta									5 		39
+Pulmonary Artery						6 		39
+Left superior pulmonary vein			7 		39
+Left inferior pulmonary vein 			8 		39
+Right inferior pulmonary vein 			9 		39
+Right superior pulmonary vein 			10 		39
+Superior vena cava						11 		39
+Inferior vena cava						12 		39
+Mitral valve							13 		37
+Tricuspid valve							14 		36
+Aortic valve							15 		35
+Pulmonary Aortic valve					16 		34
+Left superior pulmonary vein orifice	17		38
+Left inferior pulmonary vein orifice	18		38
+Right inferior pulmonary vein orifice	19		38
+Right superior pulmonary vein orifice	20		38
+Superior vena cava orifice				21		38
+Inferior vena cava orifice				22		38
+Pericardium/Surrounding tissue 			23		60,61
+
+EP.vtu Array explanation:
+
+Anatomical Structure					MaterialID
+Ventricle endocardium					1
+Ventricle myocardium					2
+Ventricle epicardium					3
+Right atrial bulk tissue				32
+Left atrial bulk tissue					33
+Crista terminalis						72
+Sinus node								73
+Pectinate muscles						74
+Bachmann bundle							75
+Middle posterior bridge					76
+Lower posterior bridge					77
+Coronary sinus bridge					78
+Left and right atrial appendage			79
+Inferior Isthmus						80

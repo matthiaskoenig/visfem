@@ -1,4 +1,4 @@
-![visfem logo](./docs/images/favicon_new/visfem-100x100.png)
+![visfem logo](docs/images/favicon/visfem-100x100.png)
 
 # VisFEM: Web visualization of FEM models
 [![GitHub Actions CI/CD Status](https://github.com/matthiaskoenig/visfem/workflows/CI-CD/badge.svg)](https://github.com/matthiaskoenig/visfem/actions/workflows/main.yml)
@@ -20,10 +20,21 @@ can be installed via
 pip install visfem
 ```
 
+## Run app
+```bash
+uv run visfem
+```
+
+## Ngrok
+```bash
+ngrok http 8080
+```
+
+
 ## How to cite
 To cite the software repository
 
-> Elias, M. & König, M. (2025).
+> Elias, M. & König, M. (2026).
 > *VisFEM: Web visualization of FEM models.*
 > Zenodo. [https://doi.org/10.5281/zenodo.19220183](https://doi.org/10.5281/zenodo.19220183)
 

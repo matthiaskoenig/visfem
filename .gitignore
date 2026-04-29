@@ -13,4 +13,17 @@ src/visfem.egg-info/
 wheels
 __pycache__
 .pytest_cache
-data
+data/results/**
+visfem.code-workspace
+vscode/launch.json
+vscode/settings.json
+notebooks/.ipynb_checkpoints/demo-checkpoint.ipynb
+
+# exclude large data files
+data/datasets/**/*.ans
+data/datasets/**/*.xdmf
+data/datasets/**/*.h5
+data/datasets/**/*.vtu
+data/datasets/**/*.vtk
+data/datasets/**/*.pvd
+data/datasets/heart_ep/surfaces

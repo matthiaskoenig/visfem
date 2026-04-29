@@ -1,0 +1,21 @@
+{
+  "data_path": "heart_ep",
+  "labels_file": "LabelIDs.txt",
+  "name": "Four-Chamber Heart (EP)",
+  "pi": "Christian Wieners, Axel Loewe",
+  "institution": [
+    "Karlsruhe Institute of Technology, Institute of Biomedical Engineering (KIT IBT)",
+    "Karlsruhe Institute of Technology, Institute of Applied and Numerical Mathematics (KIT IANM)"
+  ],
+  "biological_scale": "organ",
+  "organ_system": [
+    "heart"
+  ],
+  "description": "Electrophysiology mesh of the four-chamber heart. Fine-resolution tetrahedral mesh with 14 anatomical regions including conduction system structures: sinus node, Bachmann bundle, crista terminalis, and pectinate muscles.",
+  "mesh_format": "VTU",
+  "references": [
+    "https://doi.org/10.5281/zenodo.10526554",
+    "https://doi.org/10.1113/JP285022",
+    "https://doi.org/10.3390/math9111247"
+  ]
+}

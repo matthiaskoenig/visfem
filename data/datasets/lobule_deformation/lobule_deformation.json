@@ -1,0 +1,22 @@
+{
+  "data_path": "lobule_deformation",
+  "labels_file": null,
+  "name": "Lobule Deformation",
+  "pi": "Uta Dahmen, Matthias König, Tim Ricken, Hans-Michael Tautenhahn",
+  "institution": [
+    "Jena University Hospital",
+    "Humboldt-Universität zu Berlin",
+    "University of Stuttgart",
+    "University of Leipzig Medical Center"
+  ],
+  "biological_scale": "tissue",
+  "organ_system": [
+    "liver"
+  ],
+  "description": "2D FEniCS simulation of mechanical deformation of the hepatic lobule using the Theory of Porous Media (TPM). Fields: displacement, seepage velocity, fluid volume fraction. Pure mechanics, no cell-scale coupling.",
+  "mesh_format": "XDMF+HDF5",
+  "references": [
+    "https://doi.org/10.1101/2024.03.26.586870",
+    "https://doi.org/10.5281/zenodo.10853538"
+  ]
+}

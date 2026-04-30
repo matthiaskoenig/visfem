@@ -15,5 +15,6 @@
   "references": [
     "https://doi.org/10.1007/s10237-024-01882-y",
     "https://doi.org/10.15131/shef.data.4806910.v1"
-  ]
+  ],
+  "spp_project": "Multi-scale algorithms and simulation methodologies for the long-term prognosis of endovascular interventions in cerebral aneurysms"
 }

@@ -6,6 +6,7 @@ from visfem.engine.discovery import dataset_dir, discover_xdmf, xdmf_display_nam
 from visfem.models import ProjectMetadata
 from visfem.ui.theme import (
     ACCENT, ACCENT_DIM,
+    SPP_COLOR, SPP_DIM,
     FS_XS, FS_SM, FS_MD, FS_LG,
     FW_BOLD, FW_SEMI, LS_WIDE, LS_WIDER, LS_WIDEST,
     RADIUS_MD,
@@ -176,10 +177,16 @@ def build_left_panel(
             # Filled state
             with html.Div(v_if="active_meta !== null"):
 
-                html.Div(
-                    "{{ active_meta.name }}",
-                    style=f"font-size:{FS_LG}; font-weight:{FW_BOLD}; margin-bottom:6px; line-height:1.3;",
-                )
+                with html.Div(style=f"display:flex; align-items:baseline; gap:{GAP_SM}; flex-wrap:wrap; margin-bottom:6px;"):
+                    html.Div(
+                        "{{ active_meta.name }}",
+                        style=f"font-size:{FS_LG}; font-weight:{FW_BOLD}; line-height:1.3;",
+                    )
+                    html.Span(
+                        "SPP 2311",
+                        v_if="active_meta.spp_project",
+                        style=f"font-size:{FS_XS}; padding:{PAD_XS} {PAD_SM}; border-radius:{RADIUS_MD}; background:{SPP_DIM}; color:{SPP_COLOR}; font-weight:{FW_SEMI}; letter-spacing:{LS_WIDE}; flex-shrink:0;",
+                    )
 
                 # Organ system tags
                 with html.Div(style=f"display:flex; flex-wrap:wrap; gap:{GAP_SM}; margin-bottom:10px;"):
@@ -196,6 +203,16 @@ def build_left_panel(
                 )
 
                 v3.VDivider(style="margin-bottom:10px;")
+
+                # SPP 2311 project title
+                with html.Div(
+                    v_if="active_meta && active_meta.spp_project",
+                    style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;",
+                ):
+                    v3.VIcon("mdi-certificate-outline", size=ICON_SM, style=f"color:{SPP_COLOR}; opacity:0.7; margin-top:2px; flex-shrink:0;")
+                    with html.Div():
+                        _label("SPP 2311 Project")
+                        html.Div("{{ active_meta.spp_project }}", style=f"font-size:{FS_MD}; line-height:1.4; opacity:{OP_BODY};")
 
                 # PI(s)
                 with html.Div(style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;"):

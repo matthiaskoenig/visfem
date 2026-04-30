@@ -99,3 +99,4 @@ class ProjectMetadata(BaseModel):
     description: str = Field(max_length=500)
     mesh_format: str                 # e.g. "VTK", "XDMF+HDF5", "VTU"
     references: list[str] = []       # DOIs, URLs, or citations
+    spp_project: str | None = None   # SPP 2311 project title, None for non-SPP datasets

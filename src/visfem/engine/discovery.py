@@ -90,4 +90,5 @@ def meta_to_state(meta: ProjectMetadata) -> dict[str, object]:
         "mesh_format": meta.mesh_format,
         "ref_urls": [r for r in meta.references if r.startswith("http")],
         "ref_texts": [r for r in meta.references if not r.startswith("http")],
+        "spp_project": meta.spp_project,
     }

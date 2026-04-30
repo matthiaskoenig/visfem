@@ -15,5 +15,6 @@
   "mesh_format": "VTK",
   "references": [
     "https://doi.org/10.1038/s41598-025-04792-w"
-  ]
+  ],
+  "spp_project": "Evidence-based personalized rehabilitation protocols for uneventful healing with data-driven virtual twins"
 }

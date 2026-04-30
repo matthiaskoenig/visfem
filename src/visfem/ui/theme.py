@@ -5,6 +5,9 @@
 ACCENT     = "#00897b"
 ACCENT_DIM = "rgba(0,137,123,0.15)"   # organ-system tag background in info panel
 
+SPP_COLOR = "rgba(185,130,10,0.9)"    # SPP 2311 badge text (amber)
+SPP_DIM   = "rgba(185,130,10,0.13)"   # SPP 2311 badge background
+
 TRACK_DARK = "rgba(255,255,255,0.15)"   # inactive slider track (dark mode)
 
 SEP_DIM    = "rgba(128,128,128,0.22)"   # toolbar dividers between button groups

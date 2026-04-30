@@ -65,10 +65,6 @@ class XRManager:
             self.ctrl.stop_xr()
         else:
             logger.info("[XR] toggle_xr — starting XR session (HmdVR)")
-            if self.state.render_mode != "local":
-                logger.info("[XR] switching render_mode to local before XR start")
-                self.state.render_mode = "local"
-                self.ctrl.view_update()
             self.ctrl.start_xr(VtkWebXRHelper.XrSessionTypes.HmdVR)
 
     def on_exit_triggered(self, triggered: bool) -> None:

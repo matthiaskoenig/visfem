@@ -86,7 +86,6 @@ class VisfemApp(TrameApp):
             on_exit_xr=self.xr.on_exit_xr,
             on_toggle_left_panel=self.toggle_left_panel,
             on_toggle_right_panel=self.toggle_right_panel,
-            on_toggle_render_mode=self.toggle_render_mode,
             on_take_screenshot=self.take_screenshot,
             on_apply_clim=self.apply_clim_override,
         )
@@ -147,7 +146,6 @@ class VisfemApp(TrameApp):
             "active_continuous_cmap": "viridis",
             "categorical_palette_meta": CATEGORICAL_META,
             "continuous_cmap_meta": CONTINUOUS_META,
-            "render_mode": "local",
             "fullscreen": False,
             "loading": False,
             "busy": False,
@@ -251,11 +249,6 @@ class VisfemApp(TrameApp):
             self.state.clim_override = [lo, hi]
             self.state.scalar_bar = scalar_bar
 
-    def toggle_render_mode(self) -> None:
-        """Switch between local (browser WebGL) and remote (server JPEG stream) rendering."""
-        self.state.render_mode = "remote" if self.state.render_mode == "local" else "local"
-        self.ctrl.view_update()
-
     # ---- Step pre-loading ----
 
     def _cancel_preload(self) -> None:
@@ -345,11 +338,8 @@ class VisfemApp(TrameApp):
         try:
             apply_opacity(self.plotter, opacity)
             # Geometry-only push: skips server-side VTK render (depth peeling × 4 passes).
-            # In local mode the browser re-renders with the new opacity value itself.
-            if self.state.render_mode == "local":
-                self.ctrl.view_update_geometry()
-            else:
-                self.ctrl.view_update()
+            # The browser re-renders with the new opacity value itself in local mode.
+            self.ctrl.view_update_geometry()
         finally:
             self.state.opacity_adjusting = False
             self.state.flush()

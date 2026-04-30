@@ -38,7 +38,6 @@ def build_ui(
     on_exit_xr: object,
     on_toggle_left_panel: object,
     on_toggle_right_panel: object,
-    on_toggle_render_mode: object,
     on_take_screenshot: object,
     on_apply_clim: object,
 ) -> SinglePageLayout:
@@ -51,7 +50,7 @@ def build_ui(
             toolbar.density = "compact"
             toolbar.style = "background-color: color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%);"
             toolbar.elevation = 0
-            build_toolbar(on_toggle_theme, on_toggle_xr, on_toggle_left_panel, on_toggle_right_panel, on_toggle_render_mode, on_take_screenshot)
+            build_toolbar(on_toggle_theme, on_toggle_xr, on_toggle_left_panel, on_toggle_right_panel, on_take_screenshot)
             v3.VProgressLinear(
                 v_if="busy || opacity_adjusting",
                 indeterminate=True,
@@ -189,7 +188,7 @@ def build_ui(
                     with VtkRemoteLocalView(
                         plotter.render_window,
                         namespace="view",
-                        mode=("render_mode", "local"),
+                        mode="local",
                         ref="view",
                         camera="camera",
                         still_quality=100,

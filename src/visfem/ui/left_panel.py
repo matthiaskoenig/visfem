@@ -177,7 +177,7 @@ def build_left_panel(
             # Filled state
             with html.Div(v_if="active_meta !== null"):
 
-                with html.Div(style=f"display:flex; align-items:baseline; gap:{GAP_SM}; flex-wrap:wrap; margin-bottom:6px;"):
+                with html.Div(style=f"display:flex; align-items:center; gap:{GAP_MD}; flex-wrap:wrap; margin-bottom:6px;"):
                     html.Div(
                         "{{ active_meta.name }}",
                         style=f"font-size:{FS_LG}; font-weight:{FW_BOLD}; line-height:1.3;",
@@ -185,7 +185,7 @@ def build_left_panel(
                     html.Span(
                         "SPP 2311",
                         v_if="active_meta.spp_project",
-                        style=f"font-size:{FS_XS}; padding:{PAD_XS} {PAD_SM}; border-radius:{RADIUS_MD}; background:{SPP_DIM}; color:{SPP_COLOR}; font-weight:{FW_SEMI}; letter-spacing:{LS_WIDE}; flex-shrink:0;",
+                        style=f"font-size:{FS_XS}; padding:3px 8px; border-radius:{RADIUS_MD}; background:{SPP_DIM}; color:{SPP_COLOR}; font-weight:{FW_BOLD}; letter-spacing:{LS_WIDER}; border:1px solid {SPP_COLOR}; flex-shrink:0; line-height:1.6;",
                     )
 
                 # Organ system tags

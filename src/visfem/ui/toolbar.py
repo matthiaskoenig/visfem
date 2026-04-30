@@ -15,10 +15,9 @@ def build_toolbar(
     toggle_xr: object,
     toggle_left_panel: object,
     toggle_right_panel: object,
-    toggle_render_mode: object,
     take_screenshot: object,
 ) -> None:
-    """Render toolbar: panel toggles, logo, render-mode, theme, VR, fullscreen, and screenshot buttons."""
+    """Render toolbar: panel toggles, logo, theme, VR, fullscreen, and screenshot buttons."""
     #  Left edge
     html.Div(style="width:15px;")
 
@@ -40,19 +39,7 @@ def build_toolbar(
     html.Span("VisFEM", style=f"font-size:{FS_XL}; font-weight:{FW_SEMI}; letter-spacing:{LS_NORMAL}; line-height:1;")
     v3.VSpacer()
 
-    #  Right cluster: render mode + theme + VR
-    with v3.VTooltip(
-        text=("render_mode === 'local' ? 'Local rendering (browser)' : 'Server rendering (remote)'",),
-        location="bottom",
-    ):
-        with v3.Template(v_slot_activator="{ props }"):
-            v3.VBtn(
-                icon=("render_mode === 'local' ? 'mdi-monitor' : 'mdi-server'",),
-                variant="text", density="compact",
-                click=toggle_render_mode, v_bind="props", classes="ml-2",
-                style=("render_mode === 'remote' ? 'color: var(--v-theme-primary)' : ''",),
-            )
-
+    #  Right cluster: theme + VR
     with v3.VTooltip(text="Toggle theme", location="bottom"):
         with v3.Template(v_slot_activator="{ props }"):
             v3.VBtn(

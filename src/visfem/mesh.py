@@ -602,12 +602,7 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     return mesh.copy(deep=False)
 
 def preload_all_meshes(project_metadata: dict) -> None:
-    """Pre-populate the mesh cache at server startup.
-
-    Loads all static meshes fully and step 0 of every time-series dataset.
-    Runs synchronously before the server accepts connections so every user
-    benefits from a warm cache.
-    """
+    """Pre-populate the mesh cache at server startup."""
     from visfem.engine.discovery import dataset_dir, discover_xdmf, pvd_file_path
 
     logger.warning("Preloading meshes into cache...")

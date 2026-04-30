@@ -6,7 +6,6 @@ get_metadata(path)     -> MeshMetadata
 
 import threading
 import xml.etree.ElementTree as ET
-from collections import OrderedDict
 from pathlib import Path
 from typing import cast
 
@@ -62,10 +61,9 @@ if "PolyLine" not in _xdmf_common.xdmf_to_meshio_type:
     _xdmf_common.meshio_to_xdmf_type["line"] = ("PolyLine",)
 
 
-# Mesh cache: static meshes cached indefinitely; time-series steps use a bounded LRU
-_STEP_CACHE_SIZE: int = 64
+# Mesh cache: both static and time-series steps are kept indefinitely (no eviction)
 _static_cache: dict[Path, pv.DataSet] = {}
-_step_cache: OrderedDict[tuple[Path, int], pv.DataSet] = OrderedDict()
+_step_cache: dict[tuple[Path, int], pv.DataSet] = {}
 _step_cache_lock: threading.Lock = threading.Lock()
 
 
@@ -76,7 +74,6 @@ def mesh_cache_info() -> dict:
         "static_count": len(_static_cache),
         "step_cached": [(p.name, s) for p, s in _step_cache],
         "step_count": len(_step_cache),
-        "step_max": _STEP_CACHE_SIZE,
     }
 
 
@@ -590,7 +587,6 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     key = (path, step)
     with _step_cache_lock:
         if key in _step_cache:
-            _step_cache.move_to_end(key)
             logger.info(f"[mesh cache hit] '{path.name}' step {step} served from memory")
             return _step_cache[key].copy(deep=False)
 
@@ -603,9 +599,49 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
         mesh = _load_timeseries_xdmf(path, step)
     with _step_cache_lock:
         _step_cache[key] = mesh
-        if len(_step_cache) > _STEP_CACHE_SIZE:
-            _step_cache.popitem(last=False)
     return mesh.copy(deep=False)
+
+def preload_all_meshes(project_metadata: dict) -> None:
+    """Pre-populate the mesh cache at server startup.
+
+    Loads all static meshes fully and step 0 of every time-series dataset.
+    Runs synchronously before the server accepts connections so every user
+    benefits from a warm cache.
+    """
+    from visfem.engine.discovery import dataset_dir, discover_xdmf, pvd_file_path
+
+    logger.warning("Preloading meshes into cache...")
+    for meta in project_metadata.values():
+        ddir = dataset_dir(meta)
+
+        # Static files: VTK, VTU, STL — recurse into patient subdirs too
+        for ext in (".vtk", ".vtu", ".stl"):
+            for path in sorted(ddir.rglob(f"*{ext}")):
+                try:
+                    load_mesh(path, 0)
+                    logger.warning(f"  cached {path.name}")
+                except Exception as e:
+                    logger.warning(f"  failed {path.name}: {e}")
+
+        # XDMF time-series: step 0 only
+        for stem, path in discover_xdmf(ddir).items():
+            try:
+                load_mesh(path, 0)
+                logger.warning(f"  cached {stem} step 0")
+            except Exception as e:
+                logger.warning(f"  failed {stem}: {e}")
+
+        # PVD time-series: step 0 only
+        pvd = pvd_file_path(meta)
+        if pvd and pvd.exists():
+            try:
+                load_mesh(pvd, 0)
+                logger.warning(f"  cached {pvd.stem} step 0")
+            except Exception as e:
+                logger.warning(f"  failed {pvd.stem}: {e}")
+
+    logger.warning("Preload complete.")
+
 
 def parse_labels_file(path: Path) -> dict[str, dict[int, list[str]]]:
     """Parse a LabelIDs.txt file into per-mesh material ID → name mappings."""

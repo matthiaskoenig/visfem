@@ -19,7 +19,7 @@ from visfem.engine.selection import (
     select_scalar_field, select_step, select_xdmf,
 )
 from visfem.log import get_logger
-from visfem.mesh import get_metadata
+from visfem.mesh import get_metadata, preload_all_meshes
 from visfem.models import MeshMetadata
 from visfem.ui.layout import build_ui
 
@@ -525,6 +525,7 @@ class VisfemApp(TrameApp):
 def main() -> None:
     """Entry point."""
     app = VisfemApp()
+    preload_all_meshes(app._project_metadata)
     app.server.start()
 
 

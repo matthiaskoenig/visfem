@@ -1,7 +1,7 @@
 """Toolbar UI for VisFEM."""
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
-from visfem.ui.theme import ACCENT, FS_XL, FW_SEMI, GAP_LG, GAP_MD, LS_NORMAL, SEP_DIM
+from visfem.ui.theme import ACCENT, FS_XL, FW_SEMI, GAP_LG, LS_NORMAL, SEP_DIM
 
 _SEP_STYLE = (
     f"width:1px; height:20px; background:{SEP_DIM}; "

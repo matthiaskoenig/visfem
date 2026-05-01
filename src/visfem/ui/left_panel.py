@@ -30,9 +30,7 @@ def build_left_panel(
     """Left panel content: dataset tree (top) + active dataset info (bottom)."""
     with html.Div(style="display:flex; flex-direction:column; height:100%;"):
 
-        # ----------------------------------------------------------------
         # Section: Datasets
-        # ----------------------------------------------------------------
         with html.Div(
             style=f"padding:{PAD_MD} {PAD_LG} 4px {PAD_LG}; display:flex; align-items:center; gap:{GAP_MD}; flex-shrink:0; cursor:pointer; user-select:none;",
             click="left_datasets_section_open = !left_datasets_section_open",
@@ -147,9 +145,7 @@ def build_left_panel(
                                                     v3.VIcon("mdi-circle-small", size="small", style=f"opacity:{OP_MUTED}; flex-shrink:0;")
                                                     html.Span(xdmf_display_name(stem), style=f"font-size:{FS_MD};")
 
-        # ----------------------------------------------------------------
         # Section: Dataset Info
-        # ----------------------------------------------------------------
         v3.VDivider()
 
         with html.Div(

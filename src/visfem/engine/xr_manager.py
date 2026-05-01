@@ -76,13 +76,7 @@ class XRManager:
             self.ctrl.stop_xr()
 
     def on_session_ended(self, ended: bool) -> None:
-        """JS session 'end' event (system button exit).
-
-        on_exit_xr already fires for this path (vtk.js emits exitXR on session end),
-        so the camera is already restored. This handler is belt-and-suspenders: it
-        schedules a second geometry+camera push after a longer delay for the cases
-        where the vtk.js render loop stalls longer after a forced system-button exit.
-        """
+        """JS session 'end' event (system button exit)."""
         logger.info("[XR] on_session_ended called with ended=%s xr_active=%s", ended, self.state.xr_active)
         if ended:
             self.state.xr_session_ended = False
@@ -221,7 +215,6 @@ class XRManager:
         label_actor.DragableOff()
         self._label_actor = label_actor
 
-        # Store center for JS hit detection (radius covers panel diagonal ≈ 107 mm → use 120)
         self.state.exit_btn_pos = list(center)
         logger.info("[XR] exit panel actors added at (%.1f, %.1f, %.1f)", *center)
 

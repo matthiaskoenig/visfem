@@ -21,7 +21,7 @@ from visfem.engine.selection import (
 from visfem.log import get_logger
 from visfem.mesh import get_metadata, preload_all_meshes
 from visfem.models import MeshMetadata
-from visfem.ui.layout import build_ui
+from visfem.ui.layout import UICallbacks, build_ui
 
 logger = get_logger(__name__)
 
@@ -71,23 +71,25 @@ class VisfemApp(TrameApp):
             ctrl=self.ctrl,
             organ_groups=self._organ_groups,
             patients_by_dataset=self._patients_by_dataset,
-            on_select_dataset=self.select_dataset,
-            on_select_xdmf=self.select_xdmf,
-            on_select_patient=self.select_patient,
-            on_select_scalar_field=self.select_scalar_field,
-            on_select_step=self.select_step,
-            on_select_color_scheme=self.select_color_scheme,
-            on_toggle_color_reversed=self.toggle_color_reversed,
-            on_toggle_autoplay=self.toggle_autoplay,
-            on_toggle_theme=self.toggle_theme,
-            on_reset_camera=self.reset_camera,
-            on_toggle_xr=self.xr.toggle_xr,
-            on_enter_xr=self.xr.on_enter_xr,
-            on_exit_xr=self.xr.on_exit_xr,
-            on_toggle_left_panel=self.toggle_left_panel,
-            on_toggle_right_panel=self.toggle_right_panel,
-            on_take_screenshot=self.take_screenshot,
-            on_apply_clim=self.apply_clim_override,
+            callbacks=UICallbacks(
+                on_select_dataset=self.select_dataset,
+                on_select_xdmf=self.select_xdmf,
+                on_select_patient=self.select_patient,
+                on_select_scalar_field=self.select_scalar_field,
+                on_select_step=self.select_step,
+                on_select_color_scheme=self.select_color_scheme,
+                on_toggle_color_reversed=self.toggle_color_reversed,
+                on_apply_clim=self.apply_clim_override,
+                on_toggle_autoplay=self.toggle_autoplay,
+                on_toggle_theme=self.toggle_theme,
+                on_toggle_left_panel=self.toggle_left_panel,
+                on_toggle_right_panel=self.toggle_right_panel,
+                on_take_screenshot=self.take_screenshot,
+                on_reset_camera=self.reset_camera,
+                on_toggle_xr=self.xr.toggle_xr,
+                on_enter_xr=self.xr.on_enter_xr,
+                on_exit_xr=self.xr.on_exit_xr,
+            ),
         )
         self.ctrl.on_client_connected.add(lambda **_: self.xr.reset_on_reconnect())
 
@@ -334,11 +336,9 @@ class VisfemApp(TrameApp):
         try:
             await asyncio.sleep(0.15)
         except asyncio.CancelledError:
-            return  # Still debouncing; new task is already queued — leave spinner up
+            return
         try:
             apply_opacity(self.plotter, opacity)
-            # Geometry-only push: skips server-side VTK render (depth peeling × 4 passes).
-            # The browser re-renders with the new opacity value itself in local mode.
             self.ctrl.view_update_geometry()
         finally:
             self.state.opacity_adjusting = False

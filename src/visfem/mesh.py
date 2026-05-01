@@ -105,10 +105,7 @@ def _filter_to_max_dim_cells(cells: list) -> list:
 def _parse_xdmf_base_grid(
     path: Path,
 ) -> tuple[ET.Element, ET.Element, ET.Element, ET.Element]:
-    """Parse geometry and topology elements from the base Uniform grid of an XDMF file.
-
-    Returns (domain, topology_elem, topo_item, geo_item).
-    """
+    """Parse geometry and topology elements from the base Uniform grid of an XDMF file."""
     tree = ET.parse(path)
     domain        = _require(tree.getroot().find("Domain"), "Domain", path.name)
     uniform       = next(g for g in domain.findall("Grid") if g.get("GridType") == "Uniform")
@@ -124,11 +121,7 @@ def _parse_xdmf_base_grid(
 # Format detection
 
 def _detect_format(path: Path) -> str:
-    """Return a format string for the given file path.
-
-    Returns one of: pvd_timeseries, fenics_xdmf, timeseries_xdmf,
-    pyvista_native, meshio_fallback.
-    """
+    """Return a format string for the given file path."""
     suffix = path.suffix.lower()
     if suffix == ".pvd":
         return "pvd_timeseries"
@@ -364,11 +357,7 @@ def _compute_scalar_bounds(
     fields: dict,
     n_steps: int,
 ) -> dict[str, list[float]]:
-    """Return {field: [global_min, global_max]} for every scalar field across all timesteps.
-
-    Called once during metadata extraction; result is persisted in the .meta.json sidecar.
-    Only scalar fields (shape [1]) are scanned - vector/tensor fields are skipped.
-    """
+    """Return {field: [global_min, global_max]} for every scalar field across all timesteps."""
     scalar_fields = [name for name, info in fields.items() if info.get("shape") == [1]]
     if not scalar_fields:
         return {}

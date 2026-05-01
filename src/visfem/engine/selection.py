@@ -12,6 +12,7 @@ from visfem.engine.scene import (
     clear_scene, field_label, redraw_aneurysm, redraw_aneurysm_coils, redraw_heart, redraw_heart_ep,
     redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
     get_active_actor, update_actor_palette, update_tibia_sim_field, update_xdmf_step,
+    store_static_actor, restore_static_actor,
 )
 from visfem.log import get_logger
 from visfem.models import MeshMetadata, ProjectMetadata
@@ -98,11 +99,18 @@ def _redraw_static(
     state: Any,
     opacity: float,
 ) -> RenderResult:
+    entry = restore_static_actor(key, plotter, ctrl, state.dark_mode)
+    if entry is not None:
+        colors = _resolve_palette(state)
+        update_actor_palette(plotter, ctrl, colors, len(entry.legend_items))
+        legend = [{**item, "color": colors[i]} for i, item in enumerate(entry.legend_items)]
+        return RenderResult(legend_items=legend, mesh_stats=entry.mesh_stats, fiber_actor=entry.fiber_actor)
+
     fn = _STATIC_REDRAW[key]
     common = dict(dark_mode=state.dark_mode, opacity=opacity, palette=_resolve_palette(state))
-    if key == "heart":
-        return fn(plotter, ctrl, meta, ddir, **common)
-    return fn(plotter, ctrl, ddir, **common)
+    result = fn(plotter, ctrl, meta, ddir, **common) if key == "heart" else fn(plotter, ctrl, ddir, **common)
+    store_static_actor(key, get_active_actor(), result.fiber_actor, result.legend_items, result.mesh_stats)
+    return result
 
 
 def select_dataset(

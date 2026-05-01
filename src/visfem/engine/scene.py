@@ -1,7 +1,7 @@
 """Scene management and mesh rendering helpers."""
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 import numpy as np
 import pyvista as pv
@@ -28,6 +28,13 @@ class RenderResult:
     fiber_actor: vtkActor | None = None
 
 
+class _StaticCache(NamedTuple):
+    actor: vtkActor
+    fiber_actor: vtkActor | None      # heart only, else None
+    legend_items: list[dict[str, Any]]
+    mesh_stats: dict[str, Any] | None
+
+
 _FIBER_SUBSAMPLE: int = 5
 _GLYPH_SCALE: float = 1.5
 _PERCENTILE_CLAMP: int = 95
@@ -35,6 +42,7 @@ _PERCENTILE_CLAMP: int = 95
 _active_actor: vtkActor | None = None
 _xdmf_mesh: pv.DataSet | None = None
 _xdmf_actor: vtkActor | None = None
+_static_cache: dict[str, _StaticCache] = {}
 
 
 def get_active_actor() -> vtkActor | None:
@@ -115,17 +123,52 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
 
 # Scene state
 
-def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
-    """Remove all actors and reset renderer state before each render."""
-    global _active_actor, _xdmf_mesh, _xdmf_actor
-    _active_actor = None
-    _xdmf_mesh = None
-    _xdmf_actor = None
-    plotter.clear()
+def _set_background(plotter: pv.Plotter, dark_mode: bool) -> None:
     if dark_mode:
         plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
     else:
         plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)
+
+
+def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
+    """Hide cached static actors; remove all others. Preserves vtk.js geometry cache."""
+    global _active_actor, _xdmf_mesh, _xdmf_actor
+    _active_actor = None
+    _xdmf_mesh = None
+    _xdmf_actor = None
+    cached = {a for e in _static_cache.values() for a in (e.actor, e.fiber_actor) if a}
+    for actor in list(plotter.renderer.actors.values()):
+        if actor in cached:
+            actor.SetVisibility(False)
+        else:
+            plotter.renderer.RemoveActor(actor)
+    _set_background(plotter, dark_mode)
+
+
+def store_static_actor(
+    key: str,
+    actor: vtkActor,
+    fiber_actor: vtkActor | None,
+    legend_items: list[dict[str, Any]],
+    mesh_stats: dict[str, Any] | None,
+) -> None:
+    _static_cache[key] = _StaticCache(actor, fiber_actor, legend_items, mesh_stats)
+
+
+def restore_static_actor(
+    key: str, plotter: pv.Plotter, ctrl: TrameCtrl, dark_mode: bool,
+) -> _StaticCache | None:
+    entry = _static_cache.get(key)
+    if entry is None:
+        return None
+    global _active_actor
+    _active_actor = entry.actor
+    entry.actor.SetVisibility(True)
+    # fiber_actor stays hidden — state.show_fibers is reset to False in select_dataset
+    _set_background(plotter, dark_mode)
+    plotter.render()
+    ctrl.view_update()
+    return entry
 
 
 def apply_opacity(plotter: pv.Plotter, opacity: float) -> None:

@@ -11,7 +11,7 @@
     "bone",
     "musculoskeletal"
   ],
-  "description": "FE simulation results for tibial shaft non-union (Use Case 1). Fields include von Mises stress, full stress/strain tensors, and mechanobiological healing window (Claes criterion, 5 zones: too much movement to bone resorption). Solver: Abaqus Standard.",
+  "description": "FE simulation results for tibial shaft non-union. Fields include von Mises stress, full stress/strain tensors, and mechanobiological healing window.",
   "mesh_format": "VTK",
   "references": [
     "https://doi.org/10.1038/s41598-025-04792-w"

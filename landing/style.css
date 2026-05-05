@@ -103,6 +103,11 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   gap: 24px;
 }
+.nav-cta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .nav-link {
   display: flex;
   align-items: center;

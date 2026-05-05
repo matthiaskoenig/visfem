@@ -11,7 +11,7 @@
     "bone",
     "musculoskeletal"
   ],
-  "description": "Patient-specific tibia mesh from Use Case 1: tibial shaft non-union treated by intramedullary nail diameter change (8mm to 11mm). Three regions: bone, fracture/callus zone, and implant screws. Quadratic tetrahedral elements (C3D10).",
+  "description": "Patient-specific tibia mesh: tibial shaft non-union treated by intramedullary nail diameter change. Three regions: bone, fracture/callus zone, and implant screws.",
   "mesh_format": "VTK",
   "references": [
     "https://doi.org/10.1038/s41598-025-04792-w"

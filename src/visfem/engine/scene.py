@@ -162,12 +162,10 @@ def restore_static_actor(
     if entry is None:
         return None
     global _active_actor
+    clear_scene(plotter, dark_mode)  # hides all cached actors
     _active_actor = entry.actor
     entry.actor.SetVisibility(True)
-    # fiber_actor stays hidden — state.show_fibers is reset to False in select_dataset
-    _set_background(plotter, dark_mode)
-    plotter.render()
-    ctrl.view_update()
+    push_scene(plotter, ctrl, reset_camera=True)
     return entry
 
 

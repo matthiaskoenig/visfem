@@ -13,7 +13,7 @@
   "organ_system": [
     "liver"
   ],
-  "description": "2D FEniCS simulation of mechanical deformation of the hepatic lobule using the Theory of Porous Media (TPM). Fields: displacement, seepage velocity, fluid volume fraction. Pure mechanics, no cell-scale coupling.",
+  "description": "2D simulation of mechanical deformation of the hepatic lobule using the Theory of Porous Media (TPM). Fields: displacement, seepage velocity, fluid volume fraction. Pure mechanics, no cell-scale coupling.",
   "mesh_format": "XDMF+HDF5",
   "references": [
     "https://doi.org/10.1101/2024.03.26.586870",

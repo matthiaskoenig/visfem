@@ -7,7 +7,7 @@ from rich.logging import RichHandler
 from visfem.console import console
 
 
-def get_logger(name: str, level: int = logging.INFO) -> logging.Logger:
+def get_logger(name: str, level: int = logging.WARNING) -> logging.Logger:
     """Get new custom logger for name."""
     formatter = logging.Formatter(
         fmt="%(message)s",

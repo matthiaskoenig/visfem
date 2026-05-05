@@ -10,9 +10,10 @@
   "organ_system": [
     "vasculature"
   ],
-  "description": "Endovascular coil meshes from Holzberger et al. (2024), simulated via the discrete elastic rod (DER) model at ~32% packing density. Framing coil: 3D shape, D1=76µm, D2=355µm, D3=5mm, L=150mm. Filling coil: helical, D1=50µm, D2=254µm, D3=2mm, L=200mm.",
+  "description": "Endovascular coil meshes from Holzberger et al. (2024), simulated via the discrete elastic rod model.",
   "mesh_format": "STL",
   "references": [
     "https://doi.org/10.1007/s10237-024-01882-y"
-  ]
+  ],
+  "spp_project": "Multi-scale algorithms and simulation methodologies for the long-term prognosis of endovascular interventions in cerebral aneurysms"
 }

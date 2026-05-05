@@ -10,10 +10,11 @@
   "organ_system": [
     "vasculature"
   ],
-  "description": "Small cerebral aneurysm surface mesh (dome ~5.6mm, neck ~4.8mm) from the Pozo Soler et al. (2017) database, processed by Holzberger et al. (2024) for coil embolization simulations using the discrete elastic rod (DER) model. The sac was cut at the neck for coil insertion.",
+  "description": "Small cerebral aneurysm surface mesh from the Pozo Soler et al. (2017) database, processed by Holzberger et al. (2024) for coil embolization simulations using the discrete elastic rod model.",
   "mesh_format": "STL",
   "references": [
     "https://doi.org/10.1007/s10237-024-01882-y",
     "https://doi.org/10.15131/shef.data.4806910.v1"
-  ]
+  ],
+  "spp_project": "Multi-scale algorithms and simulation methodologies for the long-term prognosis of endovascular interventions in cerebral aneurysms"
 }

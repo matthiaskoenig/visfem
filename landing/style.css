@@ -26,6 +26,18 @@
   --bp-mobile:     600px;
 }
 
+[data-theme="light"] {
+  --bg:            #f2f5f5;
+  --bg-top:        #d1d6d6;
+  --surface:       #e6eaea;
+  --surface-2:     #dce2e2;
+  --border:        rgba(0, 0, 0, 0.09);
+
+  --text:          #1a2424;
+  --text-muted:    #3d5858;
+  --text-subtle:   #607a7a;
+}
+
 html { scroll-behavior: smooth; }
 
 body {
@@ -91,6 +103,11 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
   gap: 24px;
 }
+.nav-cta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .nav-link {
   display: flex;
   align-items: center;
@@ -101,6 +118,30 @@ a { color: inherit; text-decoration: none; }
 }
 .nav-link:hover { color: var(--accent); }
 .gh-icon { width: 18px; height: 18px; flex-shrink: 0; }
+
+/* Theme toggle */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color 0.2s, background 0.2s;
+  padding: 0;
+  flex-shrink: 0;
+}
+.theme-toggle:hover {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+.theme-toggle svg { width: 18px; height: 18px; }
+[data-theme="dark"]  .icon-moon { display: none; }
+[data-theme="light"] .icon-sun  { display: none; }
 
 /* Buttons */
 .btn-launch {

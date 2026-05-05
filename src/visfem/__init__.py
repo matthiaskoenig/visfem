@@ -3,7 +3,7 @@
 from pathlib import Path
 
 __author__ = "Michelle Elias & Matthias Koenig"
-__version__ = "0.0.2"
+__version__ = "0.1.0"
 
 
 program_name: str = "visfem"

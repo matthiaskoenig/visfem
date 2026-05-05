@@ -6,7 +6,6 @@ get_metadata(path)     -> MeshMetadata
 
 import threading
 import xml.etree.ElementTree as ET
-from collections import OrderedDict
 from pathlib import Path
 from typing import cast
 
@@ -62,10 +61,9 @@ if "PolyLine" not in _xdmf_common.xdmf_to_meshio_type:
     _xdmf_common.meshio_to_xdmf_type["line"] = ("PolyLine",)
 
 
-# Mesh cache: static meshes cached indefinitely; time-series steps use a bounded LRU
-_STEP_CACHE_SIZE: int = 64
+# Mesh cache: both static and time-series steps are kept indefinitely (no eviction)
 _static_cache: dict[Path, pv.DataSet] = {}
-_step_cache: OrderedDict[tuple[Path, int], pv.DataSet] = OrderedDict()
+_step_cache: dict[tuple[Path, int], pv.DataSet] = {}
 _step_cache_lock: threading.Lock = threading.Lock()
 
 
@@ -76,7 +74,6 @@ def mesh_cache_info() -> dict:
         "static_count": len(_static_cache),
         "step_cached": [(p.name, s) for p, s in _step_cache],
         "step_count": len(_step_cache),
-        "step_max": _STEP_CACHE_SIZE,
     }
 
 
@@ -108,10 +105,7 @@ def _filter_to_max_dim_cells(cells: list) -> list:
 def _parse_xdmf_base_grid(
     path: Path,
 ) -> tuple[ET.Element, ET.Element, ET.Element, ET.Element]:
-    """Parse geometry and topology elements from the base Uniform grid of an XDMF file.
-
-    Returns (domain, topology_elem, topo_item, geo_item).
-    """
+    """Parse geometry and topology elements from the base Uniform grid of an XDMF file."""
     tree = ET.parse(path)
     domain        = _require(tree.getroot().find("Domain"), "Domain", path.name)
     uniform       = next(g for g in domain.findall("Grid") if g.get("GridType") == "Uniform")
@@ -127,11 +121,7 @@ def _parse_xdmf_base_grid(
 # Format detection
 
 def _detect_format(path: Path) -> str:
-    """Return a format string for the given file path.
-
-    Returns one of: pvd_timeseries, fenics_xdmf, timeseries_xdmf,
-    pyvista_native, meshio_fallback.
-    """
+    """Return a format string for the given file path."""
     suffix = path.suffix.lower()
     if suffix == ".pvd":
         return "pvd_timeseries"
@@ -367,11 +357,7 @@ def _compute_scalar_bounds(
     fields: dict,
     n_steps: int,
 ) -> dict[str, list[float]]:
-    """Return {field: [global_min, global_max]} for every scalar field across all timesteps.
-
-    Called once during metadata extraction; result is persisted in the .meta.json sidecar.
-    Only scalar fields (shape [1]) are scanned - vector/tensor fields are skipped.
-    """
+    """Return {field: [global_min, global_max]} for every scalar field across all timesteps."""
     scalar_fields = [name for name, info in fields.items() if info.get("shape") == [1]]
     if not scalar_fields:
         return {}
@@ -590,7 +576,6 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     key = (path, step)
     with _step_cache_lock:
         if key in _step_cache:
-            _step_cache.move_to_end(key)
             logger.info(f"[mesh cache hit] '{path.name}' step {step} served from memory")
             return _step_cache[key].copy(deep=False)
 
@@ -603,9 +588,44 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
         mesh = _load_timeseries_xdmf(path, step)
     with _step_cache_lock:
         _step_cache[key] = mesh
-        if len(_step_cache) > _STEP_CACHE_SIZE:
-            _step_cache.popitem(last=False)
     return mesh.copy(deep=False)
+
+def preload_all_meshes(project_metadata: dict) -> None:
+    """Pre-populate the mesh cache at server startup."""
+    from visfem.engine.discovery import dataset_dir, discover_xdmf, pvd_file_path
+
+    logger.warning("Preloading meshes into cache...")
+    for meta in project_metadata.values():
+        ddir = dataset_dir(meta)
+
+        # Static files: VTK, VTU, STL — recurse into patient subdirs too
+        for ext in (".vtk", ".vtu", ".stl"):
+            for path in sorted(ddir.rglob(f"*{ext}")):
+                try:
+                    load_mesh(path, 0)
+                    logger.warning(f"  cached {path.name}")
+                except Exception as e:
+                    logger.warning(f"  failed {path.name}: {e}")
+
+        # XDMF time-series: step 0 only
+        for stem, path in discover_xdmf(ddir).items():
+            try:
+                load_mesh(path, 0)
+                logger.warning(f"  cached {stem} step 0")
+            except Exception as e:
+                logger.warning(f"  failed {stem}: {e}")
+
+        # PVD time-series: step 0 only
+        pvd = pvd_file_path(meta)
+        if pvd and pvd.exists():
+            try:
+                load_mesh(pvd, 0)
+                logger.warning(f"  cached {pvd.stem} step 0")
+            except Exception as e:
+                logger.warning(f"  failed {pvd.stem}: {e}")
+
+    logger.warning("Preload complete.")
+
 
 def parse_labels_file(path: Path) -> dict[str, dict[int, list[str]]]:
     """Parse a LabelIDs.txt file into per-mesh material ID → name mappings."""

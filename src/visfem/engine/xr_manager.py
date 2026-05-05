@@ -37,12 +37,13 @@ class XRManager:
         self._panel_actor: vtkActor | None = None
         self._border_actor: vtkActor | None = None
         self._label_actor: vtkActor | None = None
-
+        self._saved_cam: dict | None = None
 
     def on_enter_xr(self) -> None:
         if self.state.xr_active:
             logger.info("[XR] on_enter_xr fired again — idempotency guard blocked (already active)")
             return
+        self._save_camera()
         logger.info("[XR] on_enter_xr — setting xr_active=True")
         self.state.xr_active = True
         # self._place_exit_panel()
@@ -50,12 +51,13 @@ class XRManager:
         logger.info("[XR] view_update sent after entering XR")
 
     def on_exit_xr(self) -> None:
-        logger.info("[XR] on_exit_xr — setting xr_active=False")
+        logger.info("[XR] on_exit_xr — restoring camera and resyncing scene")
         self.state.xr_active = False
         # self._remove_exit_panel()
+        self._restore_camera()   # undo headset-pose overwrite of vtk.js camera
         self.ctrl.view_update()
         asyncio.ensure_future(self._post_exit_refresh())
-        logger.info("[XR] view_update sent, geometry refresh scheduled in 250ms")
+        logger.info("[XR] camera pushed, geometry refresh scheduled in 250ms")
 
     def toggle_xr(self) -> None:
         if self.state.xr_active:
@@ -63,10 +65,6 @@ class XRManager:
             self.ctrl.stop_xr()
         else:
             logger.info("[XR] toggle_xr — starting XR session (HmdVR)")
-            if self.state.render_mode != "local":
-                logger.info("[XR] switching render_mode to local before XR start")
-                self.state.render_mode = "local"
-                self.ctrl.view_update()
             self.ctrl.start_xr(VtkWebXRHelper.XrSessionTypes.HmdVR)
 
     def on_exit_triggered(self, triggered: bool) -> None:
@@ -78,21 +76,18 @@ class XRManager:
             self.ctrl.stop_xr()
 
     def on_session_ended(self, ended: bool) -> None:
-        """JS session 'end' event (system button exit) — clean up without page reload."""
+        """JS session 'end' event (system button exit)."""
         logger.info("[XR] on_session_ended called with ended=%s xr_active=%s", ended, self.state.xr_active)
         if ended:
             self.state.xr_session_ended = False
             if self.state.xr_active:
-                logger.info("[XR] session ended via system button — cleaning up state")
+                # on_exit_xr didn't fire (unexpected) — do full cleanup here
+                logger.info("[XR] on_exit_xr did not fire before on_session_ended — cleaning up")
                 self.state.xr_active = False
-                # self._remove_exit_panel()
+                self._restore_camera()
                 self.ctrl.view_update()
-                logger.info("[XR] cleanup complete after system button exit")
-            # vtk.js needs extra time to fully reset its rendering pipeline after a
-            # system-button session end (vs a graceful stop_xr). Schedule a second,
-            # longer refresh to restore the desktop viewport if it came up blank.
             asyncio.ensure_future(self._post_session_end_refresh())
-            logger.info("[XR] extended geometry refresh scheduled in 500ms (system button exit)")
+            logger.info("[XR] extended refresh scheduled in 500ms (system button exit)")
 
     def reset_on_reconnect(self) -> None:
         """Reset XR state when the client reconnects."""
@@ -101,16 +96,42 @@ class XRManager:
         # self._remove_exit_panel()
 
 
+    def _save_camera(self) -> None:
+        cam = self.plotter.camera
+        self._saved_cam = {
+            "position": tuple(cam.position),
+            "focal_point": tuple(cam.focal_point),
+            "view_up": tuple(cam.up),
+        }
+        logger.info("[XR] camera saved: pos=(%.1f,%.1f,%.1f)", *self._saved_cam["position"])
+
+    def _restore_camera(self) -> None:
+        """Undo the headset-pose overwrite of the vtk.js camera and push to client."""
+        cam = self.plotter.camera
+        if self._saved_cam:
+            cam.position = self._saved_cam["position"]
+            cam.focal_point = self._saved_cam["focal_point"]
+            cam.up = self._saved_cam["view_up"]
+            self.plotter.renderer.ResetCameraClippingRange()
+            logger.info("[XR] camera restored: pos=(%.1f,%.1f,%.1f)", *self._saved_cam["position"])
+            self._saved_cam = None
+        else:
+            self.plotter.reset_camera()
+            logger.info("[XR] camera reset to fit mesh (no saved camera)")
+        self.ctrl.view_push_camera()
+
     async def _post_exit_refresh(self) -> None:
-        """Re-sync geometry from server → client to flush vtk.js-only actors (controller rays)."""
+        """250ms after exit: push camera + geometry again in case the first push raced vtk.js teardown."""
         await asyncio.sleep(0.25)
-        logger.info("[XR] _post_exit_refresh: pushing geometry to clear client-side ray actors")
+        logger.info("[XR] _post_exit_refresh: resyncing camera + geometry")
+        self.ctrl.view_push_camera()
         self.ctrl.view_update_geometry()
 
     async def _post_session_end_refresh(self) -> None:
-        """Restore desktop rendering after system-button XR exit (vtk.js needs extra settle time)."""
+        """500ms after system-button exit: final push to recover a blank viewport."""
         await asyncio.sleep(0.5)
-        logger.info("[XR] _post_session_end_refresh: restoring desktop view after session end")
+        logger.info("[XR] _post_session_end_refresh: final camera + geometry resync")
+        self.ctrl.view_push_camera()
         self.ctrl.view_update()
         self.ctrl.view_update_geometry()
 
@@ -194,7 +215,6 @@ class XRManager:
         label_actor.DragableOff()
         self._label_actor = label_actor
 
-        # Store center for JS hit detection (radius covers panel diagonal ≈ 107 mm → use 120)
         self.state.exit_btn_pos = list(center)
         logger.info("[XR] exit panel actors added at (%.1f, %.1f, %.1f)", *center)
 

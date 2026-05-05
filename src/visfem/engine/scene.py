@@ -1,6 +1,7 @@
 """Scene management and mesh rendering helpers."""
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 import numpy as np
 import pyvista as pv
@@ -18,6 +19,22 @@ from visfem.models import MeshMetadata, ProjectMetadata
 
 logger = get_logger(__name__)
 
+
+@dataclass
+class RenderResult:
+    legend_items: list[dict[str, Any]] = field(default_factory=list)
+    mesh_stats: dict[str, Any] | None = None
+    scalar_bar_info: dict[str, Any] | None = None
+    fiber_actor: vtkActor | None = None
+
+
+class _StaticCache(NamedTuple):
+    actor: vtkActor
+    fiber_actor: vtkActor | None      # heart only, else None
+    legend_items: list[dict[str, Any]]
+    mesh_stats: dict[str, Any] | None
+
+
 _FIBER_SUBSAMPLE: int = 5
 _GLYPH_SCALE: float = 1.5
 _PERCENTILE_CLAMP: int = 95
@@ -25,6 +42,7 @@ _PERCENTILE_CLAMP: int = 95
 _active_actor: vtkActor | None = None
 _xdmf_mesh: pv.DataSet | None = None
 _xdmf_actor: vtkActor | None = None
+_static_cache: dict[str, _StaticCache] = {}
 
 
 def get_active_actor() -> vtkActor | None:
@@ -105,17 +123,52 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
 
 # Scene state
 
-def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
-    """Remove all actors and reset renderer state before each render."""
-    global _active_actor, _xdmf_mesh, _xdmf_actor
-    _active_actor = None
-    _xdmf_mesh = None
-    _xdmf_actor = None
-    plotter.clear()
+def _set_background(plotter: pv.Plotter, dark_mode: bool) -> None:
     if dark_mode:
         plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
     else:
         plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)
+
+
+def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
+    """Hide cached static actors; remove all others. Preserves vtk.js geometry cache."""
+    global _active_actor, _xdmf_mesh, _xdmf_actor
+    _active_actor = None
+    _xdmf_mesh = None
+    _xdmf_actor = None
+    cached = {a for e in _static_cache.values() for a in (e.actor, e.fiber_actor) if a}
+    for actor in list(plotter.renderer.actors.values()):
+        if actor in cached:
+            actor.SetVisibility(False)
+        else:
+            plotter.renderer.RemoveActor(actor)
+    _set_background(plotter, dark_mode)
+
+
+def store_static_actor(
+    key: str,
+    actor: vtkActor,
+    fiber_actor: vtkActor | None,
+    legend_items: list[dict[str, Any]],
+    mesh_stats: dict[str, Any] | None,
+) -> None:
+    _static_cache[key] = _StaticCache(actor, fiber_actor, legend_items, mesh_stats)
+
+
+def restore_static_actor(
+    key: str, plotter: pv.Plotter, ctrl: TrameCtrl, dark_mode: bool,
+) -> _StaticCache | None:
+    entry = _static_cache.get(key)
+    if entry is None:
+        return None
+    global _active_actor
+    _active_actor = entry.actor
+    entry.actor.SetVisibility(True)
+    # fiber_actor stays hidden — state.show_fibers is reset to False in select_dataset
+    _set_background(plotter, dark_mode)
+    plotter.render()
+    ctrl.view_update()
+    return entry
 
 
 def apply_opacity(plotter: pv.Plotter, opacity: float) -> None:
@@ -176,11 +229,7 @@ def update_tibia_sim_field(
     palette: list[str],
     cmap: str,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """Fast-path field/color update for tibia_simulation.
-
-    Returns (legend_items, scalar_bar_info). Returns ([], None) sentinel when
-    _active_actor is None so callers can fall back to a full redraw.
-    """
+    """Fast-path field/color update for tibia_simulation."""
     if _active_actor is None:
         return [], None
 
@@ -254,21 +303,15 @@ def redraw_xdmf(
     step: int = 0,
     reset_camera: bool = True,
     cmap: str = "viridis",
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
-    """Load and render one step of an XDMF mesh.
-
-    If *field* is None the first scalar field from metadata is used.
-    Pass reset_camera=False when navigating timesteps to preserve the
-    user's current view.
-    Returns (legend_items, mesh_stats, scalar_bar_info).
-    """
+) -> RenderResult:
+    """Load and render one step of an XDMF mesh."""
     global _xdmf_mesh, _xdmf_actor
     clear_scene(plotter, dark_mode)
     try:
         mesh = load_mesh(path, step=step)
     except Exception as e:
         logger.error(f"Failed to load '{path.name}' step {step}: {e}")
-        return [], None, None
+        return RenderResult()
 
     _xdmf_mesh = mesh
     mesh_meta = xdmf_meta.get(path.stem)
@@ -306,7 +349,7 @@ def redraw_xdmf(
         if clim is not None:
             scalar_bar = _scalar_bar_dict(field, clim, cmap)
 
-    return [], stats, scalar_bar
+    return RenderResult(mesh_stats=stats, scalar_bar_info=scalar_bar)
 
 
 def update_xdmf_step(
@@ -318,12 +361,7 @@ def update_xdmf_step(
     field: str | None,
     cmap: str,
 ) -> tuple[bool, dict[str, Any] | None, dict[str, Any] | None]:
-    """In-place step update: swap scalars without recreating the actor.
-
-    Returns (True, stats, scalar_bar) on success.
-    Returns (False, None, None) when the persistent actor is not yet built — caller
-    falls back to redraw_xdmf.
-    """
+    """In-place step update: swap scalars without recreating the actor."""
     if _xdmf_mesh is None or _xdmf_actor is None:
         return False, None, None
 
@@ -371,11 +409,8 @@ def redraw_ircadb(
     opacity: float,
     palette: list[str] | None = None,
     reset_camera: bool = True,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """Load all organ meshes for a patient and render as one merged actor.
-
-    Returns legend_items for the loaded organs.
-    """
+) -> RenderResult:
+    """Load all organ meshes for a patient and render as one merged actor."""
     organs = ircadb_organ_names(patient_dir)
     clear_scene(plotter, dark_mode)
 
@@ -422,7 +457,7 @@ def redraw_ircadb(
         {"names": [format_organ_name(organ)], "color": colors[i]}
         for i, organ in enumerate(loaded_organs)
     ]
-    return legend, stats
+    return RenderResult(legend_items=legend, mesh_stats=stats)
 
 
 def redraw_heart(
@@ -434,16 +469,12 @@ def redraw_heart(
     opacity: float,
     palette: list[str] | None = None,
     reset_camera: bool = True,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None, vtkActor | None]:
-    """Render the heart mesh colored by material region.
-
-    Returns (legend_items, mesh_stats, fiber_actor).  fiber_actor is the
-    glyph overlay added hidden; call SetVisibility(True) to show it.
-    """
+) -> RenderResult:
+    """Render the heart mesh colored by material region."""
     mesh_path = dataset_dir / "M.vtu"
     if not mesh_path.exists():
         logger.error(f"Heart mesh not found: {mesh_path}")
-        return [], None, None
+        return RenderResult()
 
     label_map: dict[int, list[str]] = {}
     if meta.labels_file:
@@ -455,7 +486,7 @@ def redraw_heart(
         mesh = load_mesh(mesh_path)
     except Exception as e:
         logger.error(f"Failed to load heart mesh: {e}")
-        return [], None, None
+        return RenderResult()
 
     material_ids = mesh.cell_data["Material"].astype(int)
     unique_ids: list[int] = sorted(int(v) for v in np.unique(material_ids))
@@ -505,7 +536,7 @@ def redraw_heart(
         for i, mid in enumerate(unique_ids)
     ]
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
-    return legend, stats, fiber_actor
+    return RenderResult(legend_items=legend, mesh_stats=stats, fiber_actor=fiber_actor)
 
 
 def redraw_heart_ep(
@@ -516,12 +547,12 @@ def redraw_heart_ep(
     opacity: float,
     palette: list[str] | None = None,
     reset_camera: bool = True,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+) -> RenderResult:
     """Render the EP heart surface colored by EP material region."""
     ep_path = dataset_dir / "surfaces" / "ep_surface.vtp"
     if not ep_path.exists():
         logger.error(f"EP surface not found: {ep_path}")
-        return [], None
+        return RenderResult()
 
     # EP MaterialID -> name
     ep_label_map: dict[int, str] = {
@@ -545,7 +576,7 @@ def redraw_heart_ep(
         mesh = load_mesh(ep_path)
     except Exception as e:
         logger.error(f"Failed to load EP surface: {e}")
-        return [], None
+        return RenderResult()
 
     material_ids = mesh.cell_data["Material"].astype(int)
     unique_ids: list[int] = sorted(int(v) for v in np.unique(material_ids))
@@ -579,7 +610,7 @@ def redraw_heart_ep(
         for i, mid in enumerate(unique_ids)
     ]
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
-    return legend, stats
+    return RenderResult(legend_items=legend, mesh_stats=stats)
 
 
 
@@ -591,12 +622,12 @@ def redraw_tibia_mesh(
     opacity: float,
     palette: list[str] | None = None,
     reset_camera: bool = True,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+) -> RenderResult:
     """Render Tibia_Mesh.vtk colored by PartId region."""
     mesh_path = dataset_dir / "Tibia_Mesh.vtk"
     if not mesh_path.exists():
         logger.error(f"Tibia mesh not found: {mesh_path}")
-        return [], None
+        return RenderResult()
 
     part_names: dict[int, str] = {
         1: "Bone",
@@ -608,7 +639,7 @@ def redraw_tibia_mesh(
         mesh = load_mesh(mesh_path)
     except Exception as e:
         logger.error(f"Failed to load tibia mesh: {e}")
-        return [], None
+        return RenderResult()
 
     part_ids = mesh.cell_data["PartId"].astype(int)
     unique_ids: list[int] = sorted(int(v) for v in np.unique(part_ids))
@@ -642,7 +673,7 @@ def redraw_tibia_mesh(
         for i, pid in enumerate(unique_ids)
     ]
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
-    return legend, stats
+    return RenderResult(legend_items=legend, mesh_stats=stats)
 
 
 def redraw_aneurysm(
@@ -653,20 +684,20 @@ def redraw_aneurysm(
     opacity: float,
     palette: list[str] | None = None,
     reset_camera: bool = True,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+) -> RenderResult:
     """Render Aneurysm_small_Full geometry as a single surface mesh."""
     mesh_path = dataset_dir / "Aneurysm_small_Full.stl"
     if not mesh_path.exists():
         mesh_path = dataset_dir / "Aneurysm_small_Full.obj"
     if not mesh_path.exists():
         logger.error(f"Aneurysm mesh not found in {dataset_dir}")
-        return [], None
+        return RenderResult()
 
     try:
         mesh = load_mesh(mesh_path)
     except Exception as e:
         logger.error(f"Failed to load aneurysm mesh: {e}")
-        return [], None
+        return RenderResult()
 
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     color = _palette[0] if _palette else "#d62728"
@@ -686,7 +717,7 @@ def redraw_aneurysm(
     push_scene(plotter, ctrl, reset_camera=reset_camera)
 
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
-    return [], stats
+    return RenderResult(mesh_stats=stats)
 
 
 _COIL_PARTS: list[tuple[str, str]] = [
@@ -703,7 +734,7 @@ def redraw_aneurysm_coils(
     opacity: float,
     palette: list[str] | None = None,
     reset_camera: bool = True,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+) -> RenderResult:
     """Render FramingCoil and FillingCoil as two categorically colored parts."""
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     colors = region_colors(len(_COIL_PARTS), _palette)
@@ -715,12 +746,12 @@ def redraw_aneurysm_coils(
             path = dataset_dir / f"{stem}.obj"
         if not path.exists():
             logger.error(f"Coil mesh not found: {path}")
-            return [], None
+            return RenderResult()
         try:
             part = load_mesh(path).copy()
         except Exception as e:
             logger.error(f"Failed to load coil mesh {path}: {e}")
-            return [], None
+            return RenderResult()
         part.cell_data["region_id"] = np.full(part.n_cells, i, dtype=np.int32)
         parts.append(part)
 
@@ -751,7 +782,7 @@ def redraw_aneurysm_coils(
         for i, (_, label) in enumerate(_COIL_PARTS)
     ]
     stats = {"n_cells": total_cells, "n_points": total_points}
-    return legend, stats
+    return RenderResult(legend_items=legend, mesh_stats=stats)
 
 
 # Claes healing window zone labels
@@ -774,23 +805,18 @@ def redraw_tibia_simulation(
     palette: list[str] | None = None,
     cmap: str = "turbo",
     reset_camera: bool = True,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
-    """Render Tibia_Simulation.vtk with the given scalar field.
-
-    Claes_window is rendered as a discrete categorical colormap with a legend.
-    All other fields use a continuous turbo colormap with a scalar bar.
-    Returns (legend_items, mesh_stats, scalar_bar_info).
-    """
+) -> RenderResult:
+    """Render Tibia_Simulation.vtk with the given scalar field."""
     sim_path = dataset_dir / "Tibia_Simulation.vtk"
     if not sim_path.exists():
         logger.error(f"Tibia simulation not found: {sim_path}")
-        return [], None, None
+        return RenderResult()
 
     try:
         mesh = load_mesh(sim_path)
     except Exception as e:
         logger.error(f"Failed to load tibia simulation: {e}")
-        return [], None, None
+        return RenderResult()
 
     # Always compute _zone_id so the actor's frozen dataset has it regardless of
     # the initially rendered field — enables fast-path switching to Claes_window later.
@@ -828,7 +854,7 @@ def redraw_tibia_simulation(
             {"names": [_CLAES_LABELS.get(z, f"Zone {z}")], "color": colors[i]}
             for i, z in enumerate(zone_ids)
         ]
-        return legend, stats, None
+        return RenderResult(legend_items=legend, mesh_stats=stats)
     else:
         # Continuous: clamp to nth percentile to avoid outlier washout.
         data = mesh.cell_data[field]
@@ -847,4 +873,4 @@ def redraw_tibia_simulation(
         apply_opacity(plotter, opacity)
         push_scene(plotter, ctrl, reset_camera=reset_camera)
         scalar_bar = _scalar_bar_dict(field, clim, cmap)
-        return [], stats, scalar_bar
+        return RenderResult(mesh_stats=stats, scalar_bar_info=scalar_bar)

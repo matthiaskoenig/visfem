@@ -12,6 +12,7 @@ from visfem.engine.scene import (
     clear_scene, field_label, redraw_aneurysm, redraw_aneurysm_coils, redraw_heart, redraw_heart_ep,
     redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
     redraw_rectangle_one_tree, redraw_rectangle_two_trees, redraw_rectangle_quad,
+    redraw_liver_vessels,
     get_active_actor, update_actor_palette, update_tibia_sim_field, update_xdmf_step,
     store_static_actor, restore_static_actor,
 )
@@ -82,6 +83,7 @@ _STATIC_DATASETS: frozenset[str] = frozenset({
     "heart", "tibia_mesh", "aneurysm", "aneurysm_coils", "heart_ep",
     "rectangle_one_tree", "rectangle_two_trees",
     "rectangle_quad_500", "rectangle_quad_2000", "rectangle_quad_3000",
+    "liver_vessels",
 })
 
 _STATIC_REDRAW: dict[str, Callable[..., RenderResult]] = {
@@ -95,6 +97,7 @@ _STATIC_REDRAW: dict[str, Callable[..., RenderResult]] = {
     "rectangle_quad_500":  redraw_rectangle_quad,
     "rectangle_quad_2000": redraw_rectangle_quad,
     "rectangle_quad_3000": redraw_rectangle_quad,
+    "liver_vessels":       redraw_liver_vessels,
 }
 
 
@@ -515,7 +518,8 @@ def select_color_scheme(
             state.legend_items = result.legend_items
             state.mesh_stats = result.mesh_stats
         elif key in ("rectangle_one_tree", "rectangle_two_trees",
-                     "rectangle_quad_500", "rectangle_quad_2000", "rectangle_quad_3000"):
+                     "rectangle_quad_500", "rectangle_quad_2000", "rectangle_quad_3000",
+                     "liver_vessels"):
             redraw_fn = _STATIC_REDRAW[key]
             meta = project_metadata[key]
             ddir = dataset_dir(meta)

@@ -1012,6 +1012,34 @@ def redraw_rectangle_two_trees(
     return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera)
 
 
+_LIVER_VESSELS_PARTS: list[tuple[str, str]] = [
+    ("liver",                    "Liver"),
+    ("Liver_100000/julia/A",     "Arterial"),
+    ("Liver_100000/julia/P",     "Portal"),
+    ("Liver_100000/julia/V",     "Venous"),
+]
+
+
+def redraw_liver_vessels(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+) -> RenderResult:
+    """Render liver surface (PLY) and arterial/portal/venous trees (VTK) together."""
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    colors = region_colors(len(_LIVER_VESSELS_PARTS), _palette)
+    meshes = _load_multi_part_vtk(dataset_dir, _LIVER_VESSELS_PARTS, [".ply", ".vtk", ".vtu"])
+    if meshes is None:
+        return RenderResult()
+    clear_scene(plotter, dark_mode)
+    labels = [label for _, label in _LIVER_VESSELS_PARTS]
+    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera)
+
+
 def redraw_rectangle_quad(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,

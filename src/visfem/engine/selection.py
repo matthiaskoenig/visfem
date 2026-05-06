@@ -11,6 +11,7 @@ from visfem.engine.scene import (
     TIBIA_SIM_FIELDS, RenderResult, TrameCtrl,
     clear_scene, field_label, redraw_aneurysm, redraw_aneurysm_coils, redraw_heart, redraw_heart_ep,
     redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
+    redraw_rectangle_one_tree, redraw_rectangle_two_trees, redraw_rectangle_quad,
     get_active_actor, update_actor_palette, update_tibia_sim_field, update_xdmf_step,
     store_static_actor, restore_static_actor,
 )
@@ -77,16 +78,23 @@ def _reset_selection_state(state: Any) -> None:
     state.clim_override = None
 
 
-_STATIC_DATASETS: frozenset[str] = frozenset(
-    {"heart", "tibia_mesh", "aneurysm", "aneurysm_coils", "heart_ep"}
-)
+_STATIC_DATASETS: frozenset[str] = frozenset({
+    "heart", "tibia_mesh", "aneurysm", "aneurysm_coils", "heart_ep",
+    "rectangle_one_tree", "rectangle_two_trees",
+    "rectangle_quad_500", "rectangle_quad_2000", "rectangle_quad_3000",
+})
 
 _STATIC_REDRAW: dict[str, Callable[..., RenderResult]] = {
-    "heart":          redraw_heart,
-    "tibia_mesh":     redraw_tibia_mesh,
-    "aneurysm":       redraw_aneurysm,
-    "aneurysm_coils": redraw_aneurysm_coils,
-    "heart_ep":       redraw_heart_ep,
+    "heart":               redraw_heart,
+    "tibia_mesh":          redraw_tibia_mesh,
+    "aneurysm":            redraw_aneurysm,
+    "aneurysm_coils":      redraw_aneurysm_coils,
+    "heart_ep":            redraw_heart_ep,
+    "rectangle_one_tree":  redraw_rectangle_one_tree,
+    "rectangle_two_trees": redraw_rectangle_two_trees,
+    "rectangle_quad_500":  redraw_rectangle_quad,
+    "rectangle_quad_2000": redraw_rectangle_quad,
+    "rectangle_quad_3000": redraw_rectangle_quad,
 }
 
 
@@ -498,6 +506,20 @@ def select_color_scheme(
             meta = project_metadata["tibia_mesh"]
             ddir = dataset_dir(meta)
             result = redraw_tibia_mesh(
+                plotter, ctrl, ddir,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
+                palette=_resolve_palette(state),
+                reset_camera=False,
+            )
+            state.legend_items = result.legend_items
+            state.mesh_stats = result.mesh_stats
+        elif key in ("rectangle_one_tree", "rectangle_two_trees",
+                     "rectangle_quad_500", "rectangle_quad_2000", "rectangle_quad_3000"):
+            redraw_fn = _STATIC_REDRAW[key]
+            meta = project_metadata[key]
+            ddir = dataset_dir(meta)
+            result = redraw_fn(
                 plotter, ctrl, ddir,
                 dark_mode=state.dark_mode,
                 opacity=opacity,

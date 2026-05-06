@@ -102,3 +102,4 @@ class ProjectMetadata(BaseModel):
     spp_project: str | None = None   # SPP 2311 project title, None for non-SPP datasets
     spp_badge: bool = False          # show SPP 2311 badge without a project title
     subgroup: str | None = None      # optional sub-group label within the organ system (e.g. "Vessel")
+    sort_order: int | None = None    # explicit sort position within organ group / subgroup (None = sort by name)

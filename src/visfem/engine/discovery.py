@@ -64,7 +64,10 @@ def group_by_organ_system(
         system = meta.organ_system[0].value
         groups.setdefault(system, [])
         groups[system].append((key, meta))
-    return {system: sorted(items, key=lambda t: t[1].name) for system, items in sorted(groups.items())}
+    def _sort_key(t: tuple[str, ProjectMetadata]) -> tuple[int, str]:
+        meta = t[1]
+        return (meta.sort_order if meta.sort_order is not None else 999, meta.name)
+    return {system: sorted(items, key=_sort_key) for system, items in sorted(groups.items())}
 
 
 def dataset_dir(meta: ProjectMetadata) -> Path:

@@ -65,10 +65,16 @@ def build_left_panel(
                                         system.title(),
                                         style=f"font-size:{FS_SM}; font-weight:{FW_SEMI}; text-transform:uppercase; letter-spacing:{LS_WIDE}; opacity:{OP_MUTED};",
                                     )
-                        for key, meta in datasets:
+                        # Split datasets into ungrouped and sub-grouped buckets
+                        ungrouped = [(k, m) for k, m in datasets if not m.subgroup]
+                        subgroups: dict[str, list[tuple[str, ProjectMetadata]]] = {}
+                        for k, m in datasets:
+                            if m.subgroup:
+                                subgroups.setdefault(m.subgroup, []).append((k, m))
+
+                        def _render_dataset_item(key: str, meta: ProjectMetadata, indent: str) -> None:
                             ddir = dataset_dir(meta)
                             xdmf_files = discover_xdmf(ddir)
-
                             if key in patients_by_dataset:
                                 with v3.VListGroup(
                                     value=key,
@@ -80,7 +86,7 @@ def build_left_panel(
                                             v_bind="props", density="compact",
                                             active=(f"active_dataset === '{key}'",),
                                             active_color=ACCENT, rounded="lg",
-                                            style="padding-left:12px;",
+                                            style=f"padding-left:{indent};",
                                         ):
                                             with v3.Template(v_slot_title=""):
                                                 with html.Div(style=_ICON_GAP):
@@ -99,7 +105,6 @@ def build_left_panel(
                                                 with html.Div(style=_ICON_GAP):
                                                     v3.VIcon("mdi-account", size="x-small", style=f"opacity:{OP_MUTED}; flex-shrink:0;")
                                                     html.Span(f"Patient {patient:02d}", style=f"font-size:{FS_MD};")
-
                             elif len(xdmf_files) <= 1:
                                 with v3.VListItem(
                                     density="compact",
@@ -107,13 +112,12 @@ def build_left_panel(
                                     active_color=ACCENT, rounded="lg",
                                     click=(on_select_dataset, f"['{key}']"),
                                     disabled=("loading || busy",),
-                                    style="padding-left:12px;",
+                                    style=f"padding-left:{indent};",
                                 ):
                                     with v3.Template(v_slot_title=""):
                                         with html.Div(style=_ICON_GAP):
                                             v3.VIcon("mdi-circle-medium", size="x-small", style=f"opacity:{OP_MUTED}; flex-shrink:0;")
                                             html.Span(meta.name, style=f"font-size:{FS_MD}; white-space:normal; word-break:break-word;")
-
                             else:
                                 with v3.VListGroup(
                                     value=key,
@@ -125,7 +129,7 @@ def build_left_panel(
                                             v_bind="props", density="compact",
                                             active=(f"active_dataset === '{key}'",),
                                             active_color=ACCENT, rounded="lg",
-                                            style="padding-left:12px;",
+                                            style=f"padding-left:{indent};",
                                         ):
                                             with v3.Template(v_slot_title=""):
                                                 with html.Div(style=_ICON_GAP):
@@ -144,6 +148,24 @@ def build_left_panel(
                                                 with html.Div(style=_ICON_GAP):
                                                     v3.VIcon("mdi-circle-small", size="small", style=f"opacity:{OP_MUTED}; flex-shrink:0;")
                                                     html.Span(xdmf_display_name(stem), style=f"font-size:{FS_MD};")
+
+                        for key, meta in ungrouped:
+                            _render_dataset_item(key, meta, "12px")
+
+                        for subgroup_name, subgroup_datasets in sorted(subgroups.items()):
+                            with v3.VListGroup(
+                                value=subgroup_name,
+                                expand_icon="mdi-chevron-right",
+                                collapse_icon="mdi-chevron-down",
+                            ):
+                                with v3.Template(v_slot_activator="{ props }"):
+                                    with v3.VListItem(v_bind="props", density="compact", style="padding-left:12px;"):
+                                        with v3.Template(v_slot_title=""):
+                                            with html.Div(style=_ICON_GAP):
+                                                v3.VIcon("mdi-circle-medium", size="x-small", style=f"opacity:{OP_MUTED}; flex-shrink:0;")
+                                                html.Span(subgroup_name, style=f"font-size:{FS_MD};")
+                                for key, meta in subgroup_datasets:
+                                    _render_dataset_item(key, meta, "24px")
 
         # Section: Dataset Info
         v3.VDivider()

@@ -100,4 +100,5 @@ class ProjectMetadata(BaseModel):
     mesh_format: str                 # e.g. "VTK", "XDMF+HDF5", "VTU"
     references: list[str] = []       # DOIs, URLs, or citations
     spp_project: str | None = None   # SPP 2311 project title, None for non-SPP datasets
+    spp_badge: bool = False          # show SPP 2311 badge without a project title
     subgroup: str | None = None      # optional sub-group label within the organ system (e.g. "Vessel")

@@ -931,18 +931,26 @@ def _render_labeled_parts(
     opacity: float,
     bg_index: int | None,
     reset_camera: bool,
+    n_tube_sides: int = 8,
+    tubify: bool = True,
 ) -> RenderResult:
     """Merge labeled parts into one actor and push to scene.
 
+    Meshes with a 'radius' point array are converted to tubes when tubify=True.
     bg_index: if set, that part is rendered at reduced opacity as background.
     """
     global _active_actor
     total_cells = 0
     total_points = 0
+    processed: list[pv.DataSet] = []
     for i, mesh in enumerate(meshes):
+        if tubify and "radius" in mesh.point_data:
+            mesh = mesh.tube(scalars="radius", absolute=True, n_sides=n_tube_sides)
         mesh.cell_data["region_id"] = np.full(mesh.n_cells, i, dtype=np.int32)
         total_cells += mesh.n_cells
         total_points += mesh.n_points
+        processed.append(mesh)
+    meshes = processed
 
     merged = meshes[0]
     for m in meshes[1:]:
@@ -1037,7 +1045,7 @@ def redraw_liver_vessels(
         return RenderResult()
     clear_scene(plotter, dark_mode)
     labels = [label for _, label in _LIVER_VESSELS_PARTS]
-    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera)
+    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera, tubify=False)
 
 
 def redraw_rectangle_quad(

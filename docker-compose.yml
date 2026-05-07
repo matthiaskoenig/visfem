@@ -1,0 +1,27 @@
+# Build and start
+#  Update dependencies
+#    uv export --frozen --no-dev --no-editable -o deploy/setup/requirements.txt
+#  Build
+#    docker compose up --build
+
+# Key Environment Variables
+# Several environment variables control the runtime behavior:
+#
+# TRAME_USE_HOST — Overrides the sessionURL host. Useful when the app is served behind a reverse proxy or a different hostname. If the value contains ://, it replaces the entire ws://USE_HOST prefix.
+# TRAME_USER_DATA — Path inside Docker to check ownership and remap the UID/GID to the unprivileged trame-user. Useful when the container mounts host directories and the users don't match.
+# TRAME_URL_PREFIX — Serves content from a sub-path (e.g. /app) instead of /.
+# TRAME_LAUNCHER_TIMEOUT — Seconds to wait for a session to start before timing out (default: 25). GitHub
+
+services:
+  visfem:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    volumes:
+      - ./data:/data:ro        # mount local ./data into container at /data
+    environment:
+      TRAME_USER_DATA: /data   # remap UID/GID so trame-user can read it
+      DATA_DIR: /data

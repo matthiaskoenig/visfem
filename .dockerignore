@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.github
+.git/
+.tox/
+data/           ← add this
+deploy/server/
+docs/
+exploration/
+tests

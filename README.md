@@ -13,8 +13,7 @@ results, with a focus on biomedical applications. Source code is available from
 
 
 ## Installation
-`visfem` is available from [PyPI](https://pypi.python.org/pypi/visfem) and
-can be installed via
+`visfem` is available from [PyPI](https://pypi.python.org/pypi/visfem) and can be installed via
 
 ```bash
 pip install visfem
@@ -25,7 +24,7 @@ pip install visfem
 uv run visfem
 ```
 
-## Ngrok
+## ngrok
 ```bash
 ngrok http 8080
 ```

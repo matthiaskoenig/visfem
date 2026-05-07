@@ -162,12 +162,10 @@ def restore_static_actor(
     if entry is None:
         return None
     global _active_actor
+    clear_scene(plotter, dark_mode)  # hides all cached actors
     _active_actor = entry.actor
     entry.actor.SetVisibility(True)
-    # fiber_actor stays hidden — state.show_fibers is reset to False in select_dataset
-    _set_background(plotter, dark_mode)
-    plotter.render()
-    ctrl.view_update()
+    push_scene(plotter, ctrl, reset_camera=True)
     return entry
 
 
@@ -874,3 +872,197 @@ def redraw_tibia_simulation(
         push_scene(plotter, ctrl, reset_camera=reset_camera)
         scalar_bar = _scalar_bar_dict(field, clim, cmap)
         return RenderResult(mesh_stats=stats, scalar_bar_info=scalar_bar)
+
+
+# Vessel-tree dataset definitions
+_RECT_ONE_PARTS: list[tuple[str, str]] = [
+    ("rectangle", "Background tissue"),
+    ("Test1",     "Vessel tree"),
+]
+
+_RECT_TWO_PARTS: list[tuple[str, str]] = [
+    ("rectangle", "Background tissue"),
+    ("Test1",     "Vessel tree 1"),
+    ("Test2",     "Vessel tree 2"),
+]
+
+_QUAD_PARTS: list[tuple[str, str]] = [
+    ("A", "Arterial"),
+    ("B", "Biliary"),
+    ("P", "Portal"),
+    ("V", "Venous"),
+]
+
+
+def _load_multi_part_vtk(
+    ddir: Path,
+    parts: list[tuple[str, str]],
+    extensions: list[str],
+) -> list[pv.DataSet] | None:
+    """Load meshes for each part stem, trying each extension in order.
+
+    Returns None if any part is missing.
+    """
+    meshes: list[pv.DataSet] = []
+    for stem, _ in parts:
+        path: Path | None = None
+        for ext in extensions:
+            candidate = ddir / f"{stem}{ext}"
+            if candidate.exists():
+                path = candidate
+                break
+        if path is None:
+            logger.error(f"Mesh not found for '{stem}' in {ddir}")
+            return None
+        try:
+            meshes.append(load_mesh(path).copy())
+        except Exception as e:
+            logger.error(f"Failed to load {path}: {e}")
+            return None
+    return meshes
+
+
+def _render_labeled_parts(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    meshes: list[pv.DataSet],
+    labels: list[str],
+    colors: list[str],
+    opacity: float,
+    bg_index: int | None,
+    reset_camera: bool,
+    n_tube_sides: int = 8,
+    tubify: bool = True,
+) -> RenderResult:
+    """Merge labeled parts into one actor and push to scene.
+
+    Meshes with a 'radius' point array are converted to tubes when tubify=True.
+    bg_index: if set, that part is rendered at reduced opacity as background.
+    """
+    global _active_actor
+    total_cells = 0
+    total_points = 0
+    processed: list[pv.DataSet] = []
+    for i, mesh in enumerate(meshes):
+        if tubify and "radius" in mesh.point_data:
+            mesh = mesh.tube(scalars="radius", absolute=True, n_sides=n_tube_sides)
+        mesh.cell_data["region_id"] = np.full(mesh.n_cells, i, dtype=np.int32)
+        total_cells += mesh.n_cells
+        total_points += mesh.n_points
+        processed.append(mesh)
+    meshes = processed
+
+    merged = meshes[0]
+    for m in meshes[1:]:
+        merged = merged.merge(m)
+
+    n = len(meshes)
+    _active_actor = plotter.add_mesh(
+        merged,
+        scalars="region_id",
+        cmap=colors,
+        clim=[0, n - 1],
+        n_colors=n,
+        opacity=opacity,
+        show_edges=False,
+        show_scalar_bar=False,
+        copy_mesh=True,
+        interpolate_before_map=False,
+        render=False,
+    )
+    apply_opacity(plotter, opacity)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
+
+    legend = [{"names": [label], "color": colors[i]} for i, label in enumerate(labels)]
+    stats = {"n_cells": total_cells, "n_points": total_points}
+    return RenderResult(legend_items=legend, mesh_stats=stats)
+
+
+def redraw_rectangle_one_tree(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+) -> RenderResult:
+    """Render background rectangle (PLY) and single vessel tree (VTK) together."""
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    colors = region_colors(len(_RECT_ONE_PARTS), _palette)
+    exts = [".ply", ".vtk", ".vtu", ".stl"]
+    meshes = _load_multi_part_vtk(dataset_dir, _RECT_ONE_PARTS, exts)
+    if meshes is None:
+        return RenderResult()
+    clear_scene(plotter, dark_mode)
+    labels = [label for _, label in _RECT_ONE_PARTS]
+    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera)
+
+
+def redraw_rectangle_two_trees(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+) -> RenderResult:
+    """Render background rectangle (PLY) and two vessel trees (VTK) together."""
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    colors = region_colors(len(_RECT_TWO_PARTS), _palette)
+    exts = [".ply", ".vtk", ".vtu", ".stl"]
+    meshes = _load_multi_part_vtk(dataset_dir, _RECT_TWO_PARTS, exts)
+    if meshes is None:
+        return RenderResult()
+    clear_scene(plotter, dark_mode)
+    labels = [label for _, label in _RECT_TWO_PARTS]
+    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera)
+
+
+_LIVER_VESSELS_PARTS: list[tuple[str, str]] = [
+    ("liver",                    "Liver"),
+    ("Liver_100000/julia/A",     "Arterial"),
+    ("Liver_100000/julia/P",     "Portal"),
+    ("Liver_100000/julia/V",     "Venous"),
+]
+
+
+def redraw_liver_vessels(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+) -> RenderResult:
+    """Render liver surface (PLY) and arterial/portal/venous trees (VTK) together."""
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    colors = region_colors(len(_LIVER_VESSELS_PARTS), _palette)
+    meshes = _load_multi_part_vtk(dataset_dir, _LIVER_VESSELS_PARTS, [".ply", ".vtk", ".vtu"])
+    if meshes is None:
+        return RenderResult()
+    clear_scene(plotter, dark_mode)
+    labels = [label for _, label in _LIVER_VESSELS_PARTS]
+    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera, tubify=False)
+
+
+def redraw_rectangle_quad(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+) -> RenderResult:
+    """Render all four vascular networks (Arterial/Biliary/Portal/Venous) from A/B/P/V.vtk."""
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    colors = region_colors(len(_QUAD_PARTS), _palette)
+    meshes = _load_multi_part_vtk(dataset_dir, _QUAD_PARTS, [".vtk", ".vtu"])
+    if meshes is None:
+        return RenderResult()
+    clear_scene(plotter, dark_mode)
+    labels = [label for _, label in _QUAD_PARTS]
+    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=None, reset_camera=reset_camera)

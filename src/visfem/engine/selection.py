@@ -12,7 +12,7 @@ from visfem.engine.scene import (
     clear_scene, field_label, redraw_aneurysm, redraw_aneurysm_coils, redraw_heart, redraw_heart_ep,
     redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
     redraw_rectangle_one_tree, redraw_rectangle_two_trees, redraw_rectangle_quad,
-    redraw_liver_vessels,
+    redraw_liver_vessels, redraw_surface_mesh,
     get_active_actor, update_actor_palette, update_tibia_sim_field, update_xdmf_step,
     store_static_actor, restore_static_actor,
 )
@@ -84,20 +84,26 @@ _STATIC_DATASETS: frozenset[str] = frozenset({
     "rectangle_one_tree", "rectangle_two_trees",
     "rectangle_quad_500", "rectangle_quad_2000", "rectangle_quad_3000",
     "liver_vessels",
+    "tautenhahn_fracture",
+    "tautenhahn_tumor_preop",
+    "tautenhahn_tumor_postop",
 })
 
 _STATIC_REDRAW: dict[str, Callable[..., RenderResult]] = {
-    "heart":               redraw_heart,
-    "tibia_mesh":          redraw_tibia_mesh,
-    "aneurysm":            redraw_aneurysm,
-    "aneurysm_coils":      redraw_aneurysm_coils,
-    "heart_ep":            redraw_heart_ep,
-    "rectangle_one_tree":  redraw_rectangle_one_tree,
-    "rectangle_two_trees": redraw_rectangle_two_trees,
-    "rectangle_quad_500":  redraw_rectangle_quad,
-    "rectangle_quad_2000": redraw_rectangle_quad,
-    "rectangle_quad_3000": redraw_rectangle_quad,
-    "liver_vessels":       redraw_liver_vessels,
+    "heart":                    redraw_heart,
+    "tibia_mesh":               redraw_tibia_mesh,
+    "aneurysm":                 redraw_aneurysm,
+    "aneurysm_coils":           redraw_aneurysm_coils,
+    "heart_ep":                 redraw_heart_ep,
+    "rectangle_one_tree":       redraw_rectangle_one_tree,
+    "rectangle_two_trees":      redraw_rectangle_two_trees,
+    "rectangle_quad_500":       redraw_rectangle_quad,
+    "rectangle_quad_2000":      redraw_rectangle_quad,
+    "rectangle_quad_3000":      redraw_rectangle_quad,
+    "liver_vessels":            redraw_liver_vessels,
+    "tautenhahn_fracture":      redraw_surface_mesh,
+    "tautenhahn_tumor_preop":   redraw_surface_mesh,
+    "tautenhahn_tumor_postop":  redraw_surface_mesh,
 }
 
 

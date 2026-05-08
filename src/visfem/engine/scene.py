@@ -674,6 +674,48 @@ def redraw_tibia_mesh(
     return RenderResult(legend_items=legend, mesh_stats=stats)
 
 
+def redraw_surface_mesh(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+) -> RenderResult:
+    """Render bone_surface.vtu from dataset_dir as a single-color surface."""
+    vtu_path = dataset_dir / "bone_surface.vtu"
+    if not vtu_path.exists():
+        logger.error(f"bone_surface.vtu not found in {dataset_dir}")
+        return RenderResult()
+
+    try:
+        mesh = load_mesh(vtu_path)
+    except Exception as e:
+        logger.error(f"Failed to load surface mesh {vtu_path}: {e}")
+        return RenderResult()
+
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    color = _palette[0]
+
+    global _active_actor
+    clear_scene(plotter, dark_mode)
+    _active_actor = plotter.add_mesh(
+        mesh,
+        color=color,
+        opacity=opacity,
+        show_edges=False,
+        show_scalar_bar=False,
+        copy_mesh=True,
+        render=False,
+    )
+    apply_opacity(plotter, opacity)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
+
+    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+    return RenderResult(mesh_stats=stats)
+
+
 def redraw_aneurysm(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,

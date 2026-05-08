@@ -1,0 +1,11 @@
+{
+  "data_path": "tautenhahn_tumor_postop",
+  "name": "Head/Neck Tumor — Post-op Bone (CT)",
+  "pi": "Hans-Michael Tautenhahn",
+  "institution": ["Universitätsklinikum Leipzig"],
+  "biological_scale": "organ",
+  "organ_system": ["bone"],
+  "description": "Bone isosurface from a post-operative head/neck CT",
+  "mesh_format": "DICOM/VTU",
+  "references": []
+}

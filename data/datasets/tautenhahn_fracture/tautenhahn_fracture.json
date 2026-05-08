@@ -1,0 +1,11 @@
+{
+  "data_path": "tautenhahn_fracture",
+  "name": "Facial Bone Fracture (CT)",
+  "pi": "Hans-Michael Tautenhahn",
+  "institution": ["Universitätsklinikum Leipzig"],
+  "biological_scale": "organ",
+  "organ_system": ["bone"],
+  "description": "Bone isosurface from CT of facial bone fractures.",
+  "mesh_format": "DICOM/VTU",
+  "references": []
+}

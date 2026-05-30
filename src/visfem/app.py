@@ -27,6 +27,8 @@ logger = get_logger(__name__)
 
 _TARGET_FRAMES: int = 30    # max rendered frames for autoplay
 _FRAME_SLEEP: float = 0.2   # seconds between frames
+# Hold the loading overlay this long after pushing geometry, to cover the client-side
+_RENDER_SETTLE: float = 1.6  # seconds
 
 
 class VisfemApp(TrameApp):
@@ -280,12 +282,19 @@ class VisfemApp(TrameApp):
         xdmf_files = discover_xdmf(dataset_dir(meta))
         return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
 
-    def _start_vtkjs_warmup(self) -> None:
-        """Start the mesh-cache warmup task, or clear loading immediately for static datasets."""
+    async def _start_vtkjs_warmup(self) -> None:
+        """Warm the mesh cache, or (for static datasets) re-push geometry then clear loading."""
         n_steps = int(self.state.n_steps)
         if n_steps <= 1:
+            # Let the trame-vtk delta flush, then kick a re-render (disable_auto_switch
+            # means the client won't repaint on its own) before removing the overlay.
+            self.state.step_inc = 1
+            await asyncio.sleep(0.05)
+            self.ctrl.view_update()
+            self.ctrl.view_push_camera()
+            # Keep the overlay up while the client paints the new geometry.
+            await asyncio.sleep(_RENDER_SETTLE)
             with self.state:
-                self.state.step_inc = 1
                 self.state.loading = False
                 self.state.busy = False
             return
@@ -380,7 +389,7 @@ class VisfemApp(TrameApp):
         )
         apply_opacity(self.plotter, float(self.state.ctrl_opacity))
         self._initial_camera = self.plotter.camera_position
-        self._start_vtkjs_warmup()
+        await self._start_vtkjs_warmup()
 
     async def select_xdmf(self, key: str, stem: str) -> None:
         """Load and render a specific XDMF file within a multi-file dataset."""
@@ -397,7 +406,7 @@ class VisfemApp(TrameApp):
         )
         apply_opacity(self.plotter, float(self.state.ctrl_opacity))
         self._initial_camera = self.plotter.camera_position
-        self._start_vtkjs_warmup()
+        await self._start_vtkjs_warmup()
 
     async def select_patient(self, dataset_key: str, patient: int) -> None:
         """Load and render a specific patient from a multi-patient dataset."""
@@ -414,7 +423,7 @@ class VisfemApp(TrameApp):
         )
         apply_opacity(self.plotter, float(self.state.ctrl_opacity))
         self._initial_camera = self.plotter.camera_position
-        self._start_vtkjs_warmup()
+        await self._start_vtkjs_warmup()
 
     async def select_scalar_field(self, field: str) -> None:
         """Re-render the current dataset with the given scalar field."""
@@ -502,24 +511,6 @@ class VisfemApp(TrameApp):
                     _FRAME_SLEEP,
                 )
             )
-
-    def sync_camera(self, camera: dict) -> None:
-        """Sync client camera state to server plotter."""
-        cam = self.plotter.camera
-        cam.SetPosition(*camera["position"])
-        cam.SetFocalPoint(*camera["focalPoint"])
-        cam.SetViewUp(*camera["viewUp"])
-        cam.SetParallelProjection(camera["parallelProjection"])
-        cam.SetParallelScale(camera["parallelScale"])
-        cam.SetViewAngle(camera["viewAngle"])
-        self.plotter.renderer.ResetCameraClippingRange()
-
-    def _on_camera_sync(self, **kwargs: object) -> None:
-        """Keep server camera in sync with client on every interaction."""
-        self.plotter.camera.position = kwargs["position"]
-        self.plotter.camera.focal_point = kwargs["focalPoint"]
-        self.plotter.camera.up = kwargs["viewUp"]
-        self.plotter.renderer.ResetCameraClippingRange()
 
 
 def main() -> None:

@@ -44,6 +44,11 @@ _xdmf_mesh: pv.DataSet | None = None
 _xdmf_actor: vtkActor | None = None
 _static_cache: dict[str, _StaticCache] = {}
 
+# Relative opacity multiplier for background parts (e.g. vessel-tree rectangle/liver).
+_BG_OPACITY_FACTOR: float = 0.25
+# Actors tracking a fraction of the global opacity rather than its full value.
+_bg_actors: set[vtkActor] = set()
+
 
 def get_active_actor() -> vtkActor | None:
     """Return the currently tracked main mesh actor, or None if no dataset is loaded."""
@@ -136,6 +141,7 @@ def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
     _active_actor = None
     _xdmf_mesh = None
     _xdmf_actor = None
+    _bg_actors.clear()
     cached = {a for e in _static_cache.values() for a in (e.actor, e.fiber_actor) if a}
     for actor in list(plotter.renderer.actors.values()):
         if actor in cached:
@@ -170,10 +176,11 @@ def restore_static_actor(
 
 
 def apply_opacity(plotter: pv.Plotter, opacity: float) -> None:
-    """Push opacity value to every vtkActor in the renderer."""
+    """Push opacity to every vtkActor; background actors get a dimmed fraction."""
     for actor in plotter.renderer.actors.values():
         if isinstance(actor, vtkActor):
-            actor.GetProperty().SetOpacity(opacity)
+            factor = _BG_OPACITY_FACTOR if actor in _bg_actors else 1.0
+            actor.GetProperty().SetOpacity(opacity * factor)
 
 
 def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) -> None:
@@ -979,7 +986,7 @@ def _render_labeled_parts(
     """Merge labeled parts into one actor and push to scene.
 
     Meshes with a 'radius' point array are converted to tubes when tubify=True.
-    bg_index: if set, that part is rendered at reduced opacity as background.
+    bg_index: if set, that part is rendered as a separate dimmed background actor.
     """
     global _active_actor
     total_cells = 0
@@ -993,12 +1000,27 @@ def _render_labeled_parts(
         total_points += mesh.n_points
         processed.append(mesh)
     meshes = processed
+    n = len(meshes)
 
-    merged = meshes[0]
-    for m in meshes[1:]:
+    # Background part (if any) is rendered as its own actor so it can be dimmed
+    # independently of the foreground vessel trees.
+    if bg_index is not None:
+        bg_actor = plotter.add_mesh(
+            meshes[bg_index],
+            color=colors[bg_index],
+            opacity=opacity * _BG_OPACITY_FACTOR,
+            show_edges=False,
+            show_scalar_bar=False,
+            copy_mesh=True,
+            render=False,
+        )
+        _bg_actors.add(bg_actor)
+
+    fg = [m for i, m in enumerate(meshes) if i != bg_index]
+    merged = fg[0]
+    for m in fg[1:]:
         merged = merged.merge(m)
 
-    n = len(meshes)
     _active_actor = plotter.add_mesh(
         merged,
         scalars="region_id",

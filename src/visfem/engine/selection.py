@@ -423,6 +423,23 @@ def select_patient(
         state.trame__busy = False
 
 
+def _recolor_active_actor(plotter: pv.Plotter, ctrl: TrameCtrl, state: Any) -> bool:
+    """Fast-path: swap the categorical LUT on the active actor and recolor the legend.
+
+    Returns True if an actor was recolored, False if no actor is tracked (caller
+    must fall back to a full redraw).
+    """
+    if get_active_actor() is None:
+        return False
+    n = len(state.legend_items)
+    colors = region_colors(n, _resolve_palette(state))
+    update_actor_palette(plotter, ctrl, colors, n)
+    state.legend_items = [
+        {**item, "color": colors[i]} for i, item in enumerate(state.legend_items)
+    ]
+    return True
+
+
 def select_color_scheme(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,
@@ -439,14 +456,7 @@ def select_color_scheme(
     state.trame__busy = True
     try:
         if state.active_patient is not None:
-            if get_active_actor() is not None:
-                n = len(state.legend_items)
-                colors = region_colors(n, _resolve_palette(state))
-                update_actor_palette(plotter, ctrl, colors, n)
-                state.legend_items = [
-                    {**item, "color": colors[i]}
-                    for i, item in enumerate(state.legend_items)
-                ]
+            if _recolor_active_actor(plotter, ctrl, state):
                 return
             patient: int = state.active_patient
             meta = project_metadata[key]
@@ -461,14 +471,7 @@ def select_color_scheme(
             state.legend_items = result.legend_items
             state.mesh_stats = result.mesh_stats
         elif key == "heart":
-            if get_active_actor() is not None:
-                n = len(state.legend_items)
-                colors = region_colors(n, _resolve_palette(state))
-                update_actor_palette(plotter, ctrl, colors, n)
-                state.legend_items = [
-                    {**item, "color": colors[i]}
-                    for i, item in enumerate(state.legend_items)
-                ]
+            if _recolor_active_actor(plotter, ctrl, state):
                 return
             meta = project_metadata["heart"]
             ddir = dataset_dir(meta)
@@ -482,14 +485,7 @@ def select_color_scheme(
             state.legend_items = result.legend_items
             state.mesh_stats = result.mesh_stats
         elif key == "heart_ep":
-            if get_active_actor() is not None:
-                n = len(state.legend_items)
-                colors = region_colors(n, _resolve_palette(state))
-                update_actor_palette(plotter, ctrl, colors, n)
-                state.legend_items = [
-                    {**item, "color": colors[i]}
-                    for i, item in enumerate(state.legend_items)
-                ]
+            if _recolor_active_actor(plotter, ctrl, state):
                 return
             meta = project_metadata["heart_ep"]
             ddir = dataset_dir(meta)
@@ -503,14 +499,7 @@ def select_color_scheme(
             state.legend_items = result.legend_items
             state.mesh_stats = result.mesh_stats
         elif key == "tibia_mesh":
-            if get_active_actor() is not None:
-                n = len(state.legend_items)
-                colors = region_colors(n, _resolve_palette(state))
-                update_actor_palette(plotter, ctrl, colors, n)
-                state.legend_items = [
-                    {**item, "color": colors[i]}
-                    for i, item in enumerate(state.legend_items)
-                ]
+            if _recolor_active_actor(plotter, ctrl, state):
                 return
             meta = project_metadata["tibia_mesh"]
             ddir = dataset_dir(meta)
@@ -551,14 +540,7 @@ def select_color_scheme(
             state.legend_items = result.legend_items
             state.mesh_stats = result.mesh_stats
         elif key == "aneurysm_coils":
-            if get_active_actor() is not None:
-                n = len(state.legend_items)
-                colors = region_colors(n, _resolve_palette(state))
-                update_actor_palette(plotter, ctrl, colors, n)
-                state.legend_items = [
-                    {**item, "color": colors[i]}
-                    for i, item in enumerate(state.legend_items)
-                ]
+            if _recolor_active_actor(plotter, ctrl, state):
                 return
             meta = project_metadata["aneurysm_coils"]
             ddir = dataset_dir(meta)

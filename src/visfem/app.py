@@ -11,7 +11,7 @@ from trame.decorators import change
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
 from visfem.engine.discovery import dataset_dir, discover_xdmf, group_by_organ_system, load_project_metadata, pvd_file_path
 from visfem.engine.playback import autoplay_loop, preload_steps, vtkjs_warmup
-from visfem.engine.scene import apply_opacity, update_scalar_range
+from visfem.engine.scene import apply_opacity, push_scene_full, update_scalar_range
 from visfem.engine.xr_manager import XRManager
 from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
 from visfem.engine.selection import (
@@ -283,21 +283,28 @@ class VisfemApp(TrameApp):
         return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
 
     async def _start_vtkjs_warmup(self) -> None:
-        """Warm the mesh cache, or (for static datasets) re-push geometry then clear loading."""
+        """Force a full scene resend, then (for time series) warm the step cache.
+
+        A dataset switch must reach the client as a *full* state, not a delta:
+        local-mode deltas can mis-decode reused arrays or miss in-place changes,
+        leaving stale colors or corrupted geometry until an F5. ``push_scene_full``
+        re-wraps the render window so the client rebuilds from scratch.
+        """
         n_steps = int(self.state.n_steps)
         if n_steps <= 1:
-            # Let the trame-vtk delta flush, then kick a re-render (disable_auto_switch
-            # means the client won't repaint on its own) before removing the overlay.
             self.state.step_inc = 1
+            # disable_auto_switch means the client won't repaint on its own; the
+            # full resend below is the single authoritative push for this switch.
             await asyncio.sleep(0.05)
-            self.ctrl.view_update()
-            self.ctrl.view_push_camera()
+            push_scene_full(self.plotter, self.ctrl)
             # Keep the overlay up while the client paints the new geometry.
             await asyncio.sleep(_RENDER_SETTLE)
             with self.state:
                 self.state.loading = False
                 self.state.busy = False
             return
+        await asyncio.sleep(0.05)
+        push_scene_full(self.plotter, self.ctrl)
         inc = math.ceil(n_steps / _TARGET_FRAMES)
         self.state.step_inc = inc
         path = self._resolve_active_path()

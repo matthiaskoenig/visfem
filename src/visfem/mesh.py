@@ -5,6 +5,7 @@ get_metadata(path)     -> MeshMetadata
 """
 
 import threading
+import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import cast
@@ -557,7 +558,15 @@ def _load_static(path: Path) -> pv.DataSet:
         logger.debug(f"[pyvista] loading '{path.name}'")
         return cast(pv.DataSet, pv.read(str(path)))
     logger.debug(f"[meshio] loading '{path.name}'")
-    return pv.from_meshio(meshio.read(str(path)))
+    # meshio's STL binary/ASCII probe does `84 + num_triangles * 50 == filesize`
+    # in a fixed-width int, which harmlessly overflows on large STLs. Silence that
+    # one benign RuntimeWarning so it doesn't pollute the logs.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message="overflow encountered in scalar multiply",
+            category=RuntimeWarning,
+        )
+        return pv.from_meshio(meshio.read(str(path)))
 
 
 def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
@@ -589,6 +598,24 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     with _step_cache_lock:
         _step_cache[key] = mesh
     return mesh.copy(deep=False)
+
+
+_surface_cache: dict[Path, pv.PolyData] = {}
+
+
+def load_surface(path: Path) -> pv.PolyData:
+    """Load a mesh and return its external surface as PolyData (cached).
+
+    For large raw UnstructuredGrids that must reach the vtk.js client as an
+    explicit-poly surface to avoid client-side faceting artifacts.
+    """
+    if path not in _surface_cache:
+        mesh = load_mesh(path)
+        # PolyData passes through unchanged; only UnstructuredGrids need extraction.
+        surface = mesh if isinstance(mesh, pv.PolyData) else mesh.extract_surface(algorithm="dataset_surface")
+        _surface_cache[path] = surface
+    return _surface_cache[path].copy(deep=False)
+
 
 def preload_all_meshes(project_metadata: dict) -> None:
     """Pre-populate the mesh cache at server startup."""

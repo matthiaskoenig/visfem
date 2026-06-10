@@ -44,6 +44,42 @@ class UICallbacks:
     on_exit_xr: object
 
 
+def _make_push_full(view: VtkRemoteLocalView) -> object:
+    """Return a callback that pushes a *full* (non-delta) scene to the vtk.js client.
+
+    Background: ``view.update()`` publishes an incremental delta over
+    ``trame.vtk.delta`` computed against the synchronization context's cached
+    array-dependency list. On a dataset switch that delta can reference a stale
+    array hash (the serializer downsizes integer/connectivity arrays to a
+    value-dependent dtype and caches them by content hash), so the client paints
+    corrupted geometry until an F5 forces it to re-read the full ``...Scene`` state.
+
+    This callback recomputes the scene with ``new_state=True`` — which sets
+    ``ignore_last_dependencies`` so every array is emitted fresh — and publishes it
+    on the same delta channel, making the client replace its whole scene graph.
+    Falls back to ``view.update()`` if any internal attr is unavailable across a
+    trame-vtk version bump.
+    """
+    def push_full() -> None:
+        server = view.server
+        if not getattr(server, "protocol", None):
+            view.update()
+            return
+        try:
+            helper = view._helper
+            vtk_view = getattr(view, "_VtkRemoteLocalView__view")
+            # Refresh the mount/reconnect snapshot (server.state[...Scene]) and camera
+            # first, then publish the authoritative full state last so it is the final
+            # payload the client applies for this switch.
+            view.update()
+            full_state = helper.scene(vtk_view, new_state=True)
+            server.protocol.publish("trame.vtk.delta", full_state)
+        except (AttributeError, KeyError):
+            view.update()
+
+    return push_full
+
+
 def build_ui(
     server: object,
     plotter: pv.Plotter,
@@ -211,6 +247,7 @@ def build_ui(
                         ctrl.view_push_camera = view.push_camera
                         ctrl.view_update = view.update
                         ctrl.view_update_geometry = view.update_geometry
+                        ctrl.view_push_full = _make_push_full(view)
                         ctrl.capture_screenshot = view.capture_image
                         webxr_helper = VtkWebXRHelper(
                             draw_controllers_ray=True,

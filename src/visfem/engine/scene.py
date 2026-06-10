@@ -1,7 +1,7 @@
 """Scene management and mesh rendering helpers."""
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, NamedTuple, Protocol
+from typing import Any, Protocol
 
 import numpy as np
 import pyvista as pv
@@ -14,7 +14,7 @@ from visfem.engine.colors import (
 from visfem.engine.palettes import CATEGORICAL_PALETTES, CONTINUOUS_CMAPS
 from visfem.engine.discovery import ircadb_organ_names, format_organ_name
 from visfem.log import get_logger
-from visfem.mesh import load_mesh, parse_labels_file
+from visfem.mesh import load_mesh, load_surface, parse_labels_file
 from visfem.models import MeshMetadata, ProjectMetadata
 
 logger = get_logger(__name__)
@@ -28,13 +28,6 @@ class RenderResult:
     fiber_actor: vtkActor | None = None
 
 
-class _StaticCache(NamedTuple):
-    actor: vtkActor
-    fiber_actor: vtkActor | None      # heart only, else None
-    legend_items: list[dict[str, Any]]
-    mesh_stats: dict[str, Any] | None
-
-
 _FIBER_SUBSAMPLE: int = 5
 _GLYPH_SCALE: float = 1.5
 _PERCENTILE_CLAMP: int = 95
@@ -42,12 +35,6 @@ _PERCENTILE_CLAMP: int = 95
 _active_actor: vtkActor | None = None
 _xdmf_mesh: pv.DataSet | None = None
 _xdmf_actor: vtkActor | None = None
-_static_cache: dict[str, _StaticCache] = {}
-
-# Relative opacity multiplier for background parts (e.g. vessel-tree rectangle/liver).
-_BG_OPACITY_FACTOR: float = 0.25
-# Actors tracking a fraction of the global opacity rather than its full value.
-_bg_actors: set[vtkActor] = set()
 
 
 def get_active_actor() -> vtkActor | None:
@@ -58,6 +45,7 @@ def get_active_actor() -> vtkActor | None:
 class TrameCtrl(Protocol):
     def view_push_camera(self) -> None: ...
     def view_update(self) -> None: ...
+    def view_push_full(self) -> None: ...
 
 
 
@@ -136,51 +124,25 @@ def _set_background(plotter: pv.Plotter, dark_mode: bool) -> None:
 
 
 def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
-    """Hide cached static actors; remove all others. Preserves vtk.js geometry cache."""
+    """Remove all actors from the renderer and reset scene state.
+
+    Actors are removed (not hidden) so the local-mode vtk.js client receives a
+    real deletion delta — hiding alone leaves stale geometry painted client-side.
+    """
     global _active_actor, _xdmf_mesh, _xdmf_actor
     _active_actor = None
     _xdmf_mesh = None
     _xdmf_actor = None
-    _bg_actors.clear()
-    cached = {a for e in _static_cache.values() for a in (e.actor, e.fiber_actor) if a}
     for actor in list(plotter.renderer.actors.values()):
-        if actor in cached:
-            actor.SetVisibility(False)
-        else:
-            plotter.renderer.RemoveActor(actor)
+        plotter.renderer.RemoveActor(actor)
     _set_background(plotter, dark_mode)
 
 
-def store_static_actor(
-    key: str,
-    actor: vtkActor,
-    fiber_actor: vtkActor | None,
-    legend_items: list[dict[str, Any]],
-    mesh_stats: dict[str, Any] | None,
-) -> None:
-    _static_cache[key] = _StaticCache(actor, fiber_actor, legend_items, mesh_stats)
-
-
-def restore_static_actor(
-    key: str, plotter: pv.Plotter, ctrl: TrameCtrl, dark_mode: bool,
-) -> _StaticCache | None:
-    entry = _static_cache.get(key)
-    if entry is None:
-        return None
-    global _active_actor
-    clear_scene(plotter, dark_mode)  # hides all cached actors
-    _active_actor = entry.actor
-    entry.actor.SetVisibility(True)
-    push_scene(plotter, ctrl, reset_camera=True)
-    return entry
-
-
 def apply_opacity(plotter: pv.Plotter, opacity: float) -> None:
-    """Push opacity to every vtkActor; background actors get a dimmed fraction."""
+    """Push opacity value to every vtkActor in the renderer."""
     for actor in plotter.renderer.actors.values():
         if isinstance(actor, vtkActor):
-            factor = _BG_OPACITY_FACTOR if actor in _bg_actors else 1.0
-            actor.GetProperty().SetOpacity(opacity * factor)
+            actor.GetProperty().SetOpacity(opacity)
 
 
 def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) -> None:
@@ -190,6 +152,27 @@ def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) 
         plotter.reset_camera()
         ctrl.view_push_camera()
     ctrl.view_update()
+
+
+def push_scene_full(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) -> None:
+    """Force a full (non-delta) scene resend to the vtk.js client.
+
+    On dataset switches the local-mode *delta* can reference a stale array hash
+    (the serializer caches connectivity/scalar arrays under a value-dependent
+    dtype, keyed by content hash), so the client paints corrupted geometry or wrong
+    colors until an F5. ``view_push_full`` republishes the scene with every array
+    emitted fresh, making the client rebuild its whole scene graph. Falls back to a
+    plain delta push when no view is bound (e.g. headless tests).
+    """
+    plotter.render()
+    if reset_camera:
+        plotter.reset_camera()
+        ctrl.view_push_camera()
+    push_full = getattr(ctrl, "view_push_full", None)
+    if push_full is not None:
+        push_full()
+    else:
+        ctrl.view_update()
 
 
 # Mapper fast-path helpers — update color/field without rebuilding the scene
@@ -383,6 +366,10 @@ def update_xdmf_step(
         _xdmf_mesh[name] = new_mesh[name]
     _xdmf_mesh.points = new_mesh.points
 
+    # Mark the dataset modified, not just the mapper: in-place point/array swaps
+    # with unchanged object identity are otherwise missed by the trame delta diff
+    # (vtk-js #1921), leaving the client painting the previous step.
+    _xdmf_mesh.Modified()
     _xdmf_actor.GetMapper().Modified()
     plotter.render()
     ctrl.view_update()
@@ -697,7 +684,7 @@ def redraw_surface_mesh(
         return RenderResult()
 
     try:
-        mesh = load_mesh(vtu_path)
+        mesh = load_surface(vtu_path)
     except Exception as e:
         logger.error(f"Failed to load surface mesh {vtu_path}: {e}")
         return RenderResult()
@@ -978,7 +965,6 @@ def _render_labeled_parts(
     labels: list[str],
     colors: list[str],
     opacity: float,
-    bg_index: int | None,
     reset_camera: bool,
     n_tube_sides: int = 8,
     tubify: bool = True,
@@ -986,7 +972,6 @@ def _render_labeled_parts(
     """Merge labeled parts into one actor and push to scene.
 
     Meshes with a 'radius' point array are converted to tubes when tubify=True.
-    bg_index: if set, that part is rendered as a separate dimmed background actor.
     """
     global _active_actor
     total_cells = 0
@@ -994,7 +979,12 @@ def _render_labeled_parts(
     processed: list[pv.DataSet] = []
     for i, mesh in enumerate(meshes):
         if tubify and "radius" in mesh.point_data:
-            mesh = mesh.tube(scalars="radius", absolute=True, n_sides=n_tube_sides)
+            # pv.tube() emits triangle *strips*. In trame local mode a strip's
+            # connectivity is order-dependent, so a single stale index in a delta
+            # unzips the whole strip into spikes across the viewport (only fixable
+            # by F5). Triangulate to plain polys, which the vtk.js client syncs
+            # reliably — same geometry, one isolated bad triangle at worst.
+            mesh = mesh.tube(scalars="radius", absolute=True, n_sides=n_tube_sides).triangulate()
         mesh.cell_data["region_id"] = np.full(mesh.n_cells, i, dtype=np.int32)
         total_cells += mesh.n_cells
         total_points += mesh.n_points
@@ -1002,23 +992,8 @@ def _render_labeled_parts(
     meshes = processed
     n = len(meshes)
 
-    # Background part (if any) is rendered as its own actor so it can be dimmed
-    # independently of the foreground vessel trees.
-    if bg_index is not None:
-        bg_actor = plotter.add_mesh(
-            meshes[bg_index],
-            color=colors[bg_index],
-            opacity=opacity * _BG_OPACITY_FACTOR,
-            show_edges=False,
-            show_scalar_bar=False,
-            copy_mesh=True,
-            render=False,
-        )
-        _bg_actors.add(bg_actor)
-
-    fg = [m for i, m in enumerate(meshes) if i != bg_index]
-    merged = fg[0]
-    for m in fg[1:]:
+    merged = meshes[0]
+    for m in meshes[1:]:
         merged = merged.merge(m)
 
     _active_actor = plotter.add_mesh(
@@ -1060,7 +1035,7 @@ def redraw_rectangle_one_tree(
         return RenderResult()
     clear_scene(plotter, dark_mode)
     labels = [label for _, label in _RECT_ONE_PARTS]
-    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera)
+    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, reset_camera=reset_camera)
 
 
 def redraw_rectangle_two_trees(
@@ -1081,7 +1056,7 @@ def redraw_rectangle_two_trees(
         return RenderResult()
     clear_scene(plotter, dark_mode)
     labels = [label for _, label in _RECT_TWO_PARTS]
-    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera)
+    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, reset_camera=reset_camera)
 
 
 _LIVER_VESSELS_PARTS: list[tuple[str, str]] = [
@@ -1109,7 +1084,7 @@ def redraw_liver_vessels(
         return RenderResult()
     clear_scene(plotter, dark_mode)
     labels = [label for _, label in _LIVER_VESSELS_PARTS]
-    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera, tubify=False)
+    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, reset_camera=reset_camera, tubify=False)
 
 
 def redraw_rectangle_quad(
@@ -1129,4 +1104,4 @@ def redraw_rectangle_quad(
         return RenderResult()
     clear_scene(plotter, dark_mode)
     labels = [label for _, label in _QUAD_PARTS]
-    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=None, reset_camera=reset_camera)
+    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, reset_camera=reset_camera)

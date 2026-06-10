@@ -14,7 +14,6 @@ from visfem.engine.scene import (
     redraw_rectangle_one_tree, redraw_rectangle_two_trees, redraw_rectangle_quad,
     redraw_liver_vessels, redraw_surface_mesh,
     get_active_actor, update_actor_palette, update_tibia_sim_field, update_xdmf_step,
-    store_static_actor, restore_static_actor,
 )
 from visfem.log import get_logger
 from visfem.models import MeshMetadata, ProjectMetadata
@@ -116,18 +115,9 @@ def _redraw_static(
     state: Any,
     opacity: float,
 ) -> RenderResult:
-    entry = restore_static_actor(key, plotter, ctrl, state.dark_mode)
-    if entry is not None:
-        colors = _resolve_palette(state)
-        update_actor_palette(plotter, ctrl, colors, len(entry.legend_items))
-        legend = [{**item, "color": colors[i]} for i, item in enumerate(entry.legend_items)]
-        return RenderResult(legend_items=legend, mesh_stats=entry.mesh_stats, fiber_actor=entry.fiber_actor)
-
     fn = _STATIC_REDRAW[key]
     common = dict(dark_mode=state.dark_mode, opacity=opacity, palette=_resolve_palette(state))
-    result = fn(plotter, ctrl, meta, ddir, **common) if key == "heart" else fn(plotter, ctrl, ddir, **common)
-    store_static_actor(key, get_active_actor(), result.fiber_actor, result.legend_items, result.mesh_stats)
-    return result
+    return fn(plotter, ctrl, meta, ddir, **common) if key == "heart" else fn(plotter, ctrl, ddir, **common)
 
 
 def select_dataset(

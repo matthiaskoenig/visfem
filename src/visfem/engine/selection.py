@@ -1,4 +1,5 @@
 """Dataset selection handlers for VisFEM."""
+from functools import partial
 from pathlib import Path
 
 import pyvista as pv
@@ -12,7 +13,7 @@ from visfem.engine.scene import (
     clear_scene, field_label, redraw_aneurysm, redraw_aneurysm_coils, redraw_heart, redraw_heart_ep,
     redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
     redraw_rectangle_one_tree, redraw_rectangle_two_trees, redraw_rectangle_quad,
-    redraw_liver_vessels, redraw_surface_mesh,
+    redraw_liver_vessels, redraw_surface_mesh, redraw_stl_surface,
     get_active_actor, update_actor_palette, update_tibia_sim_field, update_xdmf_step,
 )
 from visfem.log import get_logger
@@ -86,6 +87,8 @@ _STATIC_DATASETS: frozenset[str] = frozenset({
     "tautenhahn_fracture",
     "tautenhahn_tumor_preop",
     "tautenhahn_tumor_postop",
+    "ia_ai4ia",
+    "avm_md",
 })
 
 _STATIC_REDRAW: dict[str, Callable[..., RenderResult]] = {
@@ -103,6 +106,8 @@ _STATIC_REDRAW: dict[str, Callable[..., RenderResult]] = {
     "tautenhahn_fracture":      redraw_surface_mesh,
     "tautenhahn_tumor_preop":   redraw_surface_mesh,
     "tautenhahn_tumor_postop":  redraw_surface_mesh,
+    "ia_ai4ia":                 partial(redraw_stl_surface, filename="IA_AI4IA.stl"),
+    "avm_md":                   partial(redraw_stl_surface, filename="AVM_Modell_MD.stl"),
 }
 
 
@@ -505,6 +510,21 @@ def select_color_scheme(
         elif key in ("rectangle_one_tree", "rectangle_two_trees",
                      "rectangle_quad_500", "rectangle_quad_2000", "rectangle_quad_3000",
                      "liver_vessels"):
+            redraw_fn = _STATIC_REDRAW[key]
+            meta = project_metadata[key]
+            ddir = dataset_dir(meta)
+            result = redraw_fn(
+                plotter, ctrl, ddir,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
+                palette=_resolve_palette(state),
+                reset_camera=False,
+            )
+            state.legend_items = result.legend_items
+            state.mesh_stats = result.mesh_stats
+        elif key in ("ia_ai4ia", "avm_md",
+                     "tautenhahn_fracture", "tautenhahn_tumor_preop", "tautenhahn_tumor_postop"):
+            # Single-color surfaces: re-render with the new palette's first color.
             redraw_fn = _STATIC_REDRAW[key]
             meta = project_metadata[key]
             ddir = dataset_dir(meta)

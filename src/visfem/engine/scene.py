@@ -710,6 +710,54 @@ def redraw_surface_mesh(
     return RenderResult(mesh_stats=stats)
 
 
+def redraw_stl_surface(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+    filename: str,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+) -> RenderResult:
+    """Render a single named STL/OBJ surface mesh in one solid color.
+
+    Generic single-surface renderer for datasets that are just one closed mesh
+    with no scalar fields (e.g. the AI4IA aneurysm and AVM models). Bind
+    *filename* per dataset via functools.partial in the selection registry.
+    """
+    mesh_path = dataset_dir / filename
+    if not mesh_path.exists():
+        logger.error(f"Surface mesh not found: {mesh_path}")
+        return RenderResult()
+
+    try:
+        mesh = load_mesh(mesh_path)
+    except Exception as e:
+        logger.error(f"Failed to load surface mesh {mesh_path.name}: {e}")
+        return RenderResult()
+
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    color = _palette[0] if _palette else "#d62728"
+
+    global _active_actor
+    clear_scene(plotter, dark_mode)
+    _active_actor = plotter.add_mesh(
+        mesh,
+        color=color,
+        opacity=opacity,
+        show_edges=False,
+        show_scalar_bar=False,
+        copy_mesh=True,
+        render=False,
+    )
+    apply_opacity(plotter, opacity)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
+
+    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+    return RenderResult(mesh_stats=stats)
+
+
 def redraw_aneurysm(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,
@@ -958,6 +1006,23 @@ def _load_multi_part_vtk(
     return meshes
 
 
+def _subsample_lines(mesh: pv.PolyData, stride: int) -> pv.PolyData:
+    """Keep every *stride*-th line cell, returning a lighter PolyData of lines.
+
+    The liver vessel trees are ~200k disjoint 2-point segments per tree; tubing
+    them all yields tens of millions of points (browser-breaking). Slicing the
+    line connectivity directly preserves PolyData (so .tube still works) and the
+    radius array, unlike extract_cells which would return an UnstructuredGrid.
+    """
+    if stride <= 1 or mesh.n_lines == 0:
+        return mesh
+    lines = mesh.lines.reshape(-1, 3)[::stride]          # rows of [2, i0, i1]
+    sub = pv.PolyData(mesh.points, lines=lines.ravel())
+    if "radius" in mesh.point_data:
+        sub.point_data["radius"] = mesh.point_data["radius"]
+    return sub
+
+
 def _render_labeled_parts(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,
@@ -968,10 +1033,13 @@ def _render_labeled_parts(
     reset_camera: bool,
     n_tube_sides: int = 8,
     tubify: bool = True,
+    tube_stride: int = 1,
 ) -> RenderResult:
     """Merge labeled parts into one actor and push to scene.
 
     Meshes with a 'radius' point array are converted to tubes when tubify=True.
+    *tube_stride* > 1 subsamples dense line meshes before tubing to keep the
+    serialized geometry within a browser-safe point budget.
     """
     global _active_actor
     total_cells = 0
@@ -979,6 +1047,8 @@ def _render_labeled_parts(
     processed: list[pv.DataSet] = []
     for i, mesh in enumerate(meshes):
         if tubify and "radius" in mesh.point_data:
+            if tube_stride > 1 and isinstance(mesh, pv.PolyData):
+                mesh = _subsample_lines(mesh, tube_stride)
             # pv.tube() emits triangle *strips*. In trame local mode a strip's
             # connectivity is order-dependent, so a single stale index in a delta
             # unzips the whole strip into spikes across the viewport (only fixable
@@ -1084,7 +1154,13 @@ def redraw_liver_vessels(
         return RenderResult()
     clear_scene(plotter, dark_mode)
     labels = [label for _, label in _LIVER_VESSELS_PARTS]
-    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, reset_camera=reset_camera, tubify=False)
+    # The A/P/V trees are ~200k fine segments each; tube at low resolution and
+    # subsample (stride 10) to keep the merged mesh ~1.4M pts — browser-safe while
+    # giving the vessels visible thickness.
+    return _render_labeled_parts(
+        plotter, ctrl, meshes, labels, colors, opacity,
+        reset_camera=reset_camera, tubify=True, n_tube_sides=6, tube_stride=10,
+    )
 
 
 def redraw_rectangle_quad(

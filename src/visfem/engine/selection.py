@@ -405,12 +405,22 @@ def select_patient(
     try:
         meta = project_metadata[dataset_key]
         patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
-        result = redraw_ircadb(
-            plotter, ctrl, patient_dir,
-            dark_mode=state.dark_mode,
-            opacity=opacity,
-            palette=_resolve_palette(state),
-        )
+        if dataset_key == "ct_abdomen":
+            # Each patient is a single bone-isosurface VTU (no per-organ parts).
+            result = redraw_stl_surface(
+                plotter, ctrl, patient_dir,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
+                filename="bone_surface.vtu",
+                palette=_resolve_palette(state),
+            )
+        else:
+            result = redraw_ircadb(
+                plotter, ctrl, patient_dir,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
+                palette=_resolve_palette(state),
+            )
         state.legend_items = result.legend_items
         state.mesh_stats = result.mesh_stats
         state.active_meta = meta_to_state(meta)
@@ -451,11 +461,24 @@ def select_color_scheme(
     state.trame__busy = True
     try:
         if state.active_patient is not None:
-            if _recolor_active_actor(plotter, ctrl, state):
-                return
             patient: int = state.active_patient
             meta = project_metadata[key]
             patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
+            if key == "ct_abdomen":
+                # Single-color surface: re-render with the new palette's first color.
+                result = redraw_stl_surface(
+                    plotter, ctrl, patient_dir,
+                    dark_mode=state.dark_mode,
+                    opacity=opacity,
+                    filename="bone_surface.vtu",
+                    palette=_resolve_palette(state),
+                    reset_camera=False,
+                )
+                state.legend_items = result.legend_items
+                state.mesh_stats = result.mesh_stats
+                return
+            if _recolor_active_actor(plotter, ctrl, state):
+                return
             result = redraw_ircadb(
                 plotter, ctrl, patient_dir,
                 dark_mode=state.dark_mode,

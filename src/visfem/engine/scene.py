@@ -758,6 +758,69 @@ def redraw_stl_surface(
     return RenderResult(mesh_stats=stats)
 
 
+def redraw_region_surface(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+    filename: str,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+) -> RenderResult:
+    """Render a VTU surface coloured by its per-cell ``region_id`` (connected bodies).
+
+    For isosurface meshes that carry a ``region_id`` cell array (e.g. the GRASP MRI
+    surfaces, where each connected body gets a distinct colour). Falls back to a single
+    solid colour if the array is absent. Bind *filename* via functools.partial.
+    """
+    mesh_path = dataset_dir / filename
+    if not mesh_path.exists():
+        logger.error(f"Surface mesh not found: {mesh_path}")
+        return RenderResult()
+
+    try:
+        mesh = load_mesh(mesh_path)
+    except Exception as e:
+        logger.error(f"Failed to load surface mesh {mesh_path.name}: {e}")
+        return RenderResult()
+
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+
+    global _active_actor
+    clear_scene(plotter, dark_mode)
+
+    if "region_id" in mesh.cell_data:
+        region_ids = mesh.cell_data["region_id"].astype(int)
+        n = int(region_ids.max()) + 1
+        colors = region_colors(n, _palette)
+        _active_actor = plotter.add_mesh(
+            mesh,
+            scalars="region_id",
+            cmap=colors,
+            clim=[0, max(n - 1, 1)],
+            n_colors=n,
+            opacity=opacity,
+            show_edges=False,
+            show_scalar_bar=False,
+            copy_mesh=True,
+            interpolate_before_map=False,
+            render=False,
+        )
+        legend = [{"names": [f"Region {i + 1}"], "color": colors[i]} for i in range(n)]
+    else:
+        _active_actor = plotter.add_mesh(
+            mesh, color=_palette[0], opacity=opacity,
+            show_edges=False, show_scalar_bar=False, copy_mesh=True, render=False,
+        )
+        legend = []
+
+    apply_opacity(plotter, opacity)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+    return RenderResult(legend_items=legend, mesh_stats=stats)
+
+
 def redraw_aneurysm(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,

@@ -13,7 +13,7 @@ from visfem.engine.scene import (
     clear_scene, field_label, redraw_aneurysm, redraw_aneurysm_coils, redraw_heart, redraw_heart_ep,
     redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
     redraw_rectangle_one_tree, redraw_rectangle_two_trees, redraw_rectangle_quad,
-    redraw_liver_vessels, redraw_surface_mesh, redraw_stl_surface,
+    redraw_liver_vessels, redraw_surface_mesh, redraw_stl_surface, redraw_region_surface,
     get_active_actor, update_actor_palette, update_tibia_sim_field, update_xdmf_step,
 )
 from visfem.log import get_logger
@@ -48,6 +48,14 @@ def _resolve_palette(state: Any) -> list[str]:
 _HEART_IV_EXCLUDED: frozenset[str] = frozenset(
     {"Fixation", "PointID", "Material", "CellID", "f", "n", "s"}
 )
+
+# Multi-patient datasets where each patient is a single isosurface VTU (not per-organ
+# parts like ircadb). Maps dataset key -> (surface filename, renderer). ct_abdomen is a
+# solid bone surface; mri_grasp colours each connected body via its region_id array.
+_SINGLE_SURFACE_PATIENTS: dict[str, tuple[str, Callable[..., RenderResult]]] = {
+    "ct_abdomen":        ("bone_surface.vtu",   redraw_stl_surface),
+    "mri_grasp_abdomen": ("tissue_surface.vtu", redraw_region_surface),
+}
 
 
 def _timeseries_path(
@@ -405,13 +413,15 @@ def select_patient(
     try:
         meta = project_metadata[dataset_key]
         patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
-        if dataset_key == "ct_abdomen":
-            # Each patient is a single bone-isosurface VTU (no per-organ parts).
-            result = redraw_stl_surface(
+        single = _SINGLE_SURFACE_PATIENTS.get(dataset_key)
+        if single is not None:
+            # Each patient is a single isosurface VTU (no per-organ parts).
+            surface_file, redraw_fn = single
+            result = redraw_fn(
                 plotter, ctrl, patient_dir,
                 dark_mode=state.dark_mode,
                 opacity=opacity,
-                filename="bone_surface.vtu",
+                filename=surface_file,
                 palette=_resolve_palette(state),
             )
         else:
@@ -464,13 +474,15 @@ def select_color_scheme(
             patient: int = state.active_patient
             meta = project_metadata[key]
             patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
-            if key == "ct_abdomen":
-                # Single-color surface: re-render with the new palette's first color.
-                result = redraw_stl_surface(
+            single = _SINGLE_SURFACE_PATIENTS.get(key)
+            if single is not None:
+                # Re-render the patient surface with the new palette.
+                surface_file, redraw_fn = single
+                result = redraw_fn(
                     plotter, ctrl, patient_dir,
                     dark_mode=state.dark_mode,
                     opacity=opacity,
-                    filename="bone_surface.vtu",
+                    filename=surface_file,
                     palette=_resolve_palette(state),
                     reset_camera=False,
                 )

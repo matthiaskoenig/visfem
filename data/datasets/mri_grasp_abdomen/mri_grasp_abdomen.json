@@ -1,0 +1,17 @@
+{
+  "data_path": "mri_grasp_abdomen",
+  "labels_file": null,
+  "name": "Abdominal MRI (GRASP)",
+  "pi": "TBD",
+  "institution": [
+    "TBD"
+  ],
+  "biological_scale": "organ_system",
+  "organ_system": [
+    "abdominal",
+    "vasculature"
+  ],
+  "description": "Contrast-enhanced soft-tissue isosurfaces from free-breathing dynamic GRASP MRI of 3 patients. Surface extracted from the late contrast phase at the 95th intensity percentile (no Hounsfield units). Placeholder metadata pending acquisition and study details.",
+  "mesh_format": "VTU",
+  "references": []
+}

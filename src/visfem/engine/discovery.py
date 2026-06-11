@@ -81,6 +81,18 @@ def pvd_file_path(meta: ProjectMetadata) -> Path | None:
         return DATASETS_DIR / meta.data_path
     return None
 
+
+def grasp_phase_pvd(patient_dir: Path) -> Path | None:
+    """Return the per-patient GRASP phase-series PVD path, or None if absent."""
+    pvd = patient_dir / "tissue_surface.pvd"
+    return pvd if pvd.exists() else None
+
+
+def grasp_phase_count(pvd_path: Path) -> int:
+    """Return the number of contrast phases in a GRASP per-patient PVD."""
+    from visfem.mesh import pvd_steps
+    return len(pvd_steps(pvd_path))
+
 def meta_to_state(meta: ProjectMetadata) -> dict[str, object]:
     """Serialize a ProjectMetadata instance to a plain dict for Trame state."""
     return {

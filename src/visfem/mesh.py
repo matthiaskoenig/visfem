@@ -171,6 +171,14 @@ def _parse_pvd(path: Path) -> list[tuple[float, Path]]:
     return sorted(entries, key=lambda x: x[0])
 
 
+def pvd_steps(path: Path) -> list[tuple[float, Path]]:
+    """Public wrapper for _parse_pvd: (timestep, vtu_path) pairs sorted by time.
+
+    Single source of truth for the step count and per-step paths of a PVD series.
+    """
+    return _parse_pvd(path)
+
+
 # Metadata extraction
 
 def get_metadata(path: Path) -> MeshMetadata:
@@ -625,14 +633,26 @@ def preload_all_meshes(project_metadata: dict) -> None:
     for meta in project_metadata.values():
         ddir = dataset_dir(meta)
 
-        # Static files: VTK, VTU, STL — recurse into patient subdirs too
+        # Static files: VTK, VTU, STL — recurse into patient subdirs too.
+        # Skip per-phase VTUs (phase_NN.vtu): they load via their PVD into the step
+        # cache during warmup, so caching them again here as static is wasteful.
         for ext in (".vtk", ".vtu", ".stl"):
             for path in sorted(ddir.rglob(f"*{ext}")):
+                if path.name.startswith("phase_") and path.suffix == ".vtu":
+                    continue
                 try:
                     load_mesh(path, 0)
                     logger.warning(f"  cached {path.name}")
                 except Exception as e:
                     logger.warning(f"  failed {path.name}: {e}")
+
+        # Per-patient PVD phase series (GRASP MRI): preload step 0 of each.
+        for phase_pvd in sorted(ddir.rglob("*.pvd")):
+            try:
+                load_mesh(phase_pvd, 0)
+                logger.warning(f"  cached {phase_pvd.parent.name}/{phase_pvd.name} step 0")
+            except Exception as e:
+                logger.warning(f"  failed {phase_pvd.name}: {e}")
 
         # XDMF time-series: step 0 only
         for stem, path in discover_xdmf(ddir).items():

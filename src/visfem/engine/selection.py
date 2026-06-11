@@ -13,12 +13,16 @@ from visfem.engine.scene import (
     clear_scene, field_label, redraw_aneurysm, redraw_aneurysm_coils, redraw_heart, redraw_heart_ep,
     redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
     redraw_rectangle_one_tree, redraw_rectangle_two_trees, redraw_rectangle_quad,
-    redraw_liver_vessels, redraw_surface_mesh, redraw_stl_surface, redraw_region_surface,
+    redraw_liver_vessels, redraw_surface_mesh, redraw_stl_surface,
+    redraw_region_surface_step,
     get_active_actor, update_actor_palette, update_tibia_sim_field, update_xdmf_step,
 )
 from visfem.log import get_logger
 from visfem.models import MeshMetadata, ProjectMetadata
-from visfem.engine.discovery import dataset_dir, discover_xdmf, meta_to_state, pvd_file_path
+from visfem.engine.discovery import (
+    dataset_dir, discover_xdmf, meta_to_state, pvd_file_path,
+    grasp_phase_pvd, grasp_phase_count,
+)
 
 logger = get_logger(__name__)
 
@@ -54,8 +58,11 @@ _HEART_IV_EXCLUDED: frozenset[str] = frozenset(
 # solid bone surface; mri_grasp colours each connected body via its region_id array.
 _SINGLE_SURFACE_PATIENTS: dict[str, tuple[str, Callable[..., RenderResult]]] = {
     "ct_abdomen":        ("bone_surface.vtu",   redraw_stl_surface),
-    "mri_grasp_abdomen": ("tissue_surface.vtu", redraw_region_surface),
 }
+
+# Multi-patient datasets where each patient is a time-series of region-coloured phase
+# surfaces (a per-patient tissue_surface.pvd). These get the step slider / autoplay.
+_PHASE_SERIES_PATIENTS: frozenset[str] = frozenset({"mri_grasp_abdomen"})
 
 
 def _timeseries_path(
@@ -365,6 +372,25 @@ def select_step(
     try:
         active_dataset: str = state.active_dataset
         meta = project_metadata[active_dataset]
+
+        # GRASP phase series: each patient's phases are region-coloured PVD steps with
+        # independent topology — full redraw, no scalar field (bypasses the XDMF path).
+        if state.active_patient is not None and active_dataset in _PHASE_SERIES_PATIENTS:
+            pvd = grasp_phase_pvd(dataset_dir(meta) / f"patient_{int(state.active_patient):02d}")
+            if pvd is None:
+                return
+            result = redraw_region_surface_step(
+                plotter, ctrl, pvd,
+                dark_mode=state.dark_mode,
+                opacity=opacity,
+                step=step,
+                palette=_resolve_palette(state),
+                reset_camera=False,
+            )
+            state.legend_items = result.legend_items
+            state.mesh_stats = result.mesh_stats
+            return
+
         xdmf_files = discover_xdmf(dataset_dir(meta))
         path = _timeseries_path(meta, state, xdmf_files)
         if path is None:
@@ -414,7 +440,24 @@ def select_patient(
         meta = project_metadata[dataset_key]
         patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
         single = _SINGLE_SURFACE_PATIENTS.get(dataset_key)
-        if single is not None:
+        if dataset_key in _PHASE_SERIES_PATIENTS:
+            # Each patient is a phase time-series; load phase 0 and arm the slider.
+            pvd = grasp_phase_pvd(patient_dir)
+            if pvd is None:
+                logger.error(f"No phase PVD for {dataset_key} patient {patient}")
+                result = RenderResult()
+            else:
+                result = redraw_region_surface_step(
+                    plotter, ctrl, pvd,
+                    dark_mode=state.dark_mode,
+                    opacity=opacity,
+                    step=0,
+                    palette=_resolve_palette(state),
+                )
+                state.n_steps = grasp_phase_count(pvd)
+                state.active_step = 0
+                state.step_times = []  # phase indices; UI shows "k / n"
+        elif single is not None:
             # Each patient is a single isosurface VTU (no per-organ parts).
             surface_file, redraw_fn = single
             result = redraw_fn(
@@ -474,6 +517,22 @@ def select_color_scheme(
             patient: int = state.active_patient
             meta = project_metadata[key]
             patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
+            if key in _PHASE_SERIES_PATIENTS:
+                # Solid-coloured phase series: re-render the current phase with the
+                # new palette's first colour.
+                pvd = grasp_phase_pvd(patient_dir)
+                if pvd is not None:
+                    result = redraw_region_surface_step(
+                        plotter, ctrl, pvd,
+                        dark_mode=state.dark_mode,
+                        opacity=opacity,
+                        step=int(state.active_step),
+                        palette=_resolve_palette(state),
+                        reset_camera=False,
+                    )
+                    state.legend_items = result.legend_items
+                    state.mesh_stats = result.mesh_stats
+                return
             single = _SINGLE_SURFACE_PATIENTS.get(key)
             if single is not None:
                 # Re-render the patient surface with the new palette.

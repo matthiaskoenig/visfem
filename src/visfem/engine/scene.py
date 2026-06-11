@@ -758,39 +758,31 @@ def redraw_stl_surface(
     return RenderResult(mesh_stats=stats)
 
 
-def redraw_region_surface(
+def _render_region_mesh(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,
-    dataset_dir: Path,
+    mesh: pv.DataSet,
     dark_mode: bool,
     opacity: float,
-    filename: str,
-    palette: list[str] | None = None,
-    reset_camera: bool = True,
+    palette: list[str] | None,
+    reset_camera: bool,
+    solid: bool = False,
 ) -> RenderResult:
-    """Render a VTU surface coloured by its per-cell ``region_id`` (connected bodies).
+    """Clear the scene and render *mesh* coloured by its per-cell ``region_id``.
 
-    For isosurface meshes that carry a ``region_id`` cell array (e.g. the GRASP MRI
-    surfaces, where each connected body gets a distinct colour). Falls back to a single
-    solid colour if the array is absent. Bind *filename* via functools.partial.
+    Each connected body gets a distinct categorical colour; falls back to a single
+    solid colour if the array is absent. Sets the global ``_active_actor``.
+
+    With *solid* True the whole surface is one colour regardless of region_id — used
+    for the GRASP phase animation, where per-phase connected-component counts differ
+    so categorical colours would flicker distractingly between frames.
     """
-    mesh_path = dataset_dir / filename
-    if not mesh_path.exists():
-        logger.error(f"Surface mesh not found: {mesh_path}")
-        return RenderResult()
-
-    try:
-        mesh = load_mesh(mesh_path)
-    except Exception as e:
-        logger.error(f"Failed to load surface mesh {mesh_path.name}: {e}")
-        return RenderResult()
-
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
 
     global _active_actor
     clear_scene(plotter, dark_mode)
 
-    if "region_id" in mesh.cell_data:
+    if not solid and "region_id" in mesh.cell_data:
         region_ids = mesh.cell_data["region_id"].astype(int)
         n = int(region_ids.max()) + 1
         colors = region_colors(n, _palette)
@@ -819,6 +811,33 @@ def redraw_region_surface(
     push_scene(plotter, ctrl, reset_camera=reset_camera)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
     return RenderResult(legend_items=legend, mesh_stats=stats)
+
+
+def redraw_region_surface_step(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    pvd_path: Path,
+    dark_mode: bool,
+    opacity: float,
+    step: int,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+    solid: bool = True,
+) -> RenderResult:
+    """Render one phase (step) of a region-coloured PVD surface series (GRASP MRI).
+
+    Each phase has independent topology, so this always does a full redraw (no
+    in-place swap). Loads via the PVD path so steps cache in the step cache.
+    Defaults to a single *solid* colour so the surface does not colour-flicker as
+    the connected-component count changes between contrast phases.
+    """
+    try:
+        mesh = load_mesh(pvd_path, step=step)
+    except Exception as e:
+        logger.error(f"Failed to load '{pvd_path.name}' step {step}: {e}")
+        return RenderResult()
+    return _render_region_mesh(plotter, ctrl, mesh, dark_mode, opacity, palette,
+                               reset_camera, solid=solid)
 
 
 def redraw_aneurysm(

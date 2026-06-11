@@ -9,7 +9,7 @@ from trame.app import TrameApp
 from trame.decorators import change
 
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
-from visfem.engine.discovery import dataset_dir, discover_xdmf, group_by_organ_system, load_project_metadata, pvd_file_path
+from visfem.engine.discovery import dataset_dir, discover_xdmf, grasp_phase_pvd, group_by_organ_system, load_project_metadata, pvd_file_path
 from visfem.engine.playback import autoplay_loop, preload_steps, vtkjs_warmup
 from visfem.engine.scene import apply_opacity, push_scene_full, update_scalar_range
 from visfem.engine.xr_manager import XRManager
@@ -26,7 +26,10 @@ from visfem.ui.layout import UICallbacks, build_ui
 logger = get_logger(__name__)
 
 _TARGET_FRAMES: int = 30    # max rendered frames for autoplay
-_FRAME_SLEEP: float = 0.2   # seconds between frames
+_FRAME_SLEEP: float = 0.2   # seconds between frames (scalar-field timeseries)
+# GRASP phase series does a full redraw per phase and benefits from a slower cadence so
+# the contrast wash-in is watchable rather than a fast flicker.
+_PHASE_FRAME_SLEEP: float = 0.7
 # Hold the loading overlay this long after pushing geometry, to cover the client-side
 _RENDER_SETTLE: float = 1.6  # seconds
 
@@ -276,6 +279,13 @@ class VisfemApp(TrameApp):
         if not key or key not in self._project_metadata:
             return None
         meta = self._project_metadata[key]
+        # GRASP phase series: the active path is the current patient's per-patient PVD
+        # (phase resolved by the `step` passed to load_mesh during warmup/preload).
+        patient = self.state.active_patient
+        if patient is not None:
+            pvd = grasp_phase_pvd(dataset_dir(meta) / f"patient_{int(patient):02d}")
+            if pvd is not None:
+                return pvd
         if meta.mesh_format == "PVD":
             return pvd_file_path(meta)
         stem: str | None = self.state.active_xdmf
@@ -511,11 +521,13 @@ class VisfemApp(TrameApp):
             if self._autoplay_task is not None and not self._autoplay_task.done():
                 return
             self.state.autoplay = True
+            # GRASP phase series (patient-indexed) plays slower than scalar timeseries.
+            frame_sleep = _PHASE_FRAME_SLEEP if self.state.active_patient is not None else _FRAME_SLEEP
             self._autoplay_task = asyncio.ensure_future(
                 autoplay_loop(
                     self.state, self.plotter, self.ctrl,
                     self._project_metadata, self._xdmf_meta,
-                    _FRAME_SLEEP,
+                    frame_sleep,
                 )
             )
 

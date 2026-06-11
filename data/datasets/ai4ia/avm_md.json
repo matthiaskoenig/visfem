@@ -1,7 +1,7 @@
 {
   "data_path": "ai4ia",
   "labels_file": null,
-  "name": "Arteriovenous Malformation (AVM)",
+  "name": "Arteriovenous Malformation (AI4IA)",
   "pi": "Philipp Berg, Leonid Goubergrits, Florian Hellmeier, Daniel Behme",
   "institution": [
     "Research group Medical Flows, Research Campus STIMULATE, University of Magdeburg “Otto-von-Guericke”",
@@ -16,7 +16,5 @@
   "mesh_format": "STL",
   "references": [],
   "spp_project": "Automated segmentation and DIscrimination for Intracranial Aneurysms (AI4IA): Enhancing robustness of clinical risk scores based on morphology and hemodynamics",
-  "spp_badge": true,
-  "subgroup": "AI4IA",
-  "sort_order": 2
+  "spp_badge": true
 }

@@ -16,7 +16,5 @@
   "mesh_format": "STL",
   "references": [],
   "spp_project": "Automated segmentation and DIscrimination for Intracranial Aneurysms (AI4IA): Enhancing robustness of clinical risk scores based on morphology and hemodynamics",
-  "spp_badge": true,
-  "subgroup": "AI4IA",
-  "sort_order": 1
+  "spp_badge": true
 }

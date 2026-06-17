@@ -76,7 +76,7 @@
         <a class="spp-tile live" href="https://app.visfem.de/?model=ia_ai4ia" target="_blank" rel="noopener"
            title="Automated segmentation and Discrimination for Intracranial Aneurysms (AI4IA): Enhancing robustness of clinical risk scores based on morphology and hemodynamics">
           <span class="spp-thumb" style="--spp-hue: 195">
-            
+            <img src="images/tiles/ai_ai4ia.webp" alt="AI4IA intracranial aneurysm visualization" loading="lazy" />
           </span>
           <span class="spp-caption"><span>Automated segmentation and Discrimination for Intracranial Aneurysms (AI4IA)</span></span>
         </a>
@@ -100,7 +100,7 @@
         <a class="spp-tile live" href="https://app.visfem.de/?model=heart" target="_blank" rel="noopener"
            title="Efficient and robust coupling methods for electro-mechanic models of the human heart">
           <span class="spp-thumb" style="--spp-hue: 145">
-            
+            <img src="images/tiles/heart.webp" alt="Electro-mechanic human heart model visualization" loading="lazy" />
           </span>
           <span class="spp-caption"><span>Efficient and robust coupling methods for electro-mechanic models of the human heart</span></span>
         </a>
@@ -108,7 +108,7 @@
         <a class="spp-tile live" href="https://app.visfem.de/?model=tibia_simulation" target="_blank" rel="noopener"
            title="Evidence-based personalized rehabilitation protocols for uneventful healing with data-driven virtual twins">
           <span class="spp-thumb" style="--spp-hue: 35">
-            
+            <img src="images/tiles/tibia_simulation.webp" alt="Tibia rehabilitation simulation visualization" loading="lazy" />
           </span>
           <span class="spp-caption"><span>Evidence-based personalized rehabilitation protocols for uneventful healing with data-driven virtual twins</span></span>
         </a>
@@ -140,7 +140,7 @@
         <a class="spp-tile live" href="https://app.visfem.de/?model=aneurysm" target="_blank" rel="noopener"
            title="Multi-scale algorithms and simulation methodologies for the long-term prognosis of endovascular interventions in cerebral aneurysms">
           <span class="spp-thumb" style="--spp-hue: 90">
-            
+            <img src="images/tiles/aneurysm.webp" alt="Aneurysm hemodynamics visualization" loading="lazy" />
           </span>
           <span class="spp-caption"><span>Multi-scale algorithms and simulation methodologies for the long-term prognosis of endovascular interventions in cerebral aneurysms</span></span>
         </a>
@@ -148,7 +148,7 @@
         <a class="spp-tile live" href="https://app.visfem.de/?model=lobule_convergence" target="_blank" rel="noopener"
            title="SimLivA II – Simulation supported Liver Assessment for donor organs II: Continuum-biomechanical modeling for staging of ischemia-reperfusion injury during liver transplantation and machine perfusion">
           <span class="spp-thumb" style="--spp-hue: 120">
-            
+            <img src="images/tiles/lobule_convergence.webp" alt="Liver lobule convergence visualization" loading="lazy" />
           </span>
           <span class="spp-caption"><span>SimLivA II – Simulation supported Liver Assessment for donor organs II</span></span>
         </a>
@@ -186,9 +186,13 @@ app.server.start()</code></pre>
     <div class="section-inner">
       <h2 class="section-title">How to Cite</h2>
       <p class="cite-intro">If you use VisFEM in your research, please cite:</p>
-      <pre class="cite-block">Elias, M. &amp; König, M. (2026).
+      <div class="cite-block-wrap">
+        <pre class="cite-block" id="cite-text">Elias, M. &amp; König, M. (2026).
 VisFEM: Web visualization of FEM models.
-Zenodo. https://doi.org/10.5281/zenodo.19220183</pre>
+Zenodo. <a href="https://doi.org/10.5281/zenodo.19220183" target="_blank" rel="noopener">https://doi.org/10.5281/zenodo.19220183</a></pre>
+        <button type="button" class="cite-copy" aria-label="Copy citation"
+                onclick="(function(b){var t=document.getElementById('cite-text').innerText;navigator.clipboard.writeText(t).then(function(){var o=b.textContent;b.textContent='Copied';b.classList.add('copied');setTimeout(function(){b.textContent=o;b.classList.remove('copied');},1500);});})(this)">Copy</button>
+      </div>
       <div class="cite-badges">
         <a href="https://doi.org/10.5281/zenodo.19220183" target="_blank" rel="noopener" class="badge-link">
           <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.19220183.svg" alt="DOI badge" />

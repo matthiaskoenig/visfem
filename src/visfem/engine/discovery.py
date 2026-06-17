@@ -1,11 +1,16 @@
 """Dataset discovery and project metadata helpers."""
+import os
 from pathlib import Path
 
 from visfem.models import ProjectMetadata
 
 # ---- Paths ----
 
-DATASETS_DIR = Path(__file__).parents[3] / "data" / "datasets"
+# Datasets live at <repo>/data/datasets by default. When deployed, the package
+# is installed non-editable into a venv (so the relative path above no longer
+# resolves to the repo), and DATA_DIR points at the mounted data directory.
+_DATA_ENV = os.environ.get("DATA_DIR") or os.environ.get("VISFEM_DATA_DIR")
+DATASETS_DIR = (Path(_DATA_ENV) / "datasets") if _DATA_ENV else (Path(__file__).parents[3] / "data" / "datasets")
 
 
 # ---- Discovery ----

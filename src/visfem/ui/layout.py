@@ -111,6 +111,29 @@ def build_ui(
             footer.style = FOOTER_STYLE
             build_footer()
 
+        # After reading ?model=/?dataset= once, strip it from the address bar via
+        # replaceState so a client reconnect (which replays these page scripts)
+        # doesn't re-read it and snap back to that model after the user has
+        # manually picked another dataset.
+        Script(
+            "(function(){"
+            "  function apply(){"
+            "    if (window.trame && window.trame.state) {"
+            "      try {"
+            "        var p = new URLSearchParams(window.location.search);"
+            "        var m = p.get('model') || p.get('dataset');"
+            "        if (m) {"
+            "          window.trame.state.set('url_model', m);"
+            "          p.delete('model'); p.delete('dataset');"
+            "          var qs = p.toString();"
+            "          history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));"
+            "        }"
+            "      } catch (e) {}"
+            "    } else { setTimeout(apply, 100); }"
+            "  }"
+            "  apply();"
+            "})();"
+        )
         Script(
             "(function() {"
             "  var _RO = window.ResizeObserver;"

@@ -119,6 +119,7 @@ class VisfemApp(TrameApp):
             "trame__title": "VisFEM",
             "trame__favicon": self._favicon_data_uri(),
             "dark_mode": True,
+            "url_model": "",
             "xr_active": False,
             "xr_session_ended": False,
             "active_dataset": None,
@@ -165,6 +166,23 @@ class VisfemApp(TrameApp):
             "clim_override": None,
             "opacity_adjusting": False,
         })
+
+    @change("url_model")
+    def _on_url_model_change(self, url_model: str = "", **_: object) -> None:
+        """Auto-select a dataset from the ?model= URL query parameter on first load.
+
+        Consumed one-shot: ``url_model`` is reset to "" right after reading it so
+        that a later manual dataset selection isn't snapped back to the URL model
+        (the param stays in the address bar, and trame replays it on every client
+        reconnect). The reset itself re-enters this handler with an empty key,
+        which the guard below ignores.
+        """
+        key: str = (url_model or "").strip()
+        if not key:
+            return
+        self.state.url_model = ""
+        if key in self._project_metadata:
+            asyncio.ensure_future(self.select_dataset(key))
 
     # ---- Panel toggles ----
 
@@ -534,8 +552,13 @@ class VisfemApp(TrameApp):
 
 def main() -> None:
     """Entry point."""
+    import os
     app = VisfemApp()
-    preload_all_meshes(app._project_metadata)
+    # Preload every mesh up front only when explicitly requested. In the
+    # per-session deployment we leave this off so the idle container stays
+    # light and each session lazy-loads just the model it opens.
+    if os.environ.get("VISFEM_PRELOAD", "0") == "1":
+        preload_all_meshes(app._project_metadata)
     app.server.start()
 
 

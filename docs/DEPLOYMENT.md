@@ -201,30 +201,21 @@ docker compose -f compose.deploy.yml down         # stop
 
 - The container is set to `restart: unless-stopped`, so it comes back
   automatically after a reboot or crash.
-- **Concurrency**: the launcher allows 6 simultaneous sessions (ports
-  9001–9006). To allow more, raise the `port_range` in `setup/launcher.json`
-  and rebuild.
-- **Resource use** (measured): idle container ≈ 87 MB RAM; ≈ 313 MB per active
-  session.
-- `tibia_simulation` is a large model (~1.09M points) and rendering is CPU-only
-  (no GPU), so it is noticeably slower than the others — fine for a demo.
+- **Concurrency** — how many visitors can use the app at once:
+  - The limit lives in **`setup/launcher.json`**, in the `resources` →
+    `port_range` field. The trame launcher gives each visitor their own backend
+    process on one port from this range, so the number of ports = the number of
+    simultaneous sessions. The default `[9001, 9006]` means **5 sessions**.
+  - To allow more, widen the range (e.g. `[9001, 9020]` for 20) and **rebuild
+    the image** — `launcher.json` is baked in at build time:
+    ```bash
+    docker compose -f compose.deploy.yml up -d --build
+    ```
+  - `"timeout": 60` in the same file reclaims idle sessions after 60 s, freeing
+    their port for the next visitor.
+  - **Size the range to available RAM**: each active session is
+    ≈ 313 MB (see below), so 6 sessions ≈ 1.9 GB peak and 20 ≈ 6 GB+.
 
----
-
-## 11. Adding more models later
-
-The landing page ships with 5 active tiles and 6 "coming soon" ones. To
-activate another:
-
-1. Put its data under `/opt/visfem/data/datasets/<name>/` (with its metadata
-   JSON).
-2. In `/var/www/landing/index.html`, find that tile and change
-   `class="spp-tile coming-soon"` (no link) to
-   `class="spp-tile live"` with `href="https://app.visfem.de/?model=<key>"`.
-   (Use one of the existing live tiles as a template.)
-3. No rebuild needed for the landing page change; just save the file.
-
----
 
 ## Appendix: password-protect during testing (optional)
 
@@ -262,5 +253,5 @@ For reference, the deployment-specific changes already committed:
   `?model=<key>` URL parameter (used by the landing-page tiles) to auto-open a
   dataset, and make full-mesh preloading opt-in (`VISFEM_PRELOAD=1`) so the
   idle container stays light.
-- **`compose.deploy.yml`** — the production Docker Compose file (this guide).
+- **`compose.deploy.yml`** — the production Docker Compose file.
 - **`deploy/landing/`** — the ready-to-serve landing page.

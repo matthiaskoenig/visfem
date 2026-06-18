@@ -483,7 +483,7 @@ class VisfemApp(TrameApp):
             return
         self.state.busy = True
         self.state.flush()
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.05)
         select_step(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, int(step),

@@ -205,8 +205,8 @@ def update_actor_palette(
     mapper.SetLookupTable(_build_categorical_lut(colors, n))
     mapper.SetScalarRange(0, max(n - 1, 1))
     mapper.Modified()
-    plotter.render()
-    ctrl.view_update()
+    # Full resend (not a delta): avoids stale content-hash colors. See push_scene_full.
+    push_scene_full(plotter, ctrl, reset_camera=False)
 
 
 def update_tibia_sim_field(
@@ -235,8 +235,7 @@ def update_tibia_sim_field(
         mapper.SetLookupTable(_build_categorical_lut(colors, n))
         mapper.SetScalarRange(0, max(n - 1, 1))
         mapper.Modified()
-        plotter.render()
-        ctrl.view_update()
+        push_scene_full(plotter, ctrl, reset_camera=False)
         legend = [
             {"names": [_CLAES_LABELS.get(z, f"Zone {z}")], "color": colors[i]}
             for i, z in enumerate(zone_ids)
@@ -251,8 +250,7 @@ def update_tibia_sim_field(
         mapper.SetLookupTable(_build_continuous_lut(cmap, clim[0], clim[1]))
         mapper.SetScalarRange(*clim)
         mapper.Modified()
-        plotter.render()
-        ctrl.view_update()
+        push_scene_full(plotter, ctrl, reset_camera=False)
         return [], _scalar_bar_dict(field, clim, cmap)
 
 
@@ -273,8 +271,7 @@ def update_scalar_range(
         lut.SetTableRange(clim[0], clim[1])
     mapper.SetScalarRange(clim[0], clim[1])
     mapper.Modified()
-    plotter.render()
-    ctrl.view_update()
+    push_scene_full(plotter, ctrl, reset_camera=False)
     return _scalar_bar_dict(field, clim, cmap)
 
 
@@ -323,7 +320,9 @@ def redraw_xdmf(
         opacity=opacity,
         render=False,
     )
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    # Full (non-delta) resend: redraw_xdmf is the field-switch / step-fallback
+    # path; a delta here can paint wrong colors from a stale content-hash key.
+    push_scene_full(plotter, ctrl, reset_camera=reset_camera)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
 
     scalar_bar: dict | None = None
@@ -363,16 +362,12 @@ def update_xdmf_step(
         return False, None, None
 
     for name in new_mesh.array_names:
-        _xdmf_mesh[name] = new_mesh[name]
-    _xdmf_mesh.points = new_mesh.points
+        _xdmf_mesh[name] = np.array(new_mesh[name], copy=True)
+    _xdmf_mesh.points = np.array(new_mesh.points, copy=True)
 
-    # Mark the dataset modified, not just the mapper: in-place point/array swaps
-    # with unchanged object identity are otherwise missed by the trame delta diff
-    # (vtk-js #1921), leaving the client painting the previous step.
     _xdmf_mesh.Modified()
     _xdmf_actor.GetMapper().Modified()
-    plotter.render()
-    ctrl.view_update()
+    push_scene_full(plotter, ctrl, reset_camera=False)
 
     stats = {"n_cells": new_mesh.n_cells, "n_points": new_mesh.n_points}
     scalar_bar: dict | None = None

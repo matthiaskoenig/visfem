@@ -577,6 +577,11 @@ def _load_static(path: Path) -> pv.DataSet:
         return pv.from_meshio(meshio.read(str(path)))
 
 
+def _detached_copy(cached: pv.DataSet) -> pv.DataSet:
+    """Return a copy of a cached mesh that shares NO buffers with the cache."""
+    return cached.copy(deep=True)
+
+
 def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     """Load any supported mesh file and return a PyVista dataset."""
     fmt = _detect_format(path)
@@ -588,13 +593,13 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
             _static_cache[path] = _load_static(path)
         else:
             logger.info(f"[mesh cache hit] '{path.name}' served from memory")
-        return _static_cache[path].copy(deep=False)
+        return _detached_copy(_static_cache[path])
 
     key = (path, step)
     with _step_cache_lock:
         if key in _step_cache:
             logger.info(f"[mesh cache hit] '{path.name}' step {step} served from memory")
-            return _step_cache[key].copy(deep=False)
+            return _detached_copy(_step_cache[key])
 
     logger.info(f"[mesh cache miss] loading '{path.name}' step {step} from disk")
     if fmt == "pvd_timeseries":
@@ -605,7 +610,7 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
         mesh = _load_timeseries_xdmf(path, step)
     with _step_cache_lock:
         _step_cache[key] = mesh
-    return mesh.copy(deep=False)
+    return _detached_copy(mesh)
 
 
 _surface_cache: dict[Path, pv.PolyData] = {}

@@ -106,7 +106,7 @@ a { color: inherit; text-decoration: none; }
 .nav-cta {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 10px;
 }
 .nav-link {
   display: flex;
@@ -432,7 +432,8 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 600px) {
   .section { padding: 60px 18px; }
   .hero { padding: 72px 18px 60px; }
-  .nav-links .btn-launch-small { display: none; }
+  /* keep the Launch App CTA visible on mobile; hide the GitHub text link to save room */
+  .nav-links .nav-link { display: none; }
 }
 
 /* SPP 2311 subproject grid */

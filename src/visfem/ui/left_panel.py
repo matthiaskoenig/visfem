@@ -201,7 +201,7 @@ def build_left_panel(
                         style=f"font-size:{FS_LG}; font-weight:{FW_BOLD}; line-height:1.3;",
                     )
                     html.Span(
-                        "SPP 2311",
+                        "SPP2311",
                         v_if="active_meta.spp_badge",
                         style=f"font-size:{FS_XS}; padding:3px 8px; border-radius:{RADIUS_MD}; background:{SPP_DIM}; color:{SPP_COLOR}; font-weight:{FW_BOLD}; letter-spacing:{LS_WIDER}; border:1px solid {SPP_COLOR}; flex-shrink:0; line-height:1.6;",
                     )
@@ -222,14 +222,14 @@ def build_left_panel(
 
                 v3.VDivider(style="margin-bottom:10px;")
 
-                # SPP 2311 project title
+                # SPP2311 project title
                 with html.Div(
                     v_if="active_meta && active_meta.spp_project",
                     style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;",
                 ):
                     v3.VIcon("mdi-certificate-outline", size=ICON_SM, style=f"color:{SPP_COLOR}; opacity:0.7; margin-top:2px; flex-shrink:0;")
                     with html.Div():
-                        _label("SPP 2311 Project")
+                        _label("SPP2311 Project")
                         html.Div("{{ active_meta.spp_project }}", style=f"font-size:{FS_MD}; line-height:1.4; opacity:{OP_BODY};")
 
                 # PI(s)

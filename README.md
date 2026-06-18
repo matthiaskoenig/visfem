@@ -52,12 +52,12 @@ PARTICULAR PURPOSE.
 Matthias König is supported by the German Research Foundation (DFG) within the Research Unit Programme FOR 5151
 "QuaLiPerF (Quantifying Liver Perfusion-Function Relationship in Complex Resection -
 A Systems Medicine Approach)" by grant number 436883643 and by grant number
-465194077 (Priority Programme SPP 2311, Subproject SimLivA).
+465194077 (Priority Programme SPP2311, Subproject SimLivA).
 
 Matthias König was supported by the Federal Ministry of Education and Research (BMBF, Germany)
 within the research network Systems Medicine of the Liver (LiSyM, grant number 031L0054).
 
 Michelle Elias is supported by the German Research Foundation (DFG) under grant number 465194077
-(Priority Programme SPP 2311).
+(Priority Programme SPP2311).
 
 © 2026 Michelle Elias & Matthias König

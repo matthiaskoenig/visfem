@@ -109,6 +109,12 @@ cd /opt/visfem
 
 Copy the real dataset files from the lab NAS into the repo's data folder.
 
+You can stage **all** datasets here — the public site does not show everything.
+Which datasets the public app exposes is controlled by a single allowlist in
+`compose.deploy.yml` (`VISFEM_DATASETS`, see below), not by which files are
+present. So the server holds the full data set, and the public instance shows
+only the curated SPP2311 subset.
+
 ---
 
 ## 6. Start the web app
@@ -126,10 +132,18 @@ The compose file already:
 - mounts `./data` read-only into the container and points the app at it
   (`DATA_DIR`);
 - sets `TRAME_USE_HOST: "wss://app.visfem.de"` so the live WebSocket
-  connection uses the right public address.
+  connection uses the right public address;
+- restricts the public app to the SPP2311 datasets via `VISFEM_DATASETS`, a
+  comma-separated allowlist of dataset keys. All other datasets staged in
+  `./data` stay on disk but are not listed. Leaving this unset (e.g. a local
+  run) shows every dataset.
 
 > If you use a different app hostname than `app.visfem.de`, edit that one line
 > in `compose.deploy.yml` and re-run the command above.
+>
+> To add or remove a public dataset, edit the `VISFEM_DATASETS` line (the keys
+> are the dataset JSON filenames without `.json`) and re-run the command above.
+> No data files need to move.
 
 Check it came up:
 ```bash
@@ -248,7 +262,9 @@ For reference, the deployment-specific changes already committed:
 - **`Dockerfile`** — uses the `kitware/trame:uv` base image (Python 3.13) and
   installs OSMesa libraries so 3D rendering works on a server without a GPU.
 - **`src/visfem/engine/discovery.py`** — reads a `DATA_DIR` environment
-  variable to locate `data/datasets/`. 
+  variable to locate `data/datasets/`, and an optional `VISFEM_DATASETS`
+  allowlist to restrict which datasets the app exposes (used to limit the
+  public instance to the SPP2311 subset; unset = all datasets).
 - **`src/visfem/app.py`** + **`src/visfem/ui/layout.py`** — support the
   `?model=<key>` URL parameter (used by the landing-page tiles) to auto-open a
   dataset, and make full-mesh preloading opt-in (`VISFEM_PRELOAD=1`) so the

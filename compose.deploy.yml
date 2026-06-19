@@ -27,3 +27,5 @@ services:
     environment:
       DATA_DIR: /deploy/data       # discovery.py reads /deploy/data/datasets
       TRAME_USE_HOST: "wss://app.visfem.de"   # <-- the app subdomain
+      # Public deployment exposes only the SPP2311 subset. Unset = all datasets.
+      VISFEM_DATASETS: "ia_ai4ia,avm_md,aneurysm,aneurysm_coils,heart,heart_ep,heart_iv,lobule_convergence,tibia_mesh,tibia_simulation"

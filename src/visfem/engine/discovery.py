@@ -12,6 +12,14 @@ from visfem.models import ProjectMetadata
 _DATA_ENV = os.environ.get("DATA_DIR") or os.environ.get("VISFEM_DATA_DIR")
 DATASETS_DIR = (Path(_DATA_ENV) / "datasets") if _DATA_ENV else (Path(__file__).parents[3] / "data" / "datasets")
 
+# Comma-separated allowlist of dataset keys to expose. Unset/empty = all
+# datasets (local dev). Deployment sets this to the SPP2311 subset.
+_DATASETS_ENV = os.environ.get("VISFEM_DATASETS", "").strip()
+ALLOWED_DATASETS: set[str] | None = (
+    {k.strip() for k in _DATASETS_ENV.split(",") if k.strip()}
+    if _DATASETS_ENV else None
+)
+
 
 # ---- Discovery ----
 
@@ -51,10 +59,16 @@ def xdmf_display_name(stem: str) -> str:
 # ---- Metadata ----
 
 def load_project_metadata() -> dict[str, ProjectMetadata]:
-    """Load and validate all ProjectMetadata JSONs from data/datasets/."""
+    """Load and validate ProjectMetadata JSONs from data/datasets/.
+
+    If VISFEM_DATASETS is set, only those dataset keys are loaded (used to
+    restrict the public deployment to the SPP2311 subset); otherwise all are.
+    """
     result: dict[str, ProjectMetadata] = {}
     for path in sorted(DATASETS_DIR.rglob("*.json")):
         if path.name.endswith(".meta.json"):
+            continue
+        if ALLOWED_DATASETS is not None and path.stem not in ALLOWED_DATASETS:
             continue
         result[path.stem] = ProjectMetadata.model_validate_json(path.read_text())
     return result

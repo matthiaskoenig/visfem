@@ -23,5 +23,30 @@
   "spp_project": null,
   "spp_badge": false,
   "subgroup": "Vessel",
-  "sort_order": 3
+  "sort_order": 3,
+  "render": {
+    "renderer": "multi_part",
+    "part_extensions": [
+      ".vtk",
+      ".vtu"
+    ],
+    "parts": [
+      {
+        "stem": "A",
+        "label": "Arterial"
+      },
+      {
+        "stem": "B",
+        "label": "Biliary"
+      },
+      {
+        "stem": "P",
+        "label": "Portal"
+      },
+      {
+        "stem": "V",
+        "label": "Venous"
+      }
+    ]
+  }
 }

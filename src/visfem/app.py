@@ -142,6 +142,7 @@ class VisfemApp(TrameApp):
             "active_meta": None,
             "mesh_stats": None,
             "show_fibers": False,
+            "has_fibers": False,
             "scalar_bar": None,
             "available_scalar_fields": [],
             "active_scalar_field": None,

@@ -23,5 +23,27 @@
   "spp_project": null,
   "spp_badge": false,
   "subgroup": "Vessel",
-  "sort_order": 5
+  "sort_order": 5,
+  "render": {
+    "renderer": "multi_part",
+    "part_extensions": [
+      ".vtk",
+      ".vtu",
+      ".ply"
+    ],
+    "parts": [
+      {
+        "stem": "rectangle",
+        "label": "Background tissue"
+      },
+      {
+        "stem": "Test1",
+        "label": "Vessel tree 1"
+      },
+      {
+        "stem": "Test2",
+        "label": "Vessel tree 2"
+      }
+    ]
+  }
 }

@@ -18,5 +18,16 @@
     "https://doi.org/10.1113/JP285022",
     "https://doi.org/10.3390/math9111247"
   ],
-  "spp_project": "Efficient and robust coupling methods for electro-mechanic models of the human heart"
+  "spp_project": "Efficient and robust coupling methods for electro-mechanic models of the human heart",
+  "render": {
+    "renderer": "region_id",
+    "mesh_file": "M.vtu",
+    "region_array": "Material",
+    "labels_mesh_key": "M.vtu",
+    "fiber": {
+      "array": "Fiber",
+      "stride": 5,
+      "scale": 1.5
+    }
+  }
 }

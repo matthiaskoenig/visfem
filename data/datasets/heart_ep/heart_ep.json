@@ -18,5 +18,54 @@
     "https://doi.org/10.1113/JP285022",
     "https://doi.org/10.3390/math9111247"
   ],
-  "spp_project": "Efficient and robust coupling methods for electro-mechanic models of the human heart"
+  "spp_project": "Efficient and robust coupling methods for electro-mechanic models of the human heart",
+  "render": {
+    "renderer": "region_id",
+    "mesh_file": "surfaces/ep_surface.vtp",
+    "region_array": "Material",
+    "region_labels": {
+      "1": [
+        "Ventricle endocardium"
+      ],
+      "2": [
+        "Ventricle myocardium"
+      ],
+      "3": [
+        "Ventricle epicardium"
+      ],
+      "32": [
+        "Right atrial bulk tissue"
+      ],
+      "33": [
+        "Left atrial bulk tissue"
+      ],
+      "72": [
+        "Crista terminalis"
+      ],
+      "73": [
+        "Sinus node"
+      ],
+      "74": [
+        "Pectinate muscles"
+      ],
+      "75": [
+        "Bachmann bundle"
+      ],
+      "76": [
+        "Middle posterior bridge"
+      ],
+      "77": [
+        "Lower posterior bridge"
+      ],
+      "78": [
+        "Coronary sinus bridge"
+      ],
+      "79": [
+        "L/R atrial appendage"
+      ],
+      "80": [
+        "Inferior isthmus"
+      ]
+    }
+  }
 }

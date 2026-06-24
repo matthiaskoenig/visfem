@@ -21,6 +21,7 @@ import pyvista as pv
 
 from visfem.engine.colors import region_colors
 from visfem.engine.discovery import discover_xdmf, grasp_phase_pvd, pvd_file_path
+from visfem.mesh import metadata_for_series, vtk_series_steps
 from visfem.engine.scene import (
     RenderResult, TrameCtrl,
     _load_multi_part_vtk, _render_labeled_parts, _render_region_array_mesh,
@@ -54,9 +55,9 @@ def _infer_renderer(meta: ProjectMetadata, ddir: Path) -> RendererName:
     """
     fmt = meta.mesh_format.upper()
     if fmt == "PVD":
-        return RendererName.XDMF_TIMESERIES
+        return RendererName.TIMESERIES
     if "XDMF" in fmt or discover_xdmf(ddir):
-        return RendererName.XDMF_TIMESERIES
+        return RendererName.TIMESERIES
     if _has_patient_dirs(ddir):
         pdir = _first_patient_dir(ddir)
         if pdir is not None:
@@ -89,7 +90,8 @@ def resolve_render_config(
     """
     cfg = meta.render.model_copy(deep=True) if meta.render is not None else RenderConfig()
     if cfg.renderer is None:
-        cfg.renderer = _infer_renderer(meta, ddir)
+        # A declared flat VTK series is a time series regardless of mesh_format (VTK).
+        cfg.renderer = RendererName.TIMESERIES if cfg.series else _infer_renderer(meta, ddir)
     if (
         cfg.renderer == RendererName.SURFACE
         and cfg.mesh_file is None
@@ -186,8 +188,25 @@ def render_multi_part(ctx: RenderContext) -> RenderResult:
     )
 
 
-def render_xdmf_timeseries(ctx: RenderContext) -> RenderResult:
-    """XDMF or PVD scalar-field time series."""
+def render_timeseries(ctx: RenderContext) -> RenderResult:
+    """Scalar-field time series from XDMF, PVD, or a flat VTK series.
+
+    Flat series (cfg.series set): the per-step file is a complete mesh, rendered
+    whole with the series' global scalar bounds. Manifest series (XDMF/PVD):
+    rendered by indexing the manifest at the step.
+    """
+    if ctx.cfg.series:
+        files = _series_paths(ctx.ddir, ctx.cfg.series)
+        if not files:
+            logger.error(f"No files match series '{ctx.cfg.series}' in {ctx.ddir}")
+            return RenderResult()
+        step = max(0, min(ctx.step, len(files) - 1))
+        return redraw_xdmf(
+            ctx.plotter, ctx.ctrl, files[step], ctx.xdmf_meta,
+            dark_mode=ctx.state.dark_mode, opacity=ctx.opacity,
+            field=ctx.field, step=0, reset_camera=ctx.reset_camera, cmap=ctx.cmap,
+            mesh_meta=_series_metadata(ctx.ddir, ctx.cfg.series),
+        )
     path = _timeseries_path(ctx)
     if path is None:
         logger.error(f"No timeseries file for dataset in {ctx.ddir}")
@@ -254,12 +273,38 @@ def _timeseries_path(ctx: RenderContext):
     return next(iter(xdmf_files.values()), None)
 
 
+# Flat VTK series: resolve the ordered file list and global metadata once per
+# (dir, pattern), since scrubbing re-renders repeatedly and the glob/bounds scan
+# is the same every time.
+_series_paths_cache: dict[tuple[Path, str], list[Path]] = {}
+_series_meta_cache: dict[tuple[Path, str], MeshMetadata] = {}
+
+
+def _series_paths(ddir: Path, pattern: str) -> list[Path]:
+    """Natural-sorted per-step files for a flat VTK series (memoised)."""
+    key = (ddir, pattern)
+    if key not in _series_paths_cache:
+        _series_paths_cache[key] = [p for _, p in vtk_series_steps(ddir, pattern)]
+    return _series_paths_cache[key]
+
+
+def _series_metadata(ddir: Path, pattern: str) -> MeshMetadata | None:
+    """MeshMetadata (n_steps, fields, global scalar bounds) for a flat series (memoised)."""
+    key = (ddir, pattern)
+    if key not in _series_meta_cache:
+        files = _series_paths(ddir, pattern)
+        if not files:
+            return None
+        _series_meta_cache[key] = metadata_for_series(files)
+    return _series_meta_cache[key]
+
+
 RENDERER_REGISTRY: dict[RendererName, Renderer] = {
     RendererName.SURFACE:          render_surface,
     RendererName.MULTI_PART:       render_multi_part,
     RendererName.REGION_ID:        render_region_id,
     RendererName.SCALAR_FIELD:     render_scalar_field,
-    RendererName.XDMF_TIMESERIES:  render_xdmf_timeseries,
+    RendererName.TIMESERIES:       render_timeseries,
     RendererName.PVD_PHASE_SERIES: render_pvd_phase_series,
     RendererName.PATIENT_ORGANS:   render_patient_organs,
 }
@@ -273,7 +318,7 @@ PATIENT_RENDERERS: frozenset[RendererName] = frozenset({
 
 # Renderers that expose a scalar-field / step time series.
 TIMESERIES_RENDERERS: frozenset[RendererName] = frozenset({
-    RendererName.XDMF_TIMESERIES,
+    RendererName.TIMESERIES,
 })
 
 
@@ -312,7 +357,9 @@ def _scalar_fields(mesh_meta: MeshMetadata | None, cfg: RenderConfig) -> list[di
 
 
 def _timeseries_mesh_meta(ctx: RenderContext) -> MeshMetadata | None:
-    """MeshMetadata for the active timeseries file (for field/step UI population)."""
+    """MeshMetadata for the active timeseries (for field/step UI population)."""
+    if ctx.cfg.series:
+        return _series_metadata(ctx.ddir, ctx.cfg.series)
     path = _timeseries_path(ctx)
     return ctx.xdmf_meta.get(path.stem) if path is not None else None
 

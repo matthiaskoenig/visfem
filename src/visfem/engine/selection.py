@@ -269,12 +269,24 @@ def select_step(
             apply_result_to_state(state, result)
             return
 
+        field: str | None = state.active_scalar_field
+
+        # Flat VTK series: each step is a distinct whole-mesh file — render it via
+        # the registry (no manifest path / in-place fast-path applies).
+        if cfg.series:
+            ctx = _build_context(plotter, ctrl, state, meta, cfg, ddir,
+                                 xdmf_meta, field=field, step=step, reset_camera=False)
+            result = dispatch_render(ctx)
+            state.mesh_stats = result.mesh_stats
+            if result.scalar_bar_info is not None:
+                state.scalar_bar = result.scalar_bar_info
+            return
+
         # XDMF / PVD scalar series: try the in-place step fast-path, else full redraw.
         path = _timeseries_path(meta, state, discover_xdmf(ddir))
         if path is None:
             logger.error(f"No timeseries file found for dataset '{state.active_dataset}'")
             return
-        field: str | None = state.active_scalar_field
         cmap = _resolve_cmap(state)
         success, stats, scalar_bar = update_xdmf_step(
             plotter, ctrl, path, xdmf_meta, step=step, field=field, cmap=cmap,

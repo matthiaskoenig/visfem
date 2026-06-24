@@ -91,6 +91,9 @@ def _check_render_files(ddir: Path, cfg: RenderConfig) -> list[str]:
     elif cfg.renderer in (RendererName.REGION_ID, RendererName.SCALAR_FIELD):
         if cfg.mesh_file and not (ddir / cfg.mesh_file).exists():
             problems.append(f"mesh_file '{cfg.mesh_file}' not found")
+    elif cfg.renderer == RendererName.TIMESERIES and cfg.series:
+        if not any(ddir.glob(cfg.series)):
+            problems.append(f"series glob '{cfg.series}' matched no files")
     elif cfg.renderer == RendererName.SURFACE and not patient_driven:
         from visfem.engine.renderers import resolve_mesh_file
         if resolve_mesh_file(ddir, cfg) is None:
@@ -168,13 +171,19 @@ _EXAMPLES: dict[RendererName, dict] = {
             "region_labels": {},
         },
     ),
-    RendererName.XDMF_TIMESERIES: _base(
-        organ_system=["liver"], mesh_format="XDMF+HDF5",
+    RendererName.TIMESERIES: _base(
+        organ_system=["liver"], mesh_format="VTK",
         render={
-            "renderer": "xdmf_timeseries",
-            # Optional: hide non-display fields, or pin the initial field.
-            "exclude_fields": [],
-            # "default_field": "pressure",
+            "renderer": "timeseries",
+            # A flat series of per-step mesh files (no .pvd/XDMF needed); files are
+            # natural-sorted into steps. For XDMF/PVD datasets, omit "series" and the
+            # manifest is read directly.
+            "series": "frame_*.vtk",
+            "default_field": "concentration",
+            "fields": [
+                {"name": "concentration", "label": "concentration"}
+            ],
+            # "exclude_fields": []   # (manifest series) hide non-display fields
         },
     ),
     RendererName.PVD_PHASE_SERIES: _base(

@@ -44,7 +44,7 @@ that declares how to draw it. The renderers, each named for what it draws:
 - `multi_part` — several labelled part files, merged and coloured
 - `region_id` — a mesh coloured by an integer cell array (+ an optional fibre/vector glyph overlay)
 - `scalar_field` — a static mesh coloured by a selectable scalar field (continuous ramp + optional discrete "zone" fields)
-- `xdmf_timeseries` — an XDMF/PVD scalar-field time series (step slider)
+- `timeseries` — a scalar-field time series with a step slider, from XDMF, PVD, or a flat folder of per-step `.vtk` files (declare `"series": "frame_*.vtk"`)
 - `patient_organs` / `pvd_phase_series` — per-patient folders
 
 If you omit the `render` block the renderer is inferred from `mesh_format` and the

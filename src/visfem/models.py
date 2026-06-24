@@ -99,7 +99,7 @@ class RendererName(StrEnum):
     MULTI_PART       = "multi_part"         # N labelled part files, merged + coloured
     REGION_ID        = "region_id"          # mesh coloured by an integer cell array (+ optional fibre overlay)
     SCALAR_FIELD     = "scalar_field"       # static mesh coloured by a selectable scalar field (continuous + categorical zones)
-    XDMF_TIMESERIES  = "xdmf_timeseries"    # XDMF or PVD scalar-field time series
+    TIMESERIES       = "timeseries"         # scalar-field time series from XDMF, PVD, or a flat VTK series
     PVD_PHASE_SERIES = "pvd_phase_series"   # per-patient region-coloured phase surfaces
     PATIENT_ORGANS   = "patient_organs"     # per-patient per-organ .vtk glob (ircadb family)
 
@@ -159,6 +159,9 @@ class RenderConfig(BaseModel):
     fields: list[ScalarField] = []            # explicit, ordered selectable fields
     exclude_fields: list[str] = []            # deny-list applied to discovered fields
     default_field: str | None = None          # initial field; else first listed/discovered
+
+    # timeseries renderer: flat VTK series (no .pvd/XDMF manifest)
+    series: str | None = None                 # glob (relative to dataset dir) of per-step mesh files, natural-sorted
 
     # renderer-specific options
     fiber: FiberOptions | None = None         # region_id fibre overlay; None => no fibres

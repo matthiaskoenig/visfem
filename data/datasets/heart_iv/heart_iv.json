@@ -20,7 +20,7 @@
   ],
   "spp_project": "Efficient and robust coupling methods for electro-mechanic models of the human heart",
   "render": {
-    "renderer": "xdmf_timeseries",
+    "renderer": "timeseries",
     "exclude_fields": [
       "Fixation",
       "PointID",

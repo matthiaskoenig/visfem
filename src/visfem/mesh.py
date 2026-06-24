@@ -4,6 +4,7 @@ load_mesh(path, step)  -> pv.DataSet
 get_metadata(path)     -> MeshMetadata
 """
 
+import re
 import threading
 import warnings
 import xml.etree.ElementTree as ET
@@ -177,6 +178,27 @@ def pvd_steps(path: Path) -> list[tuple[float, Path]]:
     Single source of truth for the step count and per-step paths of a PVD series.
     """
     return _parse_pvd(path)
+
+
+# Flat VTK series helpers
+
+def _natural_key(name: str) -> list:
+    """Sort key that orders embedded numbers numerically (stimulus_2 < stimulus_10)."""
+    return [int(tok) if tok.isdigit() else tok for tok in re.split(r"(\d+)", name)]
+
+
+def vtk_series_steps(ddir: Path, pattern: str) -> list[tuple[float, Path]]:
+    """Return (step_index, path) for files matching *pattern* under *ddir*.
+
+    A flat directory of per-step mesh files (e.g. ``stimulus_*.vtk`` from a
+    FreeFEM/ParaView run with no .pvd manifest) is treated as one time series.
+    Files are natural-sorted by name so numeric segments order correctly, and the
+    step index is used as the timeline value (filenames may encode several axes,
+    not a single physical time). Single source of truth for a flat series'
+    step count and per-step paths — mirrors pvd_steps.
+    """
+    files = sorted(ddir.glob(pattern), key=lambda p: _natural_key(p.name))
+    return [(float(i), p) for i, p in enumerate(files)]
 
 
 # Metadata extraction
@@ -356,6 +378,39 @@ def _metadata_static(path: Path, fmt: str) -> dict:
                for name, arr in mesh.cell_data.items()},
         },
     }
+
+
+def metadata_for_series(paths: list[Path]) -> MeshMetadata:
+    """Build MeshMetadata for a flat VTK series (an ordered list of per-step files).
+
+    Fields and geometry come from frame 0; n_steps is the file count; times are
+    step indices; scalar bounds are the global min/max of each scalar field across
+    every frame (so the colour ramp is stable while scrubbing). Computed in memory
+    — a flat series has no single file to anchor a .meta.json sidecar to.
+    """
+    if not paths:
+        raise ValueError("metadata_for_series called with no files")
+
+    base = _metadata_static(paths[0], "vtk_series")
+    base["n_steps"] = len(paths)
+    base["times"] = [float(i) for i in range(len(paths))]
+
+    scalar_fields = [name for name, info in base["fields"].items() if info.get("shape") == [1]]
+    if scalar_fields:
+        logger.info(f"Computing global scalar bounds for VTK series ({len(paths)} frames)…")
+        bounds: dict[str, list[float]] = {n: [float("inf"), float("-inf")] for n in scalar_fields}
+        for p in paths:
+            mesh = cast(pv.DataSet, pv.read(str(p)))
+            for name in scalar_fields:
+                arr = mesh.point_data.get(name)
+                if arr is None:
+                    arr = mesh.cell_data.get(name)
+                if arr is not None:
+                    bounds[name][0] = min(bounds[name][0], float(arr.min()))
+                    bounds[name][1] = max(bounds[name][1], float(arr.max()))
+        base["scalar_bounds"] = bounds
+
+    return MeshMetadata(schema_hash=MESH_METADATA_HASH, **base)
 
 
 # Global scalar bounds

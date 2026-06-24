@@ -19,7 +19,7 @@ from visfem.engine.selection import (
     select_scalar_field, select_step, select_xdmf,
 )
 from visfem.log import get_logger
-from visfem.mesh import get_metadata, preload_all_meshes
+from visfem.mesh import get_metadata, preload_all_meshes, vtk_series_steps
 from visfem.models import MeshMetadata
 from visfem.ui.layout import UICallbacks, build_ui
 
@@ -298,6 +298,12 @@ class VisfemApp(TrameApp):
         if not key or key not in self._project_metadata:
             return None
         meta = self._project_metadata[key]
+        # Flat VTK series: the active path is the per-step file at active_step.
+        if meta.render is not None and meta.render.series:
+            steps = vtk_series_steps(dataset_dir(meta), meta.render.series)
+            if steps:
+                idx = max(0, min(int(self.state.active_step), len(steps) - 1))
+                return steps[idx][1]
         # GRASP phase series: the active path is the current patient's per-patient PVD
         # (phase resolved by the `step` passed to load_mesh during warmup/preload).
         patient = self.state.active_patient

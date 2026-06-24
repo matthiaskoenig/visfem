@@ -285,8 +285,15 @@ def redraw_xdmf(
     step: int = 0,
     reset_camera: bool = True,
     cmap: str = "viridis",
+    mesh_meta: "MeshMetadata | None" = None,
 ) -> RenderResult:
-    """Load and render one step of an XDMF mesh."""
+    """Load and render one step of a time-series mesh.
+
+    *path* may be an XDMF/PVD manifest (indexed by *step*) or, for a flat VTK
+    series, a single per-step file (read whole, with *step*=0). Pass *mesh_meta*
+    explicitly for a flat series (whose global scalar bounds aren't keyed by an
+    individual frame's stem); otherwise it is looked up by ``path.stem``.
+    """
     global _xdmf_mesh, _xdmf_actor
     clear_scene(plotter, dark_mode)
     try:
@@ -296,7 +303,8 @@ def redraw_xdmf(
         return RenderResult()
 
     _xdmf_mesh = mesh
-    mesh_meta = xdmf_meta.get(path.stem)
+    if mesh_meta is None:
+        mesh_meta = xdmf_meta.get(path.stem)
     if field is None:
         field = next(iter(mesh_meta.fields), None) if mesh_meta else None
 

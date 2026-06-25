@@ -21,7 +21,38 @@
     "https://doi.org/10.1098/rsif.2022.0087"
   ],
   "spp_project": null,
-  "spp_badge": true,
+  "spp_badge": false,
   "subgroup": "Vessel",
-  "sort_order": 6
+  "sort_order": 6,
+  "render": {
+    "renderer": "multi_part",
+    "part_extensions": [
+      ".ply",
+      ".vtk",
+      ".vtu"
+    ],
+    "parts": [
+      {
+        "stem": "liver",
+        "label": "Liver"
+      },
+      {
+        "stem": "Liver_100000/julia/A",
+        "label": "Arterial"
+      },
+      {
+        "stem": "Liver_100000/julia/P",
+        "label": "Portal"
+      },
+      {
+        "stem": "Liver_100000/julia/V",
+        "label": "Venous"
+      }
+    ],
+    "tube": {
+      "enabled": true,
+      "n_sides": 6,
+      "stride": 10
+    }
+  }
 }

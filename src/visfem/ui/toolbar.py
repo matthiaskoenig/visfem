@@ -66,16 +66,18 @@ def build_toolbar(
 
     html.Span(style=_SEP_STYLE)
 
-    with v3.VTooltip(text=("xr_active ? 'Exit VR' : 'Enter VR'",), location="bottom"):
-        with v3.Template(v_slot_activator="{ props }"):
-            v3.VBtn(
-                icon="mdi-virtual-reality",
-                variant="text", density="compact",
-                click=toggle_xr, v_bind="props",
-                style=("xr_active ? 'color: var(--v-theme-primary)' : ''",),
-            )
-
-    html.Span(style=_SEP_STYLE)
+    # VR/XR button temporarily disabled for deployment — keep the code so it can
+    # be re-enabled later by uncommenting this block.
+    # with v3.VTooltip(text=("xr_active ? 'Exit VR' : 'Enter VR'",), location="bottom"):
+    #     with v3.Template(v_slot_activator="{ props }"):
+    #         v3.VBtn(
+    #             icon="mdi-virtual-reality",
+    #             variant="text", density="compact",
+    #             click=toggle_xr, v_bind="props",
+    #             style=("xr_active ? 'color: var(--v-theme-primary)' : ''",),
+    #         )
+    #
+    # html.Span(style=_SEP_STYLE)
 
     with v3.VTooltip(text="Toggle controls panel", location="bottom"):
         with v3.Template(v_slot_activator="{ props }"):

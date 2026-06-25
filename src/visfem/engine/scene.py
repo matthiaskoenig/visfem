@@ -1,7 +1,7 @@
 """Scene management and mesh rendering helpers."""
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, NamedTuple, Protocol
+from typing import Any, Protocol
 
 import numpy as np
 import pyvista as pv
@@ -15,7 +15,7 @@ from visfem.engine.palettes import CATEGORICAL_PALETTES, CONTINUOUS_CMAPS
 from visfem.engine.discovery import ircadb_organ_names, format_organ_name
 from visfem.log import get_logger
 from visfem.mesh import load_mesh, parse_labels_file
-from visfem.models import MeshMetadata, ProjectMetadata
+from visfem.models import FiberOptions, MeshMetadata, ProjectMetadata
 
 logger = get_logger(__name__)
 
@@ -28,21 +28,11 @@ class RenderResult:
     fiber_actor: vtkActor | None = None
 
 
-class _StaticCache(NamedTuple):
-    actor: vtkActor
-    fiber_actor: vtkActor | None      # heart only, else None
-    legend_items: list[dict[str, Any]]
-    mesh_stats: dict[str, Any] | None
-
-
-_FIBER_SUBSAMPLE: int = 5
-_GLYPH_SCALE: float = 1.5
 _PERCENTILE_CLAMP: int = 95
 
 _active_actor: vtkActor | None = None
 _xdmf_mesh: pv.DataSet | None = None
 _xdmf_actor: vtkActor | None = None
-_static_cache: dict[str, _StaticCache] = {}
 
 
 def get_active_actor() -> vtkActor | None:
@@ -53,6 +43,7 @@ def get_active_actor() -> vtkActor | None:
 class TrameCtrl(Protocol):
     def view_push_camera(self) -> None: ...
     def view_update(self) -> None: ...
+    def view_push_full(self) -> None: ...
 
 
 
@@ -70,16 +61,6 @@ _FIELD_LABELS: dict[str, str] = {
     "Calcium":      "intracellular calcium [Ca\u00b2\u207a]",
     "ActiveStress": "active stress (Pa)",
 }
-
-# Ordered list of selectable scalar fields for the tibia simulation dataset
-TIBIA_SIM_FIELDS: list[dict[str, str]] = [
-    {"name": "vonMises_stress",           "label": _FIELD_LABELS["vonMises_stress"]},
-    {"name": "vonMises_equivalent_strain","label": _FIELD_LABELS["vonMises_equivalent_strain"]},
-    {"name": "octahedral_shear_strain",   "label": _FIELD_LABELS["octahedral_shear_strain"]},
-    {"name": "hydrostatic_strain",        "label": _FIELD_LABELS["hydrostatic_strain"]},
-    {"name": "volumetric_strain",         "label": _FIELD_LABELS["volumetric_strain"]},
-    {"name": "Claes_window",              "label": _FIELD_LABELS["Claes_window"]},
-]
 
 
 def field_label(name: str) -> str:
@@ -131,42 +112,18 @@ def _set_background(plotter: pv.Plotter, dark_mode: bool) -> None:
 
 
 def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
-    """Hide cached static actors; remove all others. Preserves vtk.js geometry cache."""
+    """Remove all actors from the renderer and reset scene state.
+
+    Actors are removed (not hidden) so the local-mode vtk.js client receives a
+    real deletion delta — hiding alone leaves stale geometry painted client-side.
+    """
     global _active_actor, _xdmf_mesh, _xdmf_actor
     _active_actor = None
     _xdmf_mesh = None
     _xdmf_actor = None
-    cached = {a for e in _static_cache.values() for a in (e.actor, e.fiber_actor) if a}
     for actor in list(plotter.renderer.actors.values()):
-        if actor in cached:
-            actor.SetVisibility(False)
-        else:
-            plotter.renderer.RemoveActor(actor)
+        plotter.renderer.RemoveActor(actor)
     _set_background(plotter, dark_mode)
-
-
-def store_static_actor(
-    key: str,
-    actor: vtkActor,
-    fiber_actor: vtkActor | None,
-    legend_items: list[dict[str, Any]],
-    mesh_stats: dict[str, Any] | None,
-) -> None:
-    _static_cache[key] = _StaticCache(actor, fiber_actor, legend_items, mesh_stats)
-
-
-def restore_static_actor(
-    key: str, plotter: pv.Plotter, ctrl: TrameCtrl, dark_mode: bool,
-) -> _StaticCache | None:
-    entry = _static_cache.get(key)
-    if entry is None:
-        return None
-    global _active_actor
-    clear_scene(plotter, dark_mode)  # hides all cached actors
-    _active_actor = entry.actor
-    entry.actor.SetVisibility(True)
-    push_scene(plotter, ctrl, reset_camera=True)
-    return entry
 
 
 def apply_opacity(plotter: pv.Plotter, opacity: float) -> None:
@@ -183,6 +140,27 @@ def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) 
         plotter.reset_camera()
         ctrl.view_push_camera()
     ctrl.view_update()
+
+
+def push_scene_full(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) -> None:
+    """Force a full (non-delta) scene resend to the vtk.js client.
+
+    On dataset switches the local-mode *delta* can reference a stale array hash
+    (the serializer caches connectivity/scalar arrays under a value-dependent
+    dtype, keyed by content hash), so the client paints corrupted geometry or wrong
+    colors until an F5. ``view_push_full`` republishes the scene with every array
+    emitted fresh, making the client rebuild its whole scene graph. Falls back to a
+    plain delta push when no view is bound (e.g. headless tests).
+    """
+    plotter.render()
+    if reset_camera:
+        plotter.reset_camera()
+        ctrl.view_push_camera()
+    push_full = getattr(ctrl, "view_push_full", None)
+    if push_full is not None:
+        push_full()
+    else:
+        ctrl.view_update()
 
 
 # Mapper fast-path helpers — update color/field without rebuilding the scene
@@ -215,27 +193,36 @@ def update_actor_palette(
     mapper.SetLookupTable(_build_categorical_lut(colors, n))
     mapper.SetScalarRange(0, max(n - 1, 1))
     mapper.Modified()
-    plotter.render()
-    ctrl.view_update()
+    # Full resend (not a delta): avoids stale content-hash colors. See push_scene_full.
+    push_scene_full(plotter, ctrl, reset_camera=False)
 
 
-def update_tibia_sim_field(
+def update_scalar_field_view(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,
     ddir: Path,
+    mesh_file: str,
     field: str,
+    categorical_fields: frozenset[str],
+    zone_labels: dict[int, list[str]],
     palette: list[str],
     cmap: str,
+    percentile: int = _PERCENTILE_CLAMP,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """Fast-path field/color update for tibia_simulation."""
+    """In-place field/colour update for a scalar_field dataset.
+
+    Switches the active actor's mapper to *field* without rebuilding the scene.
+    Categorical fields reuse the ``_zone_id`` array frozen on the actor at first
+    render; continuous fields clamp to the *percentile*-th value.
+    """
     if _active_actor is None:
         return [], None
 
     mapper = _active_actor.GetMapper()
-    mesh = load_mesh(ddir / "Tibia_Simulation.vtk")  # instant from cache
+    mesh = load_mesh(ddir / mesh_file)  # instant from cache
 
-    if field == "Claes_window":
-        zones = mesh.cell_data["Claes_window"].astype(int)
+    if field in categorical_fields:
+        zones = mesh.cell_data[field].astype(int)
         zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
         n = len(zone_ids)
         colors = region_colors(n, palette)
@@ -245,25 +232,23 @@ def update_tibia_sim_field(
         mapper.SetLookupTable(_build_categorical_lut(colors, n))
         mapper.SetScalarRange(0, max(n - 1, 1))
         mapper.Modified()
-        plotter.render()
-        ctrl.view_update()
+        push_scene_full(plotter, ctrl, reset_camera=False)
         legend = [
-            {"names": [_CLAES_LABELS.get(z, f"Zone {z}")], "color": colors[i]}
+            {"names": zone_labels.get(z, [f"Zone {z}"]), "color": colors[i]}
             for i, z in enumerate(zone_ids)
         ]
         return legend, None
-    else:
-        data = mesh.cell_data[field]
-        clim = [float(data.min()), float(np.percentile(data, _PERCENTILE_CLAMP))]
-        mapper.SelectColorArray(field)
-        mapper.SetScalarModeToUseCellFieldData()
-        mapper.SetInterpolateScalarsBeforeMapping(True)
-        mapper.SetLookupTable(_build_continuous_lut(cmap, clim[0], clim[1]))
-        mapper.SetScalarRange(*clim)
-        mapper.Modified()
-        plotter.render()
-        ctrl.view_update()
-        return [], _scalar_bar_dict(field, clim, cmap)
+
+    data = mesh.cell_data[field]
+    clim = [float(data.min()), float(np.percentile(data, percentile))]
+    mapper.SelectColorArray(field)
+    mapper.SetScalarModeToUseCellFieldData()
+    mapper.SetInterpolateScalarsBeforeMapping(True)
+    mapper.SetLookupTable(_build_continuous_lut(cmap, clim[0], clim[1]))
+    mapper.SetScalarRange(*clim)
+    mapper.Modified()
+    push_scene_full(plotter, ctrl, reset_camera=False)
+    return [], _scalar_bar_dict(field, clim, cmap)
 
 
 def update_scalar_range(
@@ -283,8 +268,7 @@ def update_scalar_range(
         lut.SetTableRange(clim[0], clim[1])
     mapper.SetScalarRange(clim[0], clim[1])
     mapper.Modified()
-    plotter.render()
-    ctrl.view_update()
+    push_scene_full(plotter, ctrl, reset_camera=False)
     return _scalar_bar_dict(field, clim, cmap)
 
 
@@ -301,8 +285,15 @@ def redraw_xdmf(
     step: int = 0,
     reset_camera: bool = True,
     cmap: str = "viridis",
+    mesh_meta: "MeshMetadata | None" = None,
 ) -> RenderResult:
-    """Load and render one step of an XDMF mesh."""
+    """Load and render one step of a time-series mesh.
+
+    *path* may be an XDMF/PVD manifest (indexed by *step*) or, for a flat VTK
+    series, a single per-step file (read whole, with *step*=0). Pass *mesh_meta*
+    explicitly for a flat series (whose global scalar bounds aren't keyed by an
+    individual frame's stem); otherwise it is looked up by ``path.stem``.
+    """
     global _xdmf_mesh, _xdmf_actor
     clear_scene(plotter, dark_mode)
     try:
@@ -312,19 +303,29 @@ def redraw_xdmf(
         return RenderResult()
 
     _xdmf_mesh = mesh
-    mesh_meta = xdmf_meta.get(path.stem)
+    if mesh_meta is None:
+        mesh_meta = xdmf_meta.get(path.stem)
     if field is None:
         field = next(iter(mesh_meta.fields), None) if mesh_meta else None
 
-    # Use precomputed global bounds so the colormap scale is stable across all timesteps
-    # Fall back to the current step's range if bounds were not cached yet
+    # Vector fields are coloured by magnitude: compute |v| into a temp scalar on
+    # the (already-detached) frame and colour by that.
+    colour_by = field
+    is_vector = bool(field) and field in mesh.array_names and getattr(mesh[field], "ndim", 1) == 2 and mesh[field].shape[1] == 3
+    if is_vector:
+        colour_by = f"{field}__mag"
+        mesh[colour_by] = np.linalg.norm(mesh[field], axis=1)
+
+    # Use precomputed global bounds (scalar fields and vector magnitudes are both
+    # keyed by field name) so the colormap scale is stable across all timesteps.
+    # Fall back to the current step's range if bounds were not cached yet.
     clim: list[float] | None = None
     if field and mesh_meta and field in mesh_meta.scalar_bounds:
         clim = mesh_meta.scalar_bounds[field]
 
     _xdmf_actor = plotter.add_mesh(
         mesh,
-        scalars=field,
+        scalars=colour_by,
         cmap=cmap,
         clim=clim,
         show_edges=False,
@@ -333,18 +334,21 @@ def redraw_xdmf(
         opacity=opacity,
         render=False,
     )
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    # Full (non-delta) resend: redraw_xdmf is the field-switch / step-fallback
+    # path; a delta here can paint wrong colors from a stale content-hash key.
+    push_scene_full(plotter, ctrl, reset_camera=reset_camera)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
 
     scalar_bar: dict | None = None
     if field:
         if clim is None:
             try:
-                lo, hi = mesh.get_data_range(field)
+                lo, hi = mesh.get_data_range(colour_by)
                 clim = [float(lo), float(hi)]
             except Exception:
                 pass
         if clim is not None:
+            # Bar label shows the field name (magnitude is implied by the selector).
             scalar_bar = _scalar_bar_dict(field, clim, cmap)
 
     return RenderResult(mesh_stats=stats, scalar_bar_info=scalar_bar)
@@ -373,12 +377,12 @@ def update_xdmf_step(
         return False, None, None
 
     for name in new_mesh.array_names:
-        _xdmf_mesh[name] = new_mesh[name]
-    _xdmf_mesh.points = new_mesh.points
+        _xdmf_mesh[name] = np.array(new_mesh[name], copy=True)
+    _xdmf_mesh.points = np.array(new_mesh.points, copy=True)
 
+    _xdmf_mesh.Modified()
     _xdmf_actor.GetMapper().Modified()
-    plotter.render()
-    ctrl.view_update()
+    push_scene_full(plotter, ctrl, reset_camera=False)
 
     stats = {"n_cells": new_mesh.n_cells, "n_points": new_mesh.n_points}
     scalar_bar: dict | None = None
@@ -458,40 +462,51 @@ def redraw_ircadb(
     return RenderResult(legend_items=legend, mesh_stats=stats)
 
 
-def redraw_heart(
+def _render_region_array_mesh(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,
-    meta: ProjectMetadata,
-    dataset_dir: Path,
+    mesh_path: Path,
+    region_array: str,
+    region_labels: dict[int, list[str]],
     dark_mode: bool,
     opacity: float,
     palette: list[str] | None = None,
     reset_camera: bool = True,
+    *,
+    meta: ProjectMetadata | None = None,
+    labels_mesh_key: str | None = None,
+    fiber: FiberOptions | None = None,
 ) -> RenderResult:
-    """Render the heart mesh colored by material region."""
-    mesh_path = dataset_dir / "M.vtu"
+    """Render one mesh colored by an integer cell array, with a per-region legend.
+
+    The integer ids in *region_array* are remapped to a dense 0..N-1
+    ``region_id`` cell array, categorically colored, and labelled from
+    *region_labels* (id -> name(s)). When *region_labels* is empty and the
+    dataset declares a ``labels_file``, region names fall back to that file
+    (keyed by *labels_mesh_key*, else the mesh filename). When *fiber* is set and
+    the mesh carries that vector cell array, an oriented glyph overlay is built
+    (hidden by default, toggled via the UI) and returned as ``fiber_actor``.
+    """
     if not mesh_path.exists():
-        logger.error(f"Heart mesh not found: {mesh_path}")
+        logger.error(f"Region mesh not found: {mesh_path}")
         return RenderResult()
-
-    label_map: dict[int, list[str]] = {}
-    if meta.labels_file:
-        labels_path = dataset_dir / meta.labels_file
-        if labels_path.exists():
-            label_map = parse_labels_file(labels_path).get("M.vtu", {})
-
     try:
         mesh = load_mesh(mesh_path)
     except Exception as e:
-        logger.error(f"Failed to load heart mesh: {e}")
+        logger.error(f"Failed to load region mesh {mesh_path}: {e}")
         return RenderResult()
 
-    material_ids = mesh.cell_data["Material"].astype(int)
-    unique_ids: list[int] = sorted(int(v) for v in np.unique(material_ids))
-    mesh.cell_data["region_id"] = np.array(
-        [{mid: i for i, mid in enumerate(unique_ids)}[mid] for mid in material_ids],
-        dtype=np.int32,
-    )
+    # Region names: inline region_labels win; else fall back to a labels file.
+    label_map: dict[int, list[str]] = dict(region_labels) if region_labels else {}
+    if not label_map and meta is not None and meta.labels_file:
+        labels_path = mesh_path.parent / meta.labels_file
+        if labels_path.exists():
+            label_map = parse_labels_file(labels_path).get(labels_mesh_key or mesh_path.name, {})
+
+    ids = mesh.cell_data[region_array].astype(int)
+    unique_ids: list[int] = sorted(int(v) for v in np.unique(ids))
+    remap = {rid: i for i, rid in enumerate(unique_ids)}
+    mesh.cell_data["region_id"] = np.array([remap[r] for r in ids], dtype=np.int32)
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     colors = region_colors(len(unique_ids), _palette)
 
@@ -511,190 +526,54 @@ def redraw_heart(
         render=False,
     )
 
-    # Build fiber glyph overlay; hidden by default, toggled via show_fibers state.
+    # Optional fibre glyph overlay; hidden by default, toggled via show_fibers.
     fiber_actor: vtkActor | None = None
-    if "Fiber" in mesh.cell_data.keys():
-        cell_idx = np.arange(0, mesh.n_cells, _FIBER_SUBSAMPLE)
+    if fiber is not None and fiber.array in mesh.cell_data.keys():
+        cell_idx = np.arange(0, mesh.n_cells, fiber.stride)
         centers = mesh.extract_cells(cell_idx).cell_centers()
-        centers["Fiber"] = mesh.cell_data["Fiber"][cell_idx]
-        glyphs = centers.glyph(orient="Fiber", scale=False, factor=_GLYPH_SCALE)
+        centers[fiber.array] = mesh.cell_data[fiber.array][cell_idx]
+        glyphs = centers.glyph(orient=fiber.array, scale=False, factor=fiber.scale)
         fiber_actor = plotter.add_mesh(
-            glyphs,
-            color="black",
-            show_scalar_bar=False,
-            copy_mesh=True,
-            render=False,
+            glyphs, color="black", show_scalar_bar=False, copy_mesh=True, render=False,
         )
         fiber_actor.SetVisibility(False)
 
     apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl, reset_camera=reset_camera)
+
     legend = [
-        {"names": label_map.get(mid, [f"Region {mid}"]), "color": colors[i]}
-        for i, mid in enumerate(unique_ids)
+        {"names": label_map.get(rid, [f"Region {rid}"]), "color": colors[i]}
+        for i, rid in enumerate(unique_ids)
     ]
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
     return RenderResult(legend_items=legend, mesh_stats=stats, fiber_actor=fiber_actor)
 
 
-def redraw_heart_ep(
+def redraw_stl_surface(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,
     dataset_dir: Path,
     dark_mode: bool,
     opacity: float,
+    filename: str,
     palette: list[str] | None = None,
     reset_camera: bool = True,
 ) -> RenderResult:
-    """Render the EP heart surface colored by EP material region."""
-    ep_path = dataset_dir / "surfaces" / "ep_surface.vtp"
-    if not ep_path.exists():
-        logger.error(f"EP surface not found: {ep_path}")
-        return RenderResult()
+    """Render a single named STL/OBJ surface mesh in one solid color.
 
-    # EP MaterialID -> name
-    ep_label_map: dict[int, str] = {
-        1:  "Ventricle endocardium",
-        2:  "Ventricle myocardium",
-        3:  "Ventricle epicardium",
-        32: "Right atrial bulk tissue",
-        33: "Left atrial bulk tissue",
-        72: "Crista terminalis",
-        73: "Sinus node",
-        74: "Pectinate muscles",
-        75: "Bachmann bundle",
-        76: "Middle posterior bridge",
-        77: "Lower posterior bridge",
-        78: "Coronary sinus bridge",
-        79: "L/R atrial appendage",
-        80: "Inferior isthmus",
-    }
-
-    try:
-        mesh = load_mesh(ep_path)
-    except Exception as e:
-        logger.error(f"Failed to load EP surface: {e}")
-        return RenderResult()
-
-    material_ids = mesh.cell_data["Material"].astype(int)
-    unique_ids: list[int] = sorted(int(v) for v in np.unique(material_ids))
-    mesh.cell_data["region_id"] = np.array(
-        [{mid: i for i, mid in enumerate(unique_ids)}[mid] for mid in material_ids],
-        dtype=np.int32,
-    )
-    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
-    colors = region_colors(len(unique_ids), _palette)
-
-    global _active_actor
-    clear_scene(plotter, dark_mode)
-    _active_actor = plotter.add_mesh(
-        mesh,
-        scalars="region_id",
-        cmap=colors,
-        clim=[0, len(unique_ids) - 1],
-        n_colors=len(unique_ids),
-        opacity=opacity,
-        show_edges=False,
-        show_scalar_bar=False,
-        copy_mesh=True,
-        interpolate_before_map=False,
-        render=False,
-    )
-    apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
-
-    legend = [
-        {"names": [ep_label_map.get(mid, f"Region {mid}")], "color": colors[i]}
-        for i, mid in enumerate(unique_ids)
-    ]
-    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
-    return RenderResult(legend_items=legend, mesh_stats=stats)
-
-
-
-def redraw_tibia_mesh(
-    plotter: pv.Plotter,
-    ctrl: TrameCtrl,
-    dataset_dir: Path,
-    dark_mode: bool,
-    opacity: float,
-    palette: list[str] | None = None,
-    reset_camera: bool = True,
-) -> RenderResult:
-    """Render Tibia_Mesh.vtk colored by PartId region."""
-    mesh_path = dataset_dir / "Tibia_Mesh.vtk"
+    Generic single-surface renderer for datasets that are just one closed mesh
+    with no scalar fields (e.g. the AI4IA aneurysm and AVM models). Bind
+    *filename* per dataset via functools.partial in the selection registry.
+    """
+    mesh_path = dataset_dir / filename
     if not mesh_path.exists():
-        logger.error(f"Tibia mesh not found: {mesh_path}")
-        return RenderResult()
-
-    part_names: dict[int, str] = {
-        1: "Bone",
-        2: "Fracture / Callus",
-        3: "Implant screws",
-    }
-
-    try:
-        mesh = load_mesh(mesh_path)
-    except Exception as e:
-        logger.error(f"Failed to load tibia mesh: {e}")
-        return RenderResult()
-
-    part_ids = mesh.cell_data["PartId"].astype(int)
-    unique_ids: list[int] = sorted(int(v) for v in np.unique(part_ids))
-    mesh.cell_data["region_id"] = np.array(
-        [{pid: i for i, pid in enumerate(unique_ids)}[pid] for pid in part_ids],
-        dtype=np.int32,
-    )
-    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
-    colors = region_colors(len(unique_ids), _palette)
-
-    global _active_actor
-    clear_scene(plotter, dark_mode)
-    _active_actor = plotter.add_mesh(
-        mesh,
-        scalars="region_id",
-        cmap=colors,
-        clim=[0, len(unique_ids) - 1],
-        n_colors=len(unique_ids),
-        opacity=opacity,
-        show_edges=False,
-        show_scalar_bar=False,
-        copy_mesh=True,
-        interpolate_before_map=False,
-        render=False,
-    )
-    apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
-
-    legend = [
-        {"names": [part_names.get(pid, f"Part {pid}")], "color": colors[i]}
-        for i, pid in enumerate(unique_ids)
-    ]
-    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
-    return RenderResult(legend_items=legend, mesh_stats=stats)
-
-
-def redraw_aneurysm(
-    plotter: pv.Plotter,
-    ctrl: TrameCtrl,
-    dataset_dir: Path,
-    dark_mode: bool,
-    opacity: float,
-    palette: list[str] | None = None,
-    reset_camera: bool = True,
-) -> RenderResult:
-    """Render Aneurysm_small_Full geometry as a single surface mesh."""
-    mesh_path = dataset_dir / "Aneurysm_small_Full.stl"
-    if not mesh_path.exists():
-        mesh_path = dataset_dir / "Aneurysm_small_Full.obj"
-    if not mesh_path.exists():
-        logger.error(f"Aneurysm mesh not found in {dataset_dir}")
+        logger.error(f"Surface mesh not found: {mesh_path}")
         return RenderResult()
 
     try:
         mesh = load_mesh(mesh_path)
     except Exception as e:
-        logger.error(f"Failed to load aneurysm mesh: {e}")
+        logger.error(f"Failed to load surface mesh {mesh_path.name}: {e}")
         return RenderResult()
 
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
@@ -718,124 +597,37 @@ def redraw_aneurysm(
     return RenderResult(mesh_stats=stats)
 
 
-_COIL_PARTS: list[tuple[str, str]] = [
-    ("FramingCoil", "Framing Coil"),
-    ("FillingCoil",  "Filling Coil"),
-]
-
-
-def redraw_aneurysm_coils(
+def _render_region_mesh(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,
-    dataset_dir: Path,
+    mesh: pv.DataSet,
     dark_mode: bool,
     opacity: float,
-    palette: list[str] | None = None,
-    reset_camera: bool = True,
+    palette: list[str] | None,
+    reset_camera: bool,
+    solid: bool = False,
 ) -> RenderResult:
-    """Render FramingCoil and FillingCoil as two categorically colored parts."""
+    """Clear the scene and render *mesh* coloured by its per-cell ``region_id``.
+
+    Each connected body gets a distinct categorical colour; falls back to a single
+    solid colour if the array is absent. Sets the global ``_active_actor``.
+
+    With *solid* True the whole surface is one colour regardless of region_id — used
+    for the GRASP phase animation, where per-phase connected-component counts differ
+    so categorical colours would flicker distractingly between frames.
+    """
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
-    colors = region_colors(len(_COIL_PARTS), _palette)
-
-    parts: list[pv.DataSet] = []
-    for i, (stem, _) in enumerate(_COIL_PARTS):
-        path = dataset_dir / f"{stem}.stl"
-        if not path.exists():
-            path = dataset_dir / f"{stem}.obj"
-        if not path.exists():
-            logger.error(f"Coil mesh not found: {path}")
-            return RenderResult()
-        try:
-            part = load_mesh(path).copy()
-        except Exception as e:
-            logger.error(f"Failed to load coil mesh {path}: {e}")
-            return RenderResult()
-        part.cell_data["region_id"] = np.full(part.n_cells, i, dtype=np.int32)
-        parts.append(part)
-
-    mesh = parts[0].merge(parts[1])
-    total_cells = sum(p.n_cells for p in parts)
-    total_points = sum(p.n_points for p in parts)
 
     global _active_actor
     clear_scene(plotter, dark_mode)
-    _active_actor = plotter.add_mesh(
-        mesh,
-        scalars="region_id",
-        cmap=colors,
-        clim=[0, len(_COIL_PARTS) - 1],
-        n_colors=len(_COIL_PARTS),
-        opacity=opacity,
-        show_edges=False,
-        show_scalar_bar=False,
-        copy_mesh=True,
-        interpolate_before_map=False,
-        render=False,
-    )
-    apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
 
-    legend = [
-        {"names": [label], "color": colors[i]}
-        for i, (_, label) in enumerate(_COIL_PARTS)
-    ]
-    stats = {"n_cells": total_cells, "n_points": total_points}
-    return RenderResult(legend_items=legend, mesh_stats=stats)
-
-
-# Claes healing window zone labels
-_CLAES_LABELS: dict[int, str] = {
-    1: "Too much movement",
-    2: "Transition (excess)",
-    3: "Perfect healing window",
-    4: "Transition (lazy)",
-    5: "Bone resorption",
-}
-
-
-def redraw_tibia_simulation(
-    plotter: pv.Plotter,
-    ctrl: TrameCtrl,
-    dataset_dir: Path,
-    dark_mode: bool,
-    opacity: float,
-    field: str = "vonMises_stress",
-    palette: list[str] | None = None,
-    cmap: str = "turbo",
-    reset_camera: bool = True,
-) -> RenderResult:
-    """Render Tibia_Simulation.vtk with the given scalar field."""
-    sim_path = dataset_dir / "Tibia_Simulation.vtk"
-    if not sim_path.exists():
-        logger.error(f"Tibia simulation not found: {sim_path}")
-        return RenderResult()
-
-    try:
-        mesh = load_mesh(sim_path)
-    except Exception as e:
-        logger.error(f"Failed to load tibia simulation: {e}")
-        return RenderResult()
-
-    # Always compute _zone_id so the actor's frozen dataset has it regardless of
-    # the initially rendered field — enables fast-path switching to Claes_window later.
-    _palette = palette if palette is not None else CATEGORICAL_PALETTES["clinical"]
-    zones = mesh.cell_data["Claes_window"].astype(int)
-    zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
-    zone_map = {z: i for i, z in enumerate(zone_ids)}
-    mesh.cell_data["_zone_id"] = np.array(
-        [zone_map[int(z)] for z in zones], dtype=np.int32
-    )
-
-    global _active_actor
-    clear_scene(plotter, dark_mode)
-    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
-
-    if field == "Claes_window":
-        colors = region_colors(len(zone_ids), _palette)
-        n = len(zone_ids)
+    if not solid and "region_id" in mesh.cell_data:
+        region_ids = mesh.cell_data["region_id"].astype(int)
+        n = int(region_ids.max()) + 1
+        colors = region_colors(n, _palette)
         _active_actor = plotter.add_mesh(
             mesh,
-            scalars="_zone_id",
+            scalars="region_id",
             cmap=colors,
             clim=[0, max(n - 1, 1)],
             n_colors=n,
@@ -846,54 +638,123 @@ def redraw_tibia_simulation(
             interpolate_before_map=False,
             render=False,
         )
-        apply_opacity(plotter, opacity)
-        push_scene(plotter, ctrl, reset_camera=reset_camera)
-        legend = [
-            {"names": [_CLAES_LABELS.get(z, f"Zone {z}")], "color": colors[i]}
-            for i, z in enumerate(zone_ids)
-        ]
-        return RenderResult(legend_items=legend, mesh_stats=stats)
+        legend = [{"names": [f"Region {i + 1}"], "color": colors[i]} for i in range(n)]
     else:
-        # Continuous: clamp to nth percentile to avoid outlier washout.
-        data = mesh.cell_data[field]
-        clim = [float(data.min()), float(np.percentile(data, _PERCENTILE_CLAMP))]
         _active_actor = plotter.add_mesh(
-            mesh,
-            scalars=field,
-            cmap=cmap,
-            clim=clim,
-            opacity=opacity,
-            show_edges=False,
-            show_scalar_bar=False,
-            copy_mesh=True,
-            render=False,
+            mesh, color=_palette[0], opacity=opacity,
+            show_edges=False, show_scalar_bar=False, copy_mesh=True, render=False,
+        )
+        legend = []
+
+    apply_opacity(plotter, opacity)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+    return RenderResult(legend_items=legend, mesh_stats=stats)
+
+
+def redraw_region_surface_step(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    pvd_path: Path,
+    dark_mode: bool,
+    opacity: float,
+    step: int,
+    palette: list[str] | None = None,
+    reset_camera: bool = True,
+    solid: bool = True,
+) -> RenderResult:
+    """Render one phase (step) of a region-coloured PVD surface series (GRASP MRI).
+
+    Each phase has independent topology, so this always does a full redraw (no
+    in-place swap). Loads via the PVD path so steps cache in the step cache.
+    Defaults to a single *solid* colour so the surface does not colour-flicker as
+    the connected-component count changes between contrast phases.
+    """
+    try:
+        mesh = load_mesh(pvd_path, step=step)
+    except Exception as e:
+        logger.error(f"Failed to load '{pvd_path.name}' step {step}: {e}")
+        return RenderResult()
+    return _render_region_mesh(plotter, ctrl, mesh, dark_mode, opacity, palette,
+                               reset_camera, solid=solid)
+
+
+def redraw_scalar_field(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    dataset_dir: Path,
+    dark_mode: bool,
+    opacity: float,
+    mesh_file: str,
+    field: str,
+    categorical_fields: frozenset[str],
+    zone_labels: dict[int, list[str]],
+    palette: list[str] | None = None,
+    cmap: str = "viridis",
+    percentile: int = _PERCENTILE_CLAMP,
+    reset_camera: bool = True,
+) -> RenderResult:
+    """Render a static mesh colored by *field*.
+
+    Fields in *categorical_fields* are drawn as discrete zones (a dense
+    ``_zone_id`` cell array + region legend from *zone_labels*); other fields use
+    a continuous ramp clamped to the *percentile*-th value to avoid outlier
+    washout. ``_zone_id`` is precomputed for the active categorical field so the
+    in-place field fast-path (update_scalar_field_view) can switch to it.
+    """
+    sim_path = dataset_dir / mesh_file
+    if not sim_path.exists():
+        logger.error(f"Scalar-field mesh not found: {sim_path}")
+        return RenderResult()
+    try:
+        mesh = load_mesh(sim_path)
+    except Exception as e:
+        logger.error(f"Failed to load scalar-field mesh {sim_path}: {e}")
+        return RenderResult()
+
+    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
+    is_categorical = field in categorical_fields
+
+    # Precompute _zone_id for the active categorical field so the fast-path can
+    # switch to it without a full reload.
+    if is_categorical:
+        zones = mesh.cell_data[field].astype(int)
+        zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
+        zone_map = {z: i for i, z in enumerate(zone_ids)}
+        mesh.cell_data["_zone_id"] = np.array([zone_map[int(z)] for z in zones], dtype=np.int32)
+
+    global _active_actor
+    clear_scene(plotter, dark_mode)
+    stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
+
+    if is_categorical:
+        n = len(zone_ids)
+        colors = region_colors(n, _palette)
+        _active_actor = plotter.add_mesh(
+            mesh, scalars="_zone_id", cmap=colors, clim=[0, max(n - 1, 1)],
+            n_colors=n, opacity=opacity, show_edges=False, show_scalar_bar=False,
+            copy_mesh=True, interpolate_before_map=False, render=False,
         )
         apply_opacity(plotter, opacity)
         push_scene(plotter, ctrl, reset_camera=reset_camera)
-        scalar_bar = _scalar_bar_dict(field, clim, cmap)
-        return RenderResult(mesh_stats=stats, scalar_bar_info=scalar_bar)
+        legend = [
+            {"names": zone_labels.get(z, [f"Zone {z}"]), "color": colors[i]}
+            for i, z in enumerate(zone_ids)
+        ]
+        return RenderResult(legend_items=legend, mesh_stats=stats)
+
+    data = mesh.cell_data[field]
+    clim = [float(data.min()), float(np.percentile(data, percentile))]
+    _active_actor = plotter.add_mesh(
+        mesh, scalars=field, cmap=cmap, clim=clim, opacity=opacity,
+        show_edges=False, show_scalar_bar=False, copy_mesh=True, render=False,
+    )
+    apply_opacity(plotter, opacity)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    return RenderResult(mesh_stats=stats, scalar_bar_info=_scalar_bar_dict(field, clim, cmap))
 
 
 # Vessel-tree dataset definitions
-_RECT_ONE_PARTS: list[tuple[str, str]] = [
-    ("rectangle", "Background tissue"),
-    ("Test1",     "Vessel tree"),
-]
-
-_RECT_TWO_PARTS: list[tuple[str, str]] = [
-    ("rectangle", "Background tissue"),
-    ("Test1",     "Vessel tree 1"),
-    ("Test2",     "Vessel tree 2"),
-]
-
-_QUAD_PARTS: list[tuple[str, str]] = [
-    ("A", "Arterial"),
-    ("B", "Biliary"),
-    ("P", "Portal"),
-    ("V", "Venous"),
-]
-
-
 def _load_multi_part_vtk(
     ddir: Path,
     parts: list[tuple[str, str]],
@@ -922,6 +783,23 @@ def _load_multi_part_vtk(
     return meshes
 
 
+def _subsample_lines(mesh: pv.PolyData, stride: int) -> pv.PolyData:
+    """Keep every *stride*-th line cell, returning a lighter PolyData of lines.
+
+    The liver vessel trees are ~200k disjoint 2-point segments per tree; tubing
+    them all yields tens of millions of points (browser-breaking). Slicing the
+    line connectivity directly preserves PolyData (so .tube still works) and the
+    radius array, unlike extract_cells which would return an UnstructuredGrid.
+    """
+    if stride <= 1 or mesh.n_lines == 0:
+        return mesh
+    lines = mesh.lines.reshape(-1, 3)[::stride]          # rows of [2, i0, i1]
+    sub = pv.PolyData(mesh.points, lines=lines.ravel())
+    if "radius" in mesh.point_data:
+        sub.point_data["radius"] = mesh.point_data["radius"]
+    return sub
+
+
 def _render_labeled_parts(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,
@@ -929,15 +807,16 @@ def _render_labeled_parts(
     labels: list[str],
     colors: list[str],
     opacity: float,
-    bg_index: int | None,
     reset_camera: bool,
     n_tube_sides: int = 8,
     tubify: bool = True,
+    tube_stride: int = 1,
 ) -> RenderResult:
     """Merge labeled parts into one actor and push to scene.
 
     Meshes with a 'radius' point array are converted to tubes when tubify=True.
-    bg_index: if set, that part is rendered at reduced opacity as background.
+    *tube_stride* > 1 subsamples dense line meshes before tubing to keep the
+    serialized geometry within a browser-safe point budget.
     """
     global _active_actor
     total_cells = 0
@@ -945,18 +824,25 @@ def _render_labeled_parts(
     processed: list[pv.DataSet] = []
     for i, mesh in enumerate(meshes):
         if tubify and "radius" in mesh.point_data:
-            mesh = mesh.tube(scalars="radius", absolute=True, n_sides=n_tube_sides)
+            if tube_stride > 1 and isinstance(mesh, pv.PolyData):
+                mesh = _subsample_lines(mesh, tube_stride)
+            # pv.tube() emits triangle *strips*. In trame local mode a strip's
+            # connectivity is order-dependent, so a single stale index in a delta
+            # unzips the whole strip into spikes across the viewport (only fixable
+            # by F5). Triangulate to plain polys, which the vtk.js client syncs
+            # reliably — same geometry, one isolated bad triangle at worst.
+            mesh = mesh.tube(scalars="radius", absolute=True, n_sides=n_tube_sides).triangulate()
         mesh.cell_data["region_id"] = np.full(mesh.n_cells, i, dtype=np.int32)
         total_cells += mesh.n_cells
         total_points += mesh.n_points
         processed.append(mesh)
     meshes = processed
+    n = len(meshes)
 
     merged = meshes[0]
     for m in meshes[1:]:
         merged = merged.merge(m)
 
-    n = len(meshes)
     _active_actor = plotter.add_mesh(
         merged,
         scalars="region_id",
@@ -978,91 +864,3 @@ def _render_labeled_parts(
     return RenderResult(legend_items=legend, mesh_stats=stats)
 
 
-def redraw_rectangle_one_tree(
-    plotter: pv.Plotter,
-    ctrl: TrameCtrl,
-    dataset_dir: Path,
-    dark_mode: bool,
-    opacity: float,
-    palette: list[str] | None = None,
-    reset_camera: bool = True,
-) -> RenderResult:
-    """Render background rectangle (PLY) and single vessel tree (VTK) together."""
-    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
-    colors = region_colors(len(_RECT_ONE_PARTS), _palette)
-    exts = [".ply", ".vtk", ".vtu", ".stl"]
-    meshes = _load_multi_part_vtk(dataset_dir, _RECT_ONE_PARTS, exts)
-    if meshes is None:
-        return RenderResult()
-    clear_scene(plotter, dark_mode)
-    labels = [label for _, label in _RECT_ONE_PARTS]
-    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera)
-
-
-def redraw_rectangle_two_trees(
-    plotter: pv.Plotter,
-    ctrl: TrameCtrl,
-    dataset_dir: Path,
-    dark_mode: bool,
-    opacity: float,
-    palette: list[str] | None = None,
-    reset_camera: bool = True,
-) -> RenderResult:
-    """Render background rectangle (PLY) and two vessel trees (VTK) together."""
-    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
-    colors = region_colors(len(_RECT_TWO_PARTS), _palette)
-    exts = [".ply", ".vtk", ".vtu", ".stl"]
-    meshes = _load_multi_part_vtk(dataset_dir, _RECT_TWO_PARTS, exts)
-    if meshes is None:
-        return RenderResult()
-    clear_scene(plotter, dark_mode)
-    labels = [label for _, label in _RECT_TWO_PARTS]
-    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera)
-
-
-_LIVER_VESSELS_PARTS: list[tuple[str, str]] = [
-    ("liver",                    "Liver"),
-    ("Liver_100000/julia/A",     "Arterial"),
-    ("Liver_100000/julia/P",     "Portal"),
-    ("Liver_100000/julia/V",     "Venous"),
-]
-
-
-def redraw_liver_vessels(
-    plotter: pv.Plotter,
-    ctrl: TrameCtrl,
-    dataset_dir: Path,
-    dark_mode: bool,
-    opacity: float,
-    palette: list[str] | None = None,
-    reset_camera: bool = True,
-) -> RenderResult:
-    """Render liver surface (PLY) and arterial/portal/venous trees (VTK) together."""
-    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
-    colors = region_colors(len(_LIVER_VESSELS_PARTS), _palette)
-    meshes = _load_multi_part_vtk(dataset_dir, _LIVER_VESSELS_PARTS, [".ply", ".vtk", ".vtu"])
-    if meshes is None:
-        return RenderResult()
-    clear_scene(plotter, dark_mode)
-    labels = [label for _, label in _LIVER_VESSELS_PARTS]
-    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=0, reset_camera=reset_camera, tubify=False)
-
-
-def redraw_rectangle_quad(
-    plotter: pv.Plotter,
-    ctrl: TrameCtrl,
-    dataset_dir: Path,
-    dark_mode: bool,
-    opacity: float,
-    palette: list[str] | None = None,
-    reset_camera: bool = True,
-) -> RenderResult:
-    """Render all four vascular networks (Arterial/Biliary/Portal/Venous) from A/B/P/V.vtk."""
-    _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
-    colors = region_colors(len(_QUAD_PARTS), _palette)
-    meshes = _load_multi_part_vtk(dataset_dir, _QUAD_PARTS, [".vtk", ".vtu"])
-    if meshes is None:
-        return RenderResult()
-    clear_scene(plotter, dark_mode)
-    labels = [label for _, label in _QUAD_PARTS]
-    return _render_labeled_parts(plotter, ctrl, meshes, labels, colors, opacity, bg_index=None, reset_camera=reset_camera)

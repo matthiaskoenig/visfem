@@ -1,10 +1,10 @@
-FROM kitware/trame
+FROM kitware/trame:uv
 
 ENV TRAME_PYTHON=3.13
 
 RUN apt-get update \
     && apt-get install -y \
-    libxrender1 \
+    libxrender1 libosmesa6 libgl1 libglx-mesa0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy your app and setup files

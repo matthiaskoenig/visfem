@@ -4,10 +4,15 @@ load_mesh(path, step)  -> pv.DataSet
 get_metadata(path)     -> MeshMetadata
 """
 
+import re
 import threading
+import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from vtkmodules.vtkIOLSDyna import vtkLSDynaReader
 
 import h5py
 import meshio
@@ -121,7 +126,15 @@ def _parse_xdmf_base_grid(
 # Format detection
 
 def _detect_format(path: Path) -> str:
-    """Return a format string for the given file path."""
+    """Return a format string for the given file or directory path.
+
+    Most formats are detected by file suffix. An LS-DYNA d3plot database has no
+    suffix and is identified by *path* being a directory that contains the
+    ``d3plot`` master file — checked first, since a directory can never collide
+    with a file-suffix format.
+    """
+    if path.is_dir() and (path / _LSDYNA_MASTER).exists():
+        return "lsdyna_d3plot"
     suffix = path.suffix.lower()
     if suffix == ".pvd":
         return "pvd_timeseries"
@@ -168,6 +181,94 @@ def _parse_pvd(path: Path) -> list[tuple[float, Path]]:
         if ds.get("file")
     ]
     return sorted(entries, key=lambda x: x[0])
+
+
+def pvd_steps(path: Path) -> list[tuple[float, Path]]:
+    """Public wrapper for _parse_pvd: (timestep, vtu_path) pairs sorted by time.
+
+    Single source of truth for the step count and per-step paths of a PVD series.
+    """
+    return _parse_pvd(path)
+
+
+# Flat VTK series helpers
+
+def _natural_key(name: str) -> list:
+    """Sort key that orders embedded numbers numerically (stimulus_2 < stimulus_10)."""
+    return [int(tok) if tok.isdigit() else tok for tok in re.split(r"(\d+)", name)]
+
+
+def vtk_series_steps(ddir: Path, pattern: str) -> list[tuple[float, Path]]:
+    """Return (step_index, path) for files matching *pattern* under *ddir*.
+
+    A flat directory of per-step mesh files (e.g. ``stimulus_*.vtk`` from a
+    FreeFEM/ParaView run with no .pvd manifest) is treated as one time series.
+    Files are natural-sorted by name so numeric segments order correctly, and the
+    step index is used as the timeline value (filenames may encode several axes,
+    not a single physical time). Single source of truth for a flat series'
+    step count and per-step paths — mirrors pvd_steps.
+    """
+    files = sorted(ddir.glob(pattern), key=lambda p: _natural_key(p.name))
+    return [(float(i), p) for i, p in enumerate(files)]
+
+
+# LS-DYNA d3plot helpers
+#
+# A d3plot database is a directory (the dataset dir) holding the `d3plot` master
+# file plus sequential parts. vtkLSDynaReader reads it by directory and streams
+# one timestep at a time, so the multi-GB database is never resident. The reader
+# is costly to instantiate and is stateful / not thread-safe (one
+# UPDATE_TIME_STEP + Update mutates its shared output), so we cache one reader per
+# directory and serialise every frame read with a per-directory lock. The step
+# times are memoised at reader creation so a locked read never re-locks.
+
+_LSDYNA_MASTER = "d3plot"
+_lsdyna_readers: dict[Path, "vtkLSDynaReader"] = {}
+_lsdyna_times: dict[Path, list[float]] = {}
+_lsdyna_locks: dict[Path, threading.Lock] = {}
+_lsdyna_registry_lock = threading.Lock()
+
+
+def _lsdyna_lock(ddir: Path) -> threading.Lock:
+    with _lsdyna_registry_lock:
+        return _lsdyna_locks.setdefault(ddir, threading.Lock())
+
+
+def _lsdyna_reader(ddir: Path) -> "vtkLSDynaReader":
+    """Return a cached vtkLSDynaReader for *ddir* (call under _lsdyna_lock(ddir))."""
+    reader = _lsdyna_readers.get(ddir)
+    if reader is None:
+        from vtkmodules.vtkCommonExecutionModel import vtkStreamingDemandDrivenPipeline as _SDDP
+        from vtkmodules.vtkIOLSDyna import vtkLSDynaReader
+        reader = vtkLSDynaReader()
+        reader.SetDatabaseDirectory(str(ddir))
+        reader.UpdateInformation()
+        info = reader.GetOutputInformation(0)
+        n = info.Length(_SDDP.TIME_STEPS())
+        _lsdyna_times[ddir] = [float(info.Get(_SDDP.TIME_STEPS(), i)) for i in range(n)]
+        _lsdyna_readers[ddir] = reader
+    return reader
+
+
+def lsdyna_steps(ddir: Path) -> list[float]:
+    """Return the timestep values of a d3plot database (single source of truth)."""
+    with _lsdyna_lock(ddir):
+        _lsdyna_reader(ddir)              # ensures times are memoised
+        return list(_lsdyna_times[ddir])
+
+
+def _load_d3plot_frame(ddir: Path, step: int = 0) -> pv.DataSet:
+    """Read one timestep of a d3plot database as a combined UnstructuredGrid."""
+    from vtkmodules.vtkCommonExecutionModel import vtkStreamingDemandDrivenPipeline as _SDDP
+    with _lsdyna_lock(ddir):
+        reader = _lsdyna_reader(ddir)
+        times = _lsdyna_times[ddir]
+        step = max(0, min(step, len(times) - 1))
+        info = reader.GetOutputInformation(0)
+        info.Set(_SDDP.UPDATE_TIME_STEP(), times[step])
+        reader.Update()
+        combined = pv.wrap(reader.GetOutput()).combine()  # MultiBlock -> one grid
+    return cast(pv.DataSet, combined)
 
 
 # Metadata extraction
@@ -349,7 +450,137 @@ def _metadata_static(path: Path, fmt: str) -> dict:
     }
 
 
+# Bounds are tracked for scalar fields (shape [1]) AND vector fields (shape [3]),
+# the latter by their magnitude |v|, so the colour ramp is stable while scrubbing
+# whether a scalar or a vector-magnitude field is shown.
+
+def _boundable_fields(fields: dict) -> list[str]:
+    """Field names worth scanning for global bounds: scalars and vectors."""
+    return [n for n, info in fields.items() if info.get("shape") in ([1], [3])]
+
+
+def _array_minmax(arr: np.ndarray) -> tuple[float, float]:
+    """Min/max of *arr*; for a 3-vector array, of its per-row magnitude."""
+    if arr.ndim == 2 and arr.shape[1] == 3:
+        mag = np.linalg.norm(arr, axis=1)
+        return float(mag.min()), float(mag.max())
+    return float(arr.min()), float(arr.max())
+
+
+def metadata_for_series(paths: list[Path]) -> MeshMetadata:
+    """Build MeshMetadata for a flat VTK series (an ordered list of per-step files).
+
+    Fields and geometry come from frame 0; n_steps is the file count; times are
+    step indices; global bounds are the min/max of each scalar field (and each
+    vector field's magnitude) across every frame, so the colour ramp is stable
+    while scrubbing. Computed in memory — a flat series has no single file to
+    anchor a .meta.json sidecar to.
+    """
+    if not paths:
+        raise ValueError("metadata_for_series called with no files")
+
+    base = _metadata_static(paths[0], "vtk_series")
+    base["n_steps"] = len(paths)
+    base["times"] = [float(i) for i in range(len(paths))]
+
+    fields = _boundable_fields(base["fields"])
+    if fields:
+        logger.info(f"Computing global field bounds for VTK series ({len(paths)} frames)…")
+        bounds: dict[str, list[float]] = {n: [float("inf"), float("-inf")] for n in fields}
+        for p in paths:
+            mesh = cast(pv.DataSet, pv.read(str(p)))
+            for name in fields:
+                arr = mesh.point_data.get(name)
+                if arr is None:
+                    arr = mesh.cell_data.get(name)
+                if arr is not None:
+                    lo, hi = _array_minmax(arr)
+                    bounds[name][0] = min(bounds[name][0], lo)
+                    bounds[name][1] = max(bounds[name][1], hi)
+        base["scalar_bounds"] = bounds
+
+    return MeshMetadata(schema_hash=MESH_METADATA_HASH, **base)
+
+
+def _frame_field_shapes(mesh: pv.DataSet) -> dict[str, dict]:
+    """{name: {center, shape}} for all point + cell arrays of a frame."""
+    def shape(arr: np.ndarray) -> list[int]:
+        return list(arr.shape[1:]) if arr.ndim > 1 else [1]
+    return {
+        **{n: {"center": "point", "shape": shape(a)} for n, a in mesh.point_data.items()},
+        **{n: {"center": "cell", "shape": shape(a)} for n, a in mesh.cell_data.items()},
+    }
+
+
+def metadata_for_d3plot(ddir: Path) -> MeshMetadata:
+    """Build MeshMetadata for an LS-DYNA d3plot database, cached as a sidecar.
+
+    Geometry + fields come from frame 0; n_steps/times from the reader; global
+    scalar bounds are scanned across every frame (so the colour ramp is stable
+    while scrubbing). The full scan is the one expensive step (~0.3 s/frame), so
+    the result is persisted to ``<ddir>/d3plot.meta.json`` (keyed on the schema
+    hash) and reused on later launches. Vector/tensor fields are recorded but
+    filtered out of selectable scalars downstream by the shape==[1] gate.
+    """
+    sidecar = ddir / "d3plot.meta.json"
+    if sidecar.exists():
+        try:
+            cached = MeshMetadata.model_validate_json(sidecar.read_text())
+            if cached.schema_hash == MESH_METADATA_HASH:
+                logger.debug(f"Cache hit: '{sidecar.name}'")
+                return cached
+        except (ValueError, KeyError):
+            logger.debug(f"Invalid d3plot sidecar, regenerating '{sidecar.name}'")
+
+    times = lsdyna_steps(ddir)
+    frame0 = _load_d3plot_frame(ddir, 0)
+    base: dict = {
+        "format": "lsdyna_d3plot",
+        "n_steps": len(times),
+        "times": times,
+        "n_points": frame0.n_points,
+        "n_cells": frame0.n_cells,
+        "cell_types": [str(ct.name).lower() for ct in frame0.distinct_cell_types],
+        "fields": _frame_field_shapes(frame0),
+    }
+
+    fields = _boundable_fields(base["fields"])
+    if fields:
+        logger.info(f"Computing global field bounds for d3plot ({len(times)} frames)…")
+        bounds: dict[str, list[float]] = {n: [float("inf"), float("-inf")] for n in fields}
+        for k in range(len(times)):
+            mesh = _load_d3plot_frame(ddir, k)
+            for name in fields:
+                arr = mesh.point_data.get(name)
+                if arr is None:
+                    arr = mesh.cell_data.get(name)
+                if arr is not None:
+                    lo, hi = _array_minmax(arr)
+                    bounds[name][0] = min(bounds[name][0], lo)
+                    bounds[name][1] = max(bounds[name][1], hi)
+        base["scalar_bounds"] = {
+            n: b for n, b in bounds.items()
+            if b[0] != float("inf") and b[1] != float("-inf")
+        }
+
+    meta = MeshMetadata(schema_hash=MESH_METADATA_HASH, **base)
+    try:
+        sidecar.write_text(meta.model_dump_json(indent=2))
+        logger.debug(f"Cached d3plot metadata to '{sidecar.name}'")
+    except OSError as e:
+        logger.warning(f"Could not write d3plot sidecar: {e}")
+    return meta
+
+
 # Global scalar bounds
+
+def _mesh_array(mesh: pv.DataSet, name: str) -> "np.ndarray | None":
+    """Fetch a field array by name from point or cell data."""
+    arr = mesh.point_data.get(name)
+    if arr is None:
+        arr = mesh.cell_data.get(name)
+    return arr
+
 
 def _compute_scalar_bounds(
     path: Path,
@@ -357,20 +588,25 @@ def _compute_scalar_bounds(
     fields: dict,
     n_steps: int,
 ) -> dict[str, list[float]]:
-    """Return {field: [global_min, global_max]} for every scalar field across all timesteps."""
-    scalar_fields = [name for name, info in fields.items() if info.get("shape") == [1]]
-    if not scalar_fields:
+    """Return {field: [global_min, global_max]} across all timesteps.
+
+    Covers scalar fields directly and vector fields by their magnitude |v|, so a
+    vector-magnitude view has a stable colour scale while scrubbing.
+    """
+    boundable = _boundable_fields(fields)
+    if not boundable:
         return {}
 
-    logger.info(f"Computing global scalar bounds for '{path.name}' ({n_steps} step(s))…")
+    logger.info(f"Computing global field bounds for '{path.name}' ({n_steps} step(s))…")
 
     bounds: dict[str, list[float]] = {
-        name: [float("inf"), float("-inf")] for name in scalar_fields
+        name: [float("inf"), float("-inf")] for name in boundable
     }
 
     def _update(name: str, arr: np.ndarray) -> None:
-        bounds[name][0] = min(bounds[name][0], float(arr.min()))
-        bounds[name][1] = max(bounds[name][1], float(arr.max()))
+        lo, hi = _array_minmax(arr)
+        bounds[name][0] = min(bounds[name][0], lo)
+        bounds[name][1] = max(bounds[name][1], hi)
 
     if fmt == "timeseries_xdmf":
         with meshio.xdmf.TimeSeriesReader(path) as reader:
@@ -380,7 +616,7 @@ def _compute_scalar_bounds(
                     _, point_data, cell_data = reader.read_data(step)
                 except Exception:
                     continue
-                for name in scalar_fields:
+                for name in boundable:
                     data = point_data.get(name)
                     if data is None:
                         blocks = cell_data.get(name)
@@ -417,13 +653,10 @@ def _compute_scalar_bounds(
         for _, vtu_path in _parse_pvd(path):
             try:
                 mesh = cast(pv.DataSet, pv.read(str(vtu_path)))
-                for name in scalar_fields:
-                    try:
-                        lo, hi = mesh.get_data_range(name)
-                        bounds[name][0] = min(bounds[name][0], float(lo))
-                        bounds[name][1] = max(bounds[name][1], float(hi))
-                    except Exception:
-                        pass
+                for name in boundable:
+                    arr = _mesh_array(mesh, name)
+                    if arr is not None:
+                        _update(name, arr)
             except Exception as e:
                 logger.warning(f"Skipping '{vtu_path.name}' during bounds scan: {e}")
 
@@ -431,13 +664,10 @@ def _compute_scalar_bounds(
         # Static / single-step - load once
         try:
             mesh = _load_static(path)
-            for name in scalar_fields:
-                try:
-                    lo, hi = mesh.get_data_range(name)
-                    bounds[name][0] = float(lo)
-                    bounds[name][1] = float(hi)
-                except Exception:
-                    pass
+            for name in boundable:
+                arr = _mesh_array(mesh, name)
+                if arr is not None:
+                    _update(name, arr)
         except Exception as e:
             logger.warning(f"Failed to load '{path.name}' for bounds scan: {e}")
 
@@ -557,11 +787,28 @@ def _load_static(path: Path) -> pv.DataSet:
         logger.debug(f"[pyvista] loading '{path.name}'")
         return cast(pv.DataSet, pv.read(str(path)))
     logger.debug(f"[meshio] loading '{path.name}'")
-    return pv.from_meshio(meshio.read(str(path)))
+    # meshio's STL binary/ASCII probe does `84 + num_triangles * 50 == filesize`
+    # in a fixed-width int, which harmlessly overflows on large STLs. Silence that
+    # one benign RuntimeWarning so it doesn't pollute the logs.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message="overflow encountered in scalar multiply",
+            category=RuntimeWarning,
+        )
+        return pv.from_meshio(meshio.read(str(path)))
+
+
+def _detached_copy(cached: pv.DataSet) -> pv.DataSet:
+    """Return a copy of a cached mesh that shares NO buffers with the cache."""
+    return cached.copy(deep=True)
 
 
 def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
-    """Load any supported mesh file and return a PyVista dataset."""
+    """Load any supported mesh and return a PyVista dataset.
+
+    *path* is usually a file; for an LS-DYNA d3plot database it is the database
+    *directory* (detected by `_detect_format`), and *step* selects the timestep.
+    """
     fmt = _detect_format(path)
     logger.debug(f"Loading '{path.name}' as '{fmt}' step {step}")
 
@@ -571,24 +818,44 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
             _static_cache[path] = _load_static(path)
         else:
             logger.info(f"[mesh cache hit] '{path.name}' served from memory")
-        return _static_cache[path].copy(deep=False)
+        return _detached_copy(_static_cache[path])
 
     key = (path, step)
     with _step_cache_lock:
         if key in _step_cache:
             logger.info(f"[mesh cache hit] '{path.name}' step {step} served from memory")
-            return _step_cache[key].copy(deep=False)
+            return _detached_copy(_step_cache[key])
 
     logger.info(f"[mesh cache miss] loading '{path.name}' step {step} from disk")
     if fmt == "pvd_timeseries":
         mesh = _load_pvd(path, step)
     elif fmt == "fenics_xdmf":
         mesh = _load_fenics_xdmf(path, step)
+    elif fmt == "lsdyna_d3plot":
+        mesh = _load_d3plot_frame(path, step)
     else:
         mesh = _load_timeseries_xdmf(path, step)
     with _step_cache_lock:
         _step_cache[key] = mesh
-    return mesh.copy(deep=False)
+    return _detached_copy(mesh)
+
+
+_surface_cache: dict[Path, pv.PolyData] = {}
+
+
+def load_surface(path: Path) -> pv.PolyData:
+    """Load a mesh and return its external surface as PolyData (cached).
+
+    For large raw UnstructuredGrids that must reach the vtk.js client as an
+    explicit-poly surface to avoid client-side faceting artifacts.
+    """
+    if path not in _surface_cache:
+        mesh = load_mesh(path)
+        # PolyData passes through unchanged; only UnstructuredGrids need extraction.
+        surface = mesh if isinstance(mesh, pv.PolyData) else mesh.extract_surface(algorithm="dataset_surface")
+        _surface_cache[path] = surface
+    return _surface_cache[path].copy(deep=False)
+
 
 def preload_all_meshes(project_metadata: dict) -> None:
     """Pre-populate the mesh cache at server startup."""
@@ -598,14 +865,26 @@ def preload_all_meshes(project_metadata: dict) -> None:
     for meta in project_metadata.values():
         ddir = dataset_dir(meta)
 
-        # Static files: VTK, VTU, STL — recurse into patient subdirs too
+        # Static files: VTK, VTU, STL — recurse into patient subdirs too.
+        # Skip per-phase VTUs (phase_NN.vtu): they load via their PVD into the step
+        # cache during warmup, so caching them again here as static is wasteful.
         for ext in (".vtk", ".vtu", ".stl"):
             for path in sorted(ddir.rglob(f"*{ext}")):
+                if path.name.startswith("phase_") and path.suffix == ".vtu":
+                    continue
                 try:
                     load_mesh(path, 0)
                     logger.warning(f"  cached {path.name}")
                 except Exception as e:
                     logger.warning(f"  failed {path.name}: {e}")
+
+        # Per-patient PVD phase series (GRASP MRI): preload step 0 of each.
+        for phase_pvd in sorted(ddir.rglob("*.pvd")):
+            try:
+                load_mesh(phase_pvd, 0)
+                logger.warning(f"  cached {phase_pvd.parent.name}/{phase_pvd.name} step 0")
+            except Exception as e:
+                logger.warning(f"  failed {phase_pvd.name}: {e}")
 
         # XDMF time-series: step 0 only
         for stem, path in discover_xdmf(ddir).items():

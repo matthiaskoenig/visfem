@@ -16,5 +16,59 @@
   "references": [
     "https://doi.org/10.1038/s41598-025-04792-w"
   ],
-  "spp_project": "Evidence-based personalized rehabilitation protocols for uneventful healing with data-driven virtual twins"
+  "spp_project": "Evidence-based personalized rehabilitation protocols for uneventful healing with data-driven virtual twins",
+  "render": {
+    "renderer": "scalar_field",
+    "mesh_file": "Tibia_Simulation.vtk",
+    "categorical_palette": "clinical",
+    "continuous_cmap": "turbo",
+    "categorical_fields": [
+      "Claes_window"
+    ],
+    "percentile_clamp": 95,
+    "default_field": "vonMises_stress",
+    "fields": [
+      {
+        "name": "vonMises_stress",
+        "label": "von Mises stress"
+      },
+      {
+        "name": "vonMises_equivalent_strain",
+        "label": "von Mises eq. strain"
+      },
+      {
+        "name": "octahedral_shear_strain",
+        "label": "octahedral shear strain"
+      },
+      {
+        "name": "hydrostatic_strain",
+        "label": "hydrostatic strain"
+      },
+      {
+        "name": "volumetric_strain",
+        "label": "volumetric strain"
+      },
+      {
+        "name": "Claes_window",
+        "label": "healing window (Claes)"
+      }
+    ],
+    "region_labels": {
+      "1": [
+        "Too much movement"
+      ],
+      "2": [
+        "Transition (excess)"
+      ],
+      "3": [
+        "Perfect healing window"
+      ],
+      "4": [
+        "Transition (lazy)"
+      ],
+      "5": [
+        "Bone resorption"
+      ]
+    }
+  }
 }

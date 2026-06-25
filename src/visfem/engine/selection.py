@@ -1,40 +1,46 @@
-"""Dataset selection handlers for VisFEM."""
+"""Dataset selection handlers for VisFEM.
+
+Every handler resolves the active dataset's render config
+(``visfem.engine.renderers.resolve_render_config``) and dispatches through the
+renderer registry — there is no per-dataset-name branching. In-place fast-paths
+(``update_xdmf_step``, ``update_scalar_field_view``, ``update_actor_palette``) are
+kept for latency on step/field/palette changes, falling back to a registry
+re-render.
+"""
 from pathlib import Path
 
 import pyvista as pv
-from typing import Any, Callable
+from typing import Any
 from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.engine.colors import region_colors
 from visfem.engine.palettes import CATEGORICAL_PALETTES
 from visfem.engine.scene import (
-    TIBIA_SIM_FIELDS, RenderResult, TrameCtrl,
-    clear_scene, field_label, redraw_aneurysm, redraw_aneurysm_coils, redraw_heart, redraw_heart_ep,
-    redraw_ircadb, redraw_tibia_mesh, redraw_tibia_simulation, redraw_xdmf,
-    redraw_rectangle_one_tree, redraw_rectangle_two_trees, redraw_rectangle_quad,
-    redraw_liver_vessels,
-    get_active_actor, update_actor_palette, update_tibia_sim_field, update_xdmf_step,
-    store_static_actor, restore_static_actor,
+    TrameCtrl, clear_scene, field_label,
+    get_active_actor, update_actor_palette, update_scalar_field_view, update_xdmf_step,
 )
 from visfem.log import get_logger
-from visfem.models import MeshMetadata, ProjectMetadata
-from visfem.engine.discovery import dataset_dir, discover_xdmf, meta_to_state, pvd_file_path
+from visfem.models import MeshMetadata, ProjectMetadata, RenderConfig, RendererName
+from visfem.engine.discovery import (
+    dataset_dir, discover_xdmf, meta_to_state, pvd_file_path,
+    grasp_phase_pvd, grasp_phase_count,
+)
+from visfem.engine.renderers import (
+    TIMESERIES_RENDERERS, RenderContext,
+    apply_result_to_state, dispatch_render, is_patient_renderer,
+    populate_timeseries_state, resolve_render_config,
+)
 
 logger = get_logger(__name__)
 
-
-def _scalar_fields_from_meta(mesh_meta: MeshMetadata | None) -> list[dict[str, str]]:
-    """Return {name, label} entries for scalar (shape==[1]) fields in *mesh_meta*, sorted alphabetically."""
-    if mesh_meta is None:
-        return []
-    return sorted(
-        [
-            {"name": fname, "label": field_label(fname)}
-            for fname, finfo in mesh_meta.fields.items()
-            if finfo.shape == [1]
-        ],
-        key=lambda f: f["label"].lower(),
-    )
+# Renderers whose active actor carries a categorical LUT, so a palette change can
+# be applied as a fast in-place recolor instead of a full re-render. (scalar_field
+# is excluded: it has its own dedicated fast-path, update_scalar_field_view.)
+_RECOLORABLE: frozenset[RendererName] = frozenset({
+    RendererName.REGION_ID,      # includes the former heart (region_id + fibre)
+    RendererName.MULTI_PART,
+    RendererName.PATIENT_ORGANS,
+})
 
 
 def _resolve_palette(state: Any) -> list[str]:
@@ -42,12 +48,6 @@ def _resolve_palette(state: Any) -> list[str]:
     name: str = str(state.active_categorical_palette)
     colors = CATEGORICAL_PALETTES.get(name, CATEGORICAL_PALETTES["paired"])
     return list(reversed(colors)) if getattr(state, "color_reversed", False) else colors
-
-
-# Fields present in heart_iv VTUs that are not meaningful for display
-_HEART_IV_EXCLUDED: frozenset[str] = frozenset(
-    {"Fixation", "PointID", "Material", "CellID", "f", "n", "s"}
-)
 
 
 def _timeseries_path(
@@ -77,51 +77,41 @@ def _reset_selection_state(state: Any) -> None:
     state.active_step = 0
     state.step_times = []
     state.clim_override = None
+    state.has_fibers = False  # set True after render when a fibre actor is produced
 
 
-_STATIC_DATASETS: frozenset[str] = frozenset({
-    "heart", "tibia_mesh", "aneurysm", "aneurysm_coils", "heart_ep",
-    "rectangle_one_tree", "rectangle_two_trees",
-    "rectangle_quad_500", "rectangle_quad_2000", "rectangle_quad_3000",
-    "liver_vessels",
-})
-
-_STATIC_REDRAW: dict[str, Callable[..., RenderResult]] = {
-    "heart":               redraw_heart,
-    "tibia_mesh":          redraw_tibia_mesh,
-    "aneurysm":            redraw_aneurysm,
-    "aneurysm_coils":      redraw_aneurysm_coils,
-    "heart_ep":            redraw_heart_ep,
-    "rectangle_one_tree":  redraw_rectangle_one_tree,
-    "rectangle_two_trees": redraw_rectangle_two_trees,
-    "rectangle_quad_500":  redraw_rectangle_quad,
-    "rectangle_quad_2000": redraw_rectangle_quad,
-    "rectangle_quad_3000": redraw_rectangle_quad,
-    "liver_vessels":       redraw_liver_vessels,
-}
-
-
-def _redraw_static(
-    key: str,
+def _build_context(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,
-    meta: ProjectMetadata,
-    ddir: Path,
     state: Any,
-    opacity: float,
-) -> RenderResult:
-    entry = restore_static_actor(key, plotter, ctrl, state.dark_mode)
-    if entry is not None:
-        colors = _resolve_palette(state)
-        update_actor_palette(plotter, ctrl, colors, len(entry.legend_items))
-        legend = [{**item, "color": colors[i]} for i, item in enumerate(entry.legend_items)]
-        return RenderResult(legend_items=legend, mesh_stats=entry.mesh_stats, fiber_actor=entry.fiber_actor)
+    meta: ProjectMetadata,
+    cfg: RenderConfig,
+    ddir: Path,
+    xdmf_meta: dict[str, MeshMetadata],
+    *,
+    field: str | None = None,
+    step: int = 0,
+    reset_camera: bool = True,
+) -> RenderContext:
+    """Assemble a RenderContext with palette/cmap resolved from current state."""
+    return RenderContext(
+        plotter=plotter, ctrl=ctrl, state=state, ddir=ddir, meta=meta, cfg=cfg,
+        xdmf_meta=xdmf_meta, opacity=float(state.ctrl_opacity),
+        palette=_resolve_palette(state), cmap=_resolve_cmap(state),
+        field=field, step=step, reset_camera=reset_camera,
+    )
 
-    fn = _STATIC_REDRAW[key]
-    common = dict(dark_mode=state.dark_mode, opacity=opacity, palette=_resolve_palette(state))
-    result = fn(plotter, ctrl, meta, ddir, **common) if key == "heart" else fn(plotter, ctrl, ddir, **common)
-    store_static_actor(key, get_active_actor(), result.fiber_actor, result.legend_items, result.mesh_stats)
-    return result
+
+def _scalar_field_view_args(meta: ProjectMetadata, cfg: RenderConfig, state: Any) -> dict:
+    """Shared kwargs for the scalar_field in-place fast-path (update_scalar_field_view)."""
+    return dict(
+        mesh_file=cfg.mesh_file,
+        categorical_fields=frozenset(cfg.categorical_fields),
+        zone_labels=cfg.region_labels,
+        palette=_resolve_palette(state),
+        cmap=_resolve_cmap(state),
+        percentile=cfg.percentile_clamp if cfg.percentile_clamp is not None else 95,
+    )
 
 
 def select_dataset(
@@ -132,100 +122,48 @@ def select_dataset(
     xdmf_meta: dict[str, MeshMetadata],
     key: str,
 ) -> vtkActor | None:
-    """Route to the correct redraw based on dataset key."""
+    """Render a dataset via its resolved render config (JSON-driven dispatch)."""
     state.active_dataset = key
     state.active_patient = None
     state.show_fibers = False
     _reset_selection_state(state)
 
-    # Default color scheme per dataset type
-    if key in ("tibia_simulation", "tibia_mesh"):
-        state.active_categorical_palette = "clinical"
-    else:
-        state.active_categorical_palette = "paired"
-    state.active_continuous_cmap = "viridis"
+    meta = project_metadata[key]
+    ddir = dataset_dir(meta)
+    cfg = resolve_render_config(meta, ddir)
 
-    opacity = float(state.ctrl_opacity)
+    # Colour-scheme defaults come from the dataset's render config.
+    state.active_categorical_palette = cfg.categorical_palette
+    state.active_continuous_cmap = cfg.continuous_cmap
+
     state.trame__busy = True
     fiber_actor: vtkActor | None = None
     try:
-        meta = project_metadata[key]
-        ddir = dataset_dir(meta)
-        xdmf_files = discover_xdmf(ddir)
-        if key in _STATIC_DATASETS:
-            result = _redraw_static(key, plotter, ctrl, meta, ddir, state, opacity)
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-            state.scalar_bar = None
-            if key == "heart":
-                fiber_actor = result.fiber_actor
-        elif key == "ircadb":
+        # Patient-driven datasets clear the scene now; rendering happens on patient select.
+        if is_patient_renderer(cfg):
+            clear_scene(plotter, state.dark_mode)
             state.legend_items = []
             state.mesh_stats = None
             state.scalar_bar = None
-            clear_scene(plotter, state.dark_mode)
-        elif key == "tibia_simulation":
-            default_field: str | None = TIBIA_SIM_FIELDS[0]["name"]
-            assert default_field is not None
-            result = redraw_tibia_simulation(
-                plotter, ctrl, ddir,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                field=default_field,
-                palette=_resolve_palette(state),
-                cmap=_resolve_cmap(state),
-            )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-            state.scalar_bar = result.scalar_bar_info
-            state.available_scalar_fields = TIBIA_SIM_FIELDS
-            state.active_scalar_field = default_field
-        elif key == "heart_iv":
-            pvd_p = pvd_file_path(meta)
-            if pvd_p is None or not pvd_p.exists():
-                logger.error(f"PVD file not found for '{key}'")
-            else:
-                pvd_meta = xdmf_meta.get(pvd_p.stem)
-                scalar_fields = [
-                    f for f in _scalar_fields_from_meta(pvd_meta)
-                    if f["name"] not in _HEART_IV_EXCLUDED
-                ]
-                default_field = scalar_fields[0]["name"] if scalar_fields else None
-                result = redraw_xdmf(
-                    plotter, ctrl, pvd_p, xdmf_meta,
-                    dark_mode=state.dark_mode,
-                    opacity=opacity,
-                    field=default_field,
-                    step=0,
-                    cmap=_resolve_cmap(state),
-                )
-                state.legend_items = result.legend_items
-                state.mesh_stats = result.mesh_stats
-                state.scalar_bar = result.scalar_bar_info
-                state.available_scalar_fields = scalar_fields
-                state.active_scalar_field = default_field
-                state.n_steps = pvd_meta.n_steps if pvd_meta else 1
-                state.step_times = list(pvd_meta.times) if pvd_meta else []
-        elif xdmf_files:
-            first_stem, first_path = next(iter(xdmf_files.items()))
-            first_meta = xdmf_meta.get(first_stem)
-            scalar_fields = _scalar_fields_from_meta(first_meta)
-            default_field = scalar_fields[0]["name"] if scalar_fields else None
-            result = redraw_xdmf(
-                plotter, ctrl, first_path, xdmf_meta,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                field=default_field,
-                step=0,
-                cmap=_resolve_cmap(state),
-            )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-            state.scalar_bar = result.scalar_bar_info
-            state.available_scalar_fields = scalar_fields
-            state.active_scalar_field = default_field
-            state.n_steps = first_meta.n_steps if first_meta else 1
-            state.step_times = list(first_meta.times) if first_meta else []
+            state.active_meta = meta_to_state(meta)
+            return None
+
+        ctx = _build_context(plotter, ctrl, state, meta, cfg, ddir, xdmf_meta)
+
+        # Timeseries datasets populate the field/step UI and render the default field.
+        if cfg.renderer in TIMESERIES_RENDERERS:
+            ctx.field = populate_timeseries_state(state, ctx)
+        elif cfg.renderer == RendererName.SCALAR_FIELD:  # static mesh + explicit field list
+            state.available_scalar_fields = [
+                {"name": f.name, "label": f.label or field_label(f.name)} for f in cfg.fields
+            ]
+            state.active_scalar_field = cfg.default_field or (cfg.fields[0].name if cfg.fields else None)
+            ctx.field = state.active_scalar_field
+
+        result = dispatch_render(ctx)
+        apply_result_to_state(state, result)
+        fiber_actor = result.fiber_actor
+        state.has_fibers = fiber_actor is not None
         state.active_meta = meta_to_state(meta)
     finally:
         state.trame__busy = False
@@ -246,33 +184,19 @@ def select_xdmf(
     state.active_patient = None
     _reset_selection_state(state)
     state.active_xdmf = stem
-    opacity = float(state.ctrl_opacity)
     state.trame__busy = True
     try:
         meta = project_metadata[key]
-        path = discover_xdmf(dataset_dir(meta)).get(stem)
-        if path is None:
+        cfg = resolve_render_config(meta, dataset_dir(meta))
+        if discover_xdmf(dataset_dir(meta)).get(stem) is None:
             logger.error(f"XDMF file not found: {stem} in {key}")
             return
-        stem_meta = xdmf_meta.get(stem)
-        scalar_fields = _scalar_fields_from_meta(stem_meta)
-        default_field = scalar_fields[0]["name"] if scalar_fields else None
-        result = redraw_xdmf(
-            plotter, ctrl, path, xdmf_meta,
-            dark_mode=state.dark_mode,
-            opacity=opacity,
-            field=default_field,
-            step=0,
-            cmap=_resolve_cmap(state),
-        )
-        state.legend_items = result.legend_items
-        state.mesh_stats = result.mesh_stats
-        state.scalar_bar = result.scalar_bar_info
-        state.available_scalar_fields = scalar_fields
-        state.active_scalar_field = default_field
-        state.n_steps = stem_meta.n_steps if stem_meta else 1
-        state.step_times = list(stem_meta.times) if stem_meta else []
-        state.active_meta = meta_to_state(project_metadata[key])
+        # _timeseries_path reads state.active_xdmf to pick this stem.
+        ctx = _build_context(plotter, ctrl, state, meta, cfg, dataset_dir(meta), xdmf_meta)
+        ctx.field = populate_timeseries_state(state, ctx)
+        result = dispatch_render(ctx)
+        apply_result_to_state(state, result)
+        state.active_meta = meta_to_state(meta)
     finally:
         state.trame__busy = False
 
@@ -287,56 +211,32 @@ def select_scalar_field(
 ) -> None:
     """Re-render the current dataset with a different scalar field."""
     state.active_scalar_field = field
-    opacity = float(state.ctrl_opacity)
     state.trame__busy = True
     try:
-        active_dataset: str = state.active_dataset
-        if active_dataset == "tibia_simulation":
+        meta = project_metadata[state.active_dataset]
+        cfg = resolve_render_config(meta, dataset_dir(meta))
+
+        if cfg.renderer == RendererName.SCALAR_FIELD:
+            # Fast-path: swap the active scalar array in place when an actor exists.
             if get_active_actor() is not None:
-                meta = project_metadata["tibia_simulation"]
-                legend, scalar_bar = update_tibia_sim_field(
-                    plotter, ctrl, dataset_dir(meta),
-                    field=field,
-                    palette=_resolve_palette(state),
-                    cmap=_resolve_cmap(state),
+                legend, scalar_bar = update_scalar_field_view(
+                    plotter, ctrl, dataset_dir(meta), field=field,
+                    **_scalar_field_view_args(meta, cfg, state),
                 )
                 state.legend_items = legend
                 state.scalar_bar = scalar_bar
                 return
-            meta = project_metadata["tibia_simulation"]
-            result = redraw_tibia_simulation(
-                plotter, ctrl, dataset_dir(meta),
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                field=field,
-                palette=_resolve_palette(state),
-                cmap=_resolve_cmap(state),
-                reset_camera=False,
-            )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-            state.scalar_bar = result.scalar_bar_info
+            ctx = _build_context(plotter, ctrl, state, meta, cfg, dataset_dir(meta),
+                                 xdmf_meta, field=field, reset_camera=False)
+            result = dispatch_render(ctx)
+            apply_result_to_state(state, result)
         else:
-            # XDMF or PVD dataset - resolve the active timeseries file path.
-            meta = project_metadata[active_dataset]
-            xdmf_files = discover_xdmf(dataset_dir(meta))
-            path = _timeseries_path(meta, state, xdmf_files)
-            if path is None:
-                logger.error(f"No timeseries file found for dataset '{active_dataset}'")
-                return
-            current_step: int = int(state.active_step)
-            result = redraw_xdmf(
-                plotter, ctrl, path, xdmf_meta,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                field=field,
-                step=current_step,
-                reset_camera=False,
-                cmap=_resolve_cmap(state),
-            )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-            state.scalar_bar = result.scalar_bar_info
+            # XDMF / PVD time series: full redraw at the current step with the new field.
+            ctx = _build_context(plotter, ctrl, state, meta, cfg, dataset_dir(meta),
+                                 xdmf_meta, field=field, step=int(state.active_step),
+                                 reset_camera=False)
+            result = dispatch_render(ctx)
+            apply_result_to_state(state, result)
     finally:
         state.trame__busy = False
 
@@ -349,34 +249,52 @@ def select_step(
     xdmf_meta: dict[str, MeshMetadata],
     step: int,
 ) -> None:
-    """Navigate the current XDMF dataset to a different timestep."""
+    """Navigate the current time-series dataset to a different timestep."""
     state.active_step = step
-    opacity = float(state.ctrl_opacity)
     state.trame__busy = True
     try:
-        active_dataset: str = state.active_dataset
-        meta = project_metadata[active_dataset]
-        xdmf_files = discover_xdmf(dataset_dir(meta))
-        path = _timeseries_path(meta, state, xdmf_files)
-        if path is None:
-            logger.error(f"No timeseries file found for dataset '{active_dataset}'")
+        meta = project_metadata[state.active_dataset]
+        ddir = dataset_dir(meta)
+        cfg = resolve_render_config(meta, ddir)
+
+        # GRASP phase series: each patient's phases are region-coloured PVD steps with
+        # independent topology — full redraw via the patient dir, no scalar field.
+        if cfg.renderer == RendererName.PVD_PHASE_SERIES:
+            if state.active_patient is None:
+                return
+            patient_dir = ddir / f"patient_{int(state.active_patient):02d}"
+            ctx = _build_context(plotter, ctrl, state, meta, cfg, patient_dir,
+                                 xdmf_meta, step=step, reset_camera=False)
+            result = dispatch_render(ctx)
+            apply_result_to_state(state, result)
             return
+
         field: str | None = state.active_scalar_field
+
+        # Flat VTK series or LS-DYNA d3plot: each step is a distinct whole mesh —
+        # render it via the registry (no manifest path / in-place fast-path).
+        if cfg.series or cfg.database:
+            ctx = _build_context(plotter, ctrl, state, meta, cfg, ddir,
+                                 xdmf_meta, field=field, step=step, reset_camera=False)
+            result = dispatch_render(ctx)
+            state.mesh_stats = result.mesh_stats
+            if result.scalar_bar_info is not None:
+                state.scalar_bar = result.scalar_bar_info
+            return
+
+        # XDMF / PVD scalar series: try the in-place step fast-path, else full redraw.
+        path = _timeseries_path(meta, state, discover_xdmf(ddir))
+        if path is None:
+            logger.error(f"No timeseries file found for dataset '{state.active_dataset}'")
+            return
         cmap = _resolve_cmap(state)
         success, stats, scalar_bar = update_xdmf_step(
-            plotter, ctrl, path, xdmf_meta,
-            step=step, field=field, cmap=cmap,
+            plotter, ctrl, path, xdmf_meta, step=step, field=field, cmap=cmap,
         )
         if not success:
-            result = redraw_xdmf(
-                plotter, ctrl, path, xdmf_meta,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                field=field,
-                step=step,
-                reset_camera=False,
-                cmap=cmap,
-            )
+            ctx = _build_context(plotter, ctrl, state, meta, cfg, ddir,
+                                 xdmf_meta, field=field, step=step, reset_camera=False)
+            result = dispatch_render(ctx)
             stats = result.mesh_stats
             scalar_bar = result.scalar_bar_info
         state.mesh_stats = stats
@@ -399,22 +317,45 @@ def select_patient(
     state.active_patient = patient
     state.scalar_bar = None
     _reset_selection_state(state)
-    opacity = float(state.ctrl_opacity)
     state.trame__busy = True
     try:
         meta = project_metadata[dataset_key]
         patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
-        result = redraw_ircadb(
-            plotter, ctrl, patient_dir,
-            dark_mode=state.dark_mode,
-            opacity=opacity,
-            palette=_resolve_palette(state),
-        )
+        cfg = resolve_render_config(meta, dataset_dir(meta))
+
+        # All patient renderers (organs, phase series, single surface) render from
+        # the patient dir via the registry. ddir is overridden to the patient dir.
+        ctx = _build_context(plotter, ctrl, state, meta, cfg, patient_dir,
+                             {}, step=0, reset_camera=True)
+        if cfg.renderer == RendererName.PVD_PHASE_SERIES:
+            pvd = grasp_phase_pvd(patient_dir)
+            if pvd is not None:
+                state.n_steps = grasp_phase_count(pvd)
+                state.active_step = 0
+                state.step_times = []  # phase indices; UI shows "k / n"
+        result = dispatch_render(ctx)
         state.legend_items = result.legend_items
         state.mesh_stats = result.mesh_stats
         state.active_meta = meta_to_state(meta)
     finally:
         state.trame__busy = False
+
+
+def _recolor_active_actor(plotter: pv.Plotter, ctrl: TrameCtrl, state: Any) -> bool:
+    """Fast-path: swap the categorical LUT on the active actor and recolor the legend.
+
+    Returns True if an actor was recolored, False if no actor is tracked (caller
+    must fall back to a full redraw).
+    """
+    if get_active_actor() is None:
+        return False
+    n = len(state.legend_items)
+    colors = region_colors(n, _resolve_palette(state))
+    update_actor_palette(plotter, ctrl, colors, n)
+    state.legend_items = [
+        {**item, "color": colors[i]} for i, item in enumerate(state.legend_items)
+    ]
+    return True
 
 
 def select_color_scheme(
@@ -429,188 +370,37 @@ def select_color_scheme(
     if key is None:
         return
 
-    opacity = float(state.ctrl_opacity)
+    meta = project_metadata[key]
+    cfg = resolve_render_config(meta, dataset_dir(meta))
+    # Patient renderers re-render from the patient dir; everything else from the
+    # dataset dir. Timeseries keep the active field/step.
+    ddir = dataset_dir(meta)
+    if state.active_patient is not None:
+        ddir = ddir / f"patient_{int(state.active_patient):02d}"
+
     state.trame__busy = True
     try:
-        if state.active_patient is not None:
-            if get_active_actor() is not None:
-                n = len(state.legend_items)
-                colors = region_colors(n, _resolve_palette(state))
-                update_actor_palette(plotter, ctrl, colors, n)
-                state.legend_items = [
-                    {**item, "color": colors[i]}
-                    for i, item in enumerate(state.legend_items)
-                ]
-                return
-            patient: int = state.active_patient
-            meta = project_metadata[key]
-            patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
-            result = redraw_ircadb(
-                plotter, ctrl, patient_dir,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                palette=_resolve_palette(state),
-                reset_camera=False,
+        # scalar_field: fast in-place LUT/field swap when an actor exists.
+        if cfg.renderer == RendererName.SCALAR_FIELD and get_active_actor() is not None:
+            legend, scalar_bar = update_scalar_field_view(
+                plotter, ctrl, dataset_dir(meta), field=state.active_scalar_field,
+                **_scalar_field_view_args(meta, cfg, state),
             )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-        elif key == "heart":
-            if get_active_actor() is not None:
-                n = len(state.legend_items)
-                colors = region_colors(n, _resolve_palette(state))
-                update_actor_palette(plotter, ctrl, colors, n)
-                state.legend_items = [
-                    {**item, "color": colors[i]}
-                    for i, item in enumerate(state.legend_items)
-                ]
-                return
-            meta = project_metadata["heart"]
-            ddir = dataset_dir(meta)
-            result = redraw_heart(
-                plotter, ctrl, meta, ddir,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                palette=_resolve_palette(state),
-                reset_camera=False,
-            )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-        elif key == "heart_ep":
-            if get_active_actor() is not None:
-                n = len(state.legend_items)
-                colors = region_colors(n, _resolve_palette(state))
-                update_actor_palette(plotter, ctrl, colors, n)
-                state.legend_items = [
-                    {**item, "color": colors[i]}
-                    for i, item in enumerate(state.legend_items)
-                ]
-                return
-            meta = project_metadata["heart_ep"]
-            ddir = dataset_dir(meta)
-            result = redraw_heart_ep(
-                plotter, ctrl, ddir,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                palette=_resolve_palette(state),
-                reset_camera=False,
-            )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-        elif key == "tibia_mesh":
-            if get_active_actor() is not None:
-                n = len(state.legend_items)
-                colors = region_colors(n, _resolve_palette(state))
-                update_actor_palette(plotter, ctrl, colors, n)
-                state.legend_items = [
-                    {**item, "color": colors[i]}
-                    for i, item in enumerate(state.legend_items)
-                ]
-                return
-            meta = project_metadata["tibia_mesh"]
-            ddir = dataset_dir(meta)
-            result = redraw_tibia_mesh(
-                plotter, ctrl, ddir,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                palette=_resolve_palette(state),
-                reset_camera=False,
-            )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-        elif key in ("rectangle_one_tree", "rectangle_two_trees",
-                     "rectangle_quad_500", "rectangle_quad_2000", "rectangle_quad_3000",
-                     "liver_vessels"):
-            redraw_fn = _STATIC_REDRAW[key]
-            meta = project_metadata[key]
-            ddir = dataset_dir(meta)
-            result = redraw_fn(
-                plotter, ctrl, ddir,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                palette=_resolve_palette(state),
-                reset_camera=False,
-            )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-        elif key == "aneurysm":
-            meta = project_metadata["aneurysm"]
-            ddir = dataset_dir(meta)
-            result = redraw_aneurysm(
-                plotter, ctrl, ddir,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                palette=_resolve_palette(state),
-                reset_camera=False,
-            )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-        elif key == "aneurysm_coils":
-            if get_active_actor() is not None:
-                n = len(state.legend_items)
-                colors = region_colors(n, _resolve_palette(state))
-                update_actor_palette(plotter, ctrl, colors, n)
-                state.legend_items = [
-                    {**item, "color": colors[i]}
-                    for i, item in enumerate(state.legend_items)
-                ]
-                return
-            meta = project_metadata["aneurysm_coils"]
-            ddir = dataset_dir(meta)
-            result = redraw_aneurysm_coils(
-                plotter, ctrl, ddir,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                palette=_resolve_palette(state),
-                reset_camera=False,
-            )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-        elif key == "tibia_simulation":
-            if get_active_actor() is not None:
-                meta = project_metadata["tibia_simulation"]
-                legend, scalar_bar = update_tibia_sim_field(
-                    plotter, ctrl, dataset_dir(meta),
-                    field=state.active_scalar_field,
-                    palette=_resolve_palette(state),
-                    cmap=_resolve_cmap(state),
-                )
-                state.legend_items = legend
-                state.scalar_bar = scalar_bar
-                return
-            meta = project_metadata["tibia_simulation"]
-            field: str = state.active_scalar_field
-            result = redraw_tibia_simulation(
-                plotter, ctrl, dataset_dir(meta),
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                field=field,
-                palette=_resolve_palette(state),
-                cmap=_resolve_cmap(state),
-                reset_camera=False,
-            )
-            state.legend_items = result.legend_items
-            state.mesh_stats = result.mesh_stats
-            state.scalar_bar = result.scalar_bar_info
-        else:
-            # XDMF or PVD dataset
-            meta = project_metadata[key]
-            xdmf_files = discover_xdmf(dataset_dir(meta))
-            path = _timeseries_path(meta, state, xdmf_files)
-            if path is None:
-                logger.error(f"No timeseries file found for dataset '{key}'")
-                return
-            field = state.active_scalar_field
-            step: int = int(state.active_step)
-            result = redraw_xdmf(
-                plotter, ctrl, path, xdmf_meta,
-                dark_mode=state.dark_mode,
-                opacity=opacity,
-                field=field,
-                step=step,
-                reset_camera=False,
-                cmap=_resolve_cmap(state),
-            )
-            state.mesh_stats = result.mesh_stats
-            state.scalar_bar = result.scalar_bar_info
+            state.legend_items = legend
+            state.scalar_bar = scalar_bar
+            return
+
+        # Categorical renderers: fast-path swap the LUT on the active actor.
+        if cfg.renderer in _RECOLORABLE and _recolor_active_actor(plotter, ctrl, state):
+            return
+
+        # Otherwise full re-render at the current field/step, keeping the camera.
+        ctx = _build_context(
+            plotter, ctrl, state, meta, cfg, ddir, xdmf_meta,
+            field=state.active_scalar_field, step=int(state.active_step),
+            reset_camera=False,
+        )
+        result = dispatch_render(ctx)
+        apply_result_to_state(state, result)
     finally:
         state.trame__busy = False

@@ -77,9 +77,9 @@ def build_right_panel(
         v3.VDivider(style="margin-bottom:10px;")
 
 
-        # Section: Fibers (heart dataset only)
+        # Section: Fibers (datasets with a fibre overlay)
 
-        with html.Div(v_if="active_dataset === 'heart'"):
+        with html.Div(v_if="has_fibers"):
             _section_header("mdi-grain", "Fibers", "right_fibers_open")
             with html.Div(v_show="right_fibers_open", style="margin-bottom:4px;"):
                 v3.VSwitch(

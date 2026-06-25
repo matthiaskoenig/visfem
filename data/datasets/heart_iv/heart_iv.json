@@ -18,5 +18,17 @@
     "https://doi.org/10.1113/JP285022",
     "https://doi.org/10.3390/math9111247"
   ],
-  "spp_project": "Efficient and robust coupling methods for electro-mechanic models of the human heart"
+  "spp_project": "Efficient and robust coupling methods for electro-mechanic models of the human heart",
+  "render": {
+    "renderer": "timeseries",
+    "exclude_fields": [
+      "Fixation",
+      "PointID",
+      "Material",
+      "CellID",
+      "f",
+      "n",
+      "s"
+    ]
+  }
 }

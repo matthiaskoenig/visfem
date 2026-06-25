@@ -1,0 +1,24 @@
+{
+  "data_path": "ai4ia",
+  "labels_file": null,
+  "name": "Arteriovenous Malformation (AI4IA)",
+  "pi": "Philipp Berg, Leonid Goubergrits, Florian Hellmeier, Daniel Behme",
+  "institution": [
+    "Research group Medical Flows, Research Campus STIMULATE, University of Magdeburg “Otto-von-Guericke”",
+    "Cardiovascular Modelling and Simulation Group, Institute of Computer-assisted Cardiovascular Medicine (ICM), Deutsches Herzzentrum der Charité",
+    "Helios Clinic Berlin-Buch"
+  ],
+  "biological_scale": "organ",
+  "organ_system": [
+    "vasculature"
+  ],
+  "description": "Cerebral arteriovenous malformation (AVM) surface model contributed by Janneck Stahl, provided alongside the AI4IA project, which develops robust, automated workflows for computing morphologic and hemodynamic rupture-risk parameters for intracranial vascular pathologies.",
+  "mesh_format": "STL",
+  "references": [],
+  "spp_project": "Automated segmentation and DIscrimination for Intracranial Aneurysms (AI4IA): Enhancing robustness of clinical risk scores based on morphology and hemodynamics",
+  "spp_badge": true,
+  "render": {
+    "renderer": "surface",
+    "mesh_file": "AVM_Modell_MD.stl"
+  }
+}

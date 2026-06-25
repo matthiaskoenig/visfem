@@ -16,5 +16,22 @@
   "references": [
     "https://doi.org/10.1038/s41598-025-04792-w"
   ],
-  "spp_project": "Evidence-based personalized rehabilitation protocols for uneventful healing with data-driven virtual twins"
+  "spp_project": "Evidence-based personalized rehabilitation protocols for uneventful healing with data-driven virtual twins",
+  "render": {
+    "renderer": "region_id",
+    "mesh_file": "Tibia_Mesh.vtk",
+    "region_array": "PartId",
+    "categorical_palette": "clinical",
+    "region_labels": {
+      "1": [
+        "Bone"
+      ],
+      "2": [
+        "Fracture / Callus"
+      ],
+      "3": [
+        "Implant screws"
+      ]
+    }
+  }
 }

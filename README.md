@@ -24,6 +24,34 @@ pip install visfem
 uv run visfem
 ```
 
+## Adding your own dataset
+
+VisFEM discovers datasets from a data directory. Point `DATA_DIR` (or `VISFEM_DATA_DIR`) at your own folder, or use the bundled `data/`:
+
+```bash
+export DATA_DIR=/path/to/your/data
+visfem new-dataset my_model --renderer region_id   # scaffold a commented template
+# drop your mesh files into datasets/my_model/, edit the JSON, then:
+visfem validate-data                    # check the JSON + that files resolve
+visfem                                  # launch - my_model now appears
+```
+
+Each dataset is a folder plus a JSON descriptor (the file stem is the dataset
+key). The descriptor carries scientific metadata and an optional `render` block
+that declares how to draw it. The renderers, each named for what it draws:
+
+- `surface` — one solid-colour mesh (STL/VTU/OBJ)
+- `multi_part` — several labelled part files, merged and coloured
+- `region_id` — a mesh coloured by an integer cell array (+ an optional fibre/vector glyph overlay)
+- `scalar_field` — a static mesh coloured by a selectable scalar field (continuous ramp + optional discrete "zone" fields)
+- `timeseries` — a scalar-field time series with a step slider, from XDMF, PVD, or a flat folder of per-step `.vtk` files (declare `"series": "frame_*.vtk"`)
+- `patient_organs` / `pvd_phase_series` — per-patient folders
+
+If you omit the `render` block the renderer is inferred from `mesh_format` and the
+files on disk, so a single STL or an XDMF series needs no render config at all.
+Run `visfem example <renderer>` to print a ready-to-edit template for any
+renderer, and `visfem schema` for the full (machine-readable) field reference.
+
 ## ngrok
 ```bash
 ngrok http 8080
@@ -52,12 +80,12 @@ PARTICULAR PURPOSE.
 Matthias König is supported by the German Research Foundation (DFG) within the Research Unit Programme FOR 5151
 "QuaLiPerF (Quantifying Liver Perfusion-Function Relationship in Complex Resection -
 A Systems Medicine Approach)" by grant number 436883643 and by grant number
-465194077 (Priority Programme SPP 2311, Subproject SimLivA).
+465194077 (Priority Programme SPP2311, Subproject SimLivA).
 
 Matthias König was supported by the Federal Ministry of Education and Research (BMBF, Germany)
 within the research network Systems Medicine of the Liver (LiSyM, grant number 031L0054).
 
 Michelle Elias is supported by the German Research Foundation (DFG) under grant number 465194077
-(Priority Programme SPP 2311).
+(Priority Programme SPP2311).
 
 © 2026 Michelle Elias & Matthias König

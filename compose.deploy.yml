@@ -1,0 +1,31 @@
+# Production deployment compose file.
+#
+# Usage on the server:
+#   docker compose -f compose.deploy.yml up -d --build
+#
+# The data (mesh files) lives in this repo at ./data/datasets/ and is mounted
+# read-only into the container. DATA_DIR tells the app where to find it (the
+# package is installed non-editable, so its default relative path does not
+# resolve to the repo at runtime).
+#
+# TRAME_USE_HOST rewrites the WebSocket sessionURL handed to the browser so it
+# points at the public HTTPS host behind the reverse proxy. Change it to match
+# the app's subdomain.
+
+services:
+  visfem:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: visfem:local
+    container_name: visfem
+    ports:
+      - "127.0.0.1:8080:80"        # localhost-only; only the reverse proxy reaches it
+    restart: unless-stopped
+    volumes:
+      - ./data:/deploy/data:ro     # repo data/, read-only into the container
+    environment:
+      DATA_DIR: /deploy/data       # discovery.py reads /deploy/data/datasets
+      TRAME_USE_HOST: "wss://app.visfem.de"   # <-- the app subdomain
+      # Public deployment exposes only the SPP2311 subset. Unset = all datasets.
+      VISFEM_DATASETS: "ia_ai4ia,avm_md,aneurysm,aneurysm_coils,heart,heart_ep,heart_iv,lobule_convergence,tibia_mesh,tibia_simulation,meniscus_regeneration,f100-ResultsDataSet"

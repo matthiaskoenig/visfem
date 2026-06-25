@@ -9,9 +9,9 @@ from trame.app import TrameApp
 from trame.decorators import change
 
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
-from visfem.engine.discovery import dataset_dir, discover_xdmf, group_by_organ_system, load_project_metadata, pvd_file_path
+from visfem.engine.discovery import dataset_dir, discover_xdmf, grasp_phase_pvd, group_by_organ_system, load_project_metadata, pvd_file_path
 from visfem.engine.playback import autoplay_loop, preload_steps, vtkjs_warmup
-from visfem.engine.scene import apply_opacity, update_scalar_range
+from visfem.engine.scene import apply_opacity, push_scene_full, update_scalar_range
 from visfem.engine.xr_manager import XRManager
 from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
 from visfem.engine.selection import (
@@ -19,14 +19,19 @@ from visfem.engine.selection import (
     select_scalar_field, select_step, select_xdmf,
 )
 from visfem.log import get_logger
-from visfem.mesh import get_metadata, preload_all_meshes
+from visfem.mesh import get_metadata, preload_all_meshes, vtk_series_steps
 from visfem.models import MeshMetadata
 from visfem.ui.layout import UICallbacks, build_ui
 
 logger = get_logger(__name__)
 
 _TARGET_FRAMES: int = 30    # max rendered frames for autoplay
-_FRAME_SLEEP: float = 0.2   # seconds between frames
+_FRAME_SLEEP: float = 0.2   # seconds between frames (scalar-field timeseries)
+# GRASP phase series does a full redraw per phase and benefits from a slower cadence so
+# the contrast wash-in is watchable rather than a fast flicker.
+_PHASE_FRAME_SLEEP: float = 0.7
+# Hold the loading overlay this long after pushing geometry, to cover the client-side
+_RENDER_SETTLE: float = 1.6  # seconds
 
 
 class VisfemApp(TrameApp):
@@ -114,6 +119,7 @@ class VisfemApp(TrameApp):
             "trame__title": "VisFEM",
             "trame__favicon": self._favicon_data_uri(),
             "dark_mode": True,
+            "url_model": "",
             "xr_active": False,
             "xr_session_ended": False,
             "active_dataset": None,
@@ -136,6 +142,7 @@ class VisfemApp(TrameApp):
             "active_meta": None,
             "mesh_stats": None,
             "show_fibers": False,
+            "has_fibers": False,
             "scalar_bar": None,
             "available_scalar_fields": [],
             "active_scalar_field": None,
@@ -160,6 +167,23 @@ class VisfemApp(TrameApp):
             "clim_override": None,
             "opacity_adjusting": False,
         })
+
+    @change("url_model")
+    def _on_url_model_change(self, url_model: str = "", **_: object) -> None:
+        """Auto-select a dataset from the ?model= URL query parameter on first load.
+
+        Consumed one-shot: ``url_model`` is reset to "" right after reading it so
+        that a later manual dataset selection isn't snapped back to the URL model
+        (the param stays in the address bar, and trame replays it on every client
+        reconnect). The reset itself re-enters this handler with an empty key,
+        which the guard below ignores.
+        """
+        key: str = (url_model or "").strip()
+        if not key:
+            return
+        self.state.url_model = ""
+        if key in self._project_metadata:
+            asyncio.ensure_future(self.select_dataset(key))
 
     # ---- Panel toggles ----
 
@@ -274,21 +298,52 @@ class VisfemApp(TrameApp):
         if not key or key not in self._project_metadata:
             return None
         meta = self._project_metadata[key]
+        # LS-DYNA d3plot: the database directory itself is the load_mesh path
+        # (step resolved by the `step` passed to load_mesh during warmup/preload).
+        if meta.render is not None and meta.render.database:
+            return dataset_dir(meta)
+        # Flat VTK series: the active path is the per-step file at active_step.
+        if meta.render is not None and meta.render.series:
+            steps = vtk_series_steps(dataset_dir(meta), meta.render.series)
+            if steps:
+                idx = max(0, min(int(self.state.active_step), len(steps) - 1))
+                return steps[idx][1]
+        # GRASP phase series: the active path is the current patient's per-patient PVD
+        # (phase resolved by the `step` passed to load_mesh during warmup/preload).
+        patient = self.state.active_patient
+        if patient is not None:
+            pvd = grasp_phase_pvd(dataset_dir(meta) / f"patient_{int(patient):02d}")
+            if pvd is not None:
+                return pvd
         if meta.mesh_format == "PVD":
             return pvd_file_path(meta)
         stem: str | None = self.state.active_xdmf
         xdmf_files = discover_xdmf(dataset_dir(meta))
         return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
 
-    def _start_vtkjs_warmup(self) -> None:
-        """Start the mesh-cache warmup task, or clear loading immediately for static datasets."""
+    async def _start_vtkjs_warmup(self) -> None:
+        """Force a full scene resend, then (for time series) warm the step cache.
+
+        A dataset switch must reach the client as a *full* state, not a delta:
+        local-mode deltas can mis-decode reused arrays or miss in-place changes,
+        leaving stale colors or corrupted geometry until an F5. ``push_scene_full``
+        re-wraps the render window so the client rebuilds from scratch.
+        """
         n_steps = int(self.state.n_steps)
         if n_steps <= 1:
+            self.state.step_inc = 1
+            # disable_auto_switch means the client won't repaint on its own; the
+            # full resend below is the single authoritative push for this switch.
+            await asyncio.sleep(0.05)
+            push_scene_full(self.plotter, self.ctrl)
+            # Keep the overlay up while the client paints the new geometry.
+            await asyncio.sleep(_RENDER_SETTLE)
             with self.state:
-                self.state.step_inc = 1
                 self.state.loading = False
                 self.state.busy = False
             return
+        await asyncio.sleep(0.05)
+        push_scene_full(self.plotter, self.ctrl)
         inc = math.ceil(n_steps / _TARGET_FRAMES)
         self.state.step_inc = inc
         path = self._resolve_active_path()
@@ -380,7 +435,7 @@ class VisfemApp(TrameApp):
         )
         apply_opacity(self.plotter, float(self.state.ctrl_opacity))
         self._initial_camera = self.plotter.camera_position
-        self._start_vtkjs_warmup()
+        await self._start_vtkjs_warmup()
 
     async def select_xdmf(self, key: str, stem: str) -> None:
         """Load and render a specific XDMF file within a multi-file dataset."""
@@ -397,7 +452,7 @@ class VisfemApp(TrameApp):
         )
         apply_opacity(self.plotter, float(self.state.ctrl_opacity))
         self._initial_camera = self.plotter.camera_position
-        self._start_vtkjs_warmup()
+        await self._start_vtkjs_warmup()
 
     async def select_patient(self, dataset_key: str, patient: int) -> None:
         """Load and render a specific patient from a multi-patient dataset."""
@@ -414,7 +469,7 @@ class VisfemApp(TrameApp):
         )
         apply_opacity(self.plotter, float(self.state.ctrl_opacity))
         self._initial_camera = self.plotter.camera_position
-        self._start_vtkjs_warmup()
+        await self._start_vtkjs_warmup()
 
     async def select_scalar_field(self, field: str) -> None:
         """Re-render the current dataset with the given scalar field."""
@@ -439,7 +494,7 @@ class VisfemApp(TrameApp):
             return
         self.state.busy = True
         self.state.flush()
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.05)
         select_step(
             self.plotter, self.ctrl, self.state,
             self._project_metadata, self._xdmf_meta, int(step),
@@ -495,37 +550,26 @@ class VisfemApp(TrameApp):
             if self._autoplay_task is not None and not self._autoplay_task.done():
                 return
             self.state.autoplay = True
+            # GRASP phase series (patient-indexed) plays slower than scalar timeseries.
+            frame_sleep = _PHASE_FRAME_SLEEP if self.state.active_patient is not None else _FRAME_SLEEP
             self._autoplay_task = asyncio.ensure_future(
                 autoplay_loop(
                     self.state, self.plotter, self.ctrl,
                     self._project_metadata, self._xdmf_meta,
-                    _FRAME_SLEEP,
+                    frame_sleep,
                 )
             )
-
-    def sync_camera(self, camera: dict) -> None:
-        """Sync client camera state to server plotter."""
-        cam = self.plotter.camera
-        cam.SetPosition(*camera["position"])
-        cam.SetFocalPoint(*camera["focalPoint"])
-        cam.SetViewUp(*camera["viewUp"])
-        cam.SetParallelProjection(camera["parallelProjection"])
-        cam.SetParallelScale(camera["parallelScale"])
-        cam.SetViewAngle(camera["viewAngle"])
-        self.plotter.renderer.ResetCameraClippingRange()
-
-    def _on_camera_sync(self, **kwargs: object) -> None:
-        """Keep server camera in sync with client on every interaction."""
-        self.plotter.camera.position = kwargs["position"]
-        self.plotter.camera.focal_point = kwargs["focalPoint"]
-        self.plotter.camera.up = kwargs["viewUp"]
-        self.plotter.renderer.ResetCameraClippingRange()
 
 
 def main() -> None:
     """Entry point."""
+    import os
     app = VisfemApp()
-    preload_all_meshes(app._project_metadata)
+    # Preload every mesh up front only when explicitly requested. In the
+    # per-session deployment we leave this off so the idle container stays
+    # light and each session lazy-loads just the model it opens.
+    if os.environ.get("VISFEM_PRELOAD", "0") == "1":
+        preload_all_meshes(app._project_metadata)
     app.server.start()
 
 

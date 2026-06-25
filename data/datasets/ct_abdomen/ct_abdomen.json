@@ -1,0 +1,21 @@
+{
+  "data_path": "ct_abdomen",
+  "labels_file": null,
+  "name": "Abdominal CT (Bone)",
+  "pi": "TBD",
+  "institution": [
+    "TBD"
+  ],
+  "biological_scale": "organ_system",
+  "organ_system": [
+    "bone",
+    "abdominal"
+  ],
+  "description": "Bone isosurfaces extracted from abdominal CT volumes of 3 patients (300 HU marching cubes, smoothed and decimated). Placeholder metadata pending acquisition and study details.",
+  "mesh_format": "VTU",
+  "references": [],
+  "render": {
+    "renderer": "surface",
+    "mesh_file": "bone_surface.vtu"
+  }
+}

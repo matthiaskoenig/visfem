@@ -1,11 +1,24 @@
 """Dataset discovery and project metadata helpers."""
+import os
 from pathlib import Path
 
 from visfem.models import ProjectMetadata
 
 # ---- Paths ----
 
-DATASETS_DIR = Path(__file__).parents[3] / "data" / "datasets"
+# Datasets live at <repo>/data/datasets by default. When deployed, the package
+# is installed non-editable into a venv (so the relative path above no longer
+# resolves to the repo), and DATA_DIR points at the mounted data directory.
+_DATA_ENV = os.environ.get("DATA_DIR") or os.environ.get("VISFEM_DATA_DIR")
+DATASETS_DIR = (Path(_DATA_ENV) / "datasets") if _DATA_ENV else (Path(__file__).parents[3] / "data" / "datasets")
+
+# Comma-separated allowlist of dataset keys to expose. Unset/empty = all
+# datasets (local dev). Deployment sets this to the SPP2311 subset.
+_DATASETS_ENV = os.environ.get("VISFEM_DATASETS", "").strip()
+ALLOWED_DATASETS: set[str] | None = (
+    {k.strip() for k in _DATASETS_ENV.split(",") if k.strip()}
+    if _DATASETS_ENV else None
+)
 
 
 # ---- Discovery ----
@@ -46,10 +59,16 @@ def xdmf_display_name(stem: str) -> str:
 # ---- Metadata ----
 
 def load_project_metadata() -> dict[str, ProjectMetadata]:
-    """Load and validate all ProjectMetadata JSONs from data/datasets/."""
+    """Load and validate ProjectMetadata JSONs from data/datasets/.
+
+    If VISFEM_DATASETS is set, only those dataset keys are loaded (used to
+    restrict the public deployment to the SPP2311 subset); otherwise all are.
+    """
     result: dict[str, ProjectMetadata] = {}
     for path in sorted(DATASETS_DIR.rglob("*.json")):
         if path.name.endswith(".meta.json"):
+            continue
+        if ALLOWED_DATASETS is not None and path.stem not in ALLOWED_DATASETS:
             continue
         result[path.stem] = ProjectMetadata.model_validate_json(path.read_text())
     return result
@@ -80,6 +99,18 @@ def pvd_file_path(meta: ProjectMetadata) -> Path | None:
     if meta.mesh_format == "PVD":
         return DATASETS_DIR / meta.data_path
     return None
+
+
+def grasp_phase_pvd(patient_dir: Path) -> Path | None:
+    """Return the per-patient GRASP phase-series PVD path, or None if absent."""
+    pvd = patient_dir / "tissue_surface.pvd"
+    return pvd if pvd.exists() else None
+
+
+def grasp_phase_count(pvd_path: Path) -> int:
+    """Return the number of contrast phases in a GRASP per-patient PVD."""
+    from visfem.mesh import pvd_steps
+    return len(pvd_steps(pvd_path))
 
 def meta_to_state(meta: ProjectMetadata) -> dict[str, object]:
     """Serialize a ProjectMetadata instance to a plain dict for Trame state."""

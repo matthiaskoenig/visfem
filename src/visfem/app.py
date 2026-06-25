@@ -151,6 +151,7 @@ class VisfemApp(TrameApp):
             "step_inc": 1,
             "step_times": [],
             "autoplay": False,
+            "playback_speed": 1.0,  # multiplier on the base frame rate; cycled in the UI
             "active_categorical_palette": "paired",
             "active_continuous_cmap": "viridis",
             "categorical_palette_meta": CATEGORICAL_META,

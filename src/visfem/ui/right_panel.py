@@ -254,6 +254,18 @@ def build_right_panel(
                                 click=(on_select_step, "[Math.min(n_steps - 1, active_step + step_inc)]"),
                                 v_bind="props",
                             )
+                    # Playback speed: click to cycle the multiplier (applies live while playing).
+                    with v3.VTooltip(text="Playback speed (click to cycle)", location="bottom"):
+                        with v3.Template(v_slot_activator="{ props }"):
+                            v3.VBtn(
+                                text=("playback_speed + 'x'",),
+                                variant="text", density="compact", size="x-small",
+                                disabled=("loading || busy",),
+                                click="playback_speed = [0.5, 1, 1.5, 2, 4]"
+                                      "[([0.5, 1, 1.5, 2, 4].indexOf(playback_speed) + 1) % 5]",
+                                v_bind="props",
+                                style="min-width:34px; font-variant-numeric:tabular-nums;",
+                            )
 
                 html.Span(
                     "{{ step_times.length > 0 ? 't = ' + Number(step_times[active_step]).toFixed(1) : (active_step + 1) + ' / ' + n_steps }}",

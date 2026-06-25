@@ -65,7 +65,12 @@ async def autoplay_loop(
     xdmf_meta: dict[str, MeshMetadata],
     frame_sleep: float,
 ) -> None:
-    """Advance one step at a time until stopped or the end of the sequence."""
+    """Advance one step at a time until stopped or the end of the sequence.
+
+    ``frame_sleep`` is the base delay at 1x speed; the live ``playback_speed`` state
+    (cycled from the UI) divides it, so changing speed mid-playback takes effect on
+    the next frame.
+    """
     try:
         while state.autoplay:
             step = int(state.active_step)
@@ -75,6 +80,7 @@ async def autoplay_loop(
             select_step(plotter, ctrl, state, project_metadata, xdmf_meta, next_step)
             with state:
                 pass
-            await asyncio.sleep(frame_sleep)
+            speed = float(getattr(state, "playback_speed", 1.0)) or 1.0
+            await asyncio.sleep(frame_sleep / speed)
     finally:
         state.autoplay = False

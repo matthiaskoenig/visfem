@@ -5,7 +5,7 @@ help users who add their own datasets to a ``DATA_DIR`` folder:
 
     visfem serve              # launch the app (default)
     visfem validate-data      # validate every dataset JSON + check referenced files
-    visfem schema             # print the dataset JSON schema (for editors / CI)
+    visfem schema             # concise reference of the dataset JSON fields
     visfem example <renderer>  # print a minimal valid dataset JSON for a renderer
     visfem new-dataset NAME    # scaffold a dataset folder + JSON template
 
@@ -106,8 +106,38 @@ def _check_render_files(ddir: Path, cfg: RenderConfig) -> list[str]:
 
 
 def cmd_schema(_args: argparse.Namespace) -> int:
-    """Print the dataset JSON schema (ProjectMetadata, incl. the render block)."""
-    print(json.dumps(ProjectMetadata.model_json_schema(), indent=2))
+    """Print a concise, human-readable reference of the dataset JSON fields."""
+    from visfem.models import BiologicalScale, OrganSystem
+
+    scales = ", ".join(s.value for s in BiologicalScale)
+    systems = ", ".join(s.value for s in OrganSystem)
+    renderers = ", ".join(r.value for r in RendererName)
+
+    print(f"""\
+Dataset descriptor fields (datasets/<name>/<name>.json)
+
+Required:
+  data_path         folder under datasets/ holding the meshes (usually <name>)
+  name              display name
+  pi                principal investigator
+  institution       list of strings
+  biological_scale  one of: {scales}
+  organ_system      list of: {systems}
+  description        short text (<= 500 chars)
+  mesh_format        e.g. VTK, VTU, STL, XDMF+HDF5
+
+Optional:
+  references         list of DOIs / URLs
+  spp_project        SPP2311 project title (None for non-SPP)
+  spp_badge          true to show the SPP2311 badge
+  subgroup           sub-group label within the organ group
+  sort_order         explicit sort position (int)
+  render             how to draw it (see below); omit to infer from mesh_format
+
+render block (renderer = one of: {renderers}):
+  see `visfem example <renderer>` for a ready-to-edit template per renderer.
+  Omit the whole block for a single STL or an XDMF/PVD series - it is inferred.
+""")
     return 0
 
 
@@ -248,7 +278,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("serve", help="launch the web app (default)")
     sub.add_parser("validate-data", help="validate dataset JSONs and referenced files")
-    sub.add_parser("schema", help="print the dataset JSON schema (machine-readable, for editors/CI)")
+    sub.add_parser("schema", help="print a concise reference of the dataset JSON fields")
 
     p_ex = sub.add_parser("example", help="print a minimal valid dataset JSON for a renderer")
     p_ex.add_argument("renderer", choices=[r.value for r in RendererName])

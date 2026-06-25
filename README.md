@@ -20,41 +20,27 @@ pip install visfem
 ```
 
 ## Run app
+After installing, launch the app with:
 ```bash
-uv run visfem
+visfem
 ```
 
 ## Adding your own dataset
 
-VisFEM discovers datasets from a data directory. Point `DATA_DIR` (or `VISFEM_DATA_DIR`) at your own folder, or use the bundled `data/`:
+A dataset is a folder of mesh files plus a JSON descriptor. VisFEM discovers
+datasets from a data directory; point `DATA_DIR` at your own folder:
+
+The CLI walks you through it:
 
 ```bash
 export DATA_DIR=/path/to/your/data
-visfem new-dataset my_model --renderer region_id   # scaffold a commented template
+
+visfem schema                            # the JSON fields and what they mean
+visfem example region_id                 # a ready-to-edit template for a renderer
+visfem new-dataset my_model --renderer region_id   # scaffold a folder + JSON
 # drop your mesh files into datasets/my_model/, edit the JSON, then:
-visfem validate-data                    # check the JSON + that files resolve
-visfem                                  # launch - my_model now appears
-```
-
-Each dataset is a folder plus a JSON descriptor (the file stem is the dataset
-key). The descriptor carries scientific metadata and an optional `render` block
-that declares how to draw it. The renderers, each named for what it draws:
-
-- `surface` — one solid-colour mesh (STL/VTU/OBJ)
-- `multi_part` — several labelled part files, merged and coloured
-- `region_id` — a mesh coloured by an integer cell array (+ an optional fibre/vector glyph overlay)
-- `scalar_field` — a static mesh coloured by a selectable scalar field (continuous ramp + optional discrete "zone" fields)
-- `timeseries` — a scalar-field time series with a step slider, from XDMF, PVD, or a flat folder of per-step `.vtk` files (declare `"series": "frame_*.vtk"`)
-- `patient_organs` / `pvd_phase_series` — per-patient folders
-
-If you omit the `render` block the renderer is inferred from `mesh_format` and the
-files on disk, so a single STL or an XDMF series needs no render config at all.
-Run `visfem example <renderer>` to print a ready-to-edit template for any
-renderer, and `visfem schema` for the full (machine-readable) field reference.
-
-## ngrok
-```bash
-ngrok http 8080
+visfem validate-data                     # check the JSON and that the files resolve
+visfem                                   # launch; my_model now appears
 ```
 
 

@@ -450,13 +450,31 @@ def _metadata_static(path: Path, fmt: str) -> dict:
     }
 
 
+# Bounds are tracked for scalar fields (shape [1]) AND vector fields (shape [3]),
+# the latter by their magnitude |v|, so the colour ramp is stable while scrubbing
+# whether a scalar or a vector-magnitude field is shown.
+
+def _boundable_fields(fields: dict) -> list[str]:
+    """Field names worth scanning for global bounds: scalars and vectors."""
+    return [n for n, info in fields.items() if info.get("shape") in ([1], [3])]
+
+
+def _array_minmax(arr: np.ndarray) -> tuple[float, float]:
+    """Min/max of *arr*; for a 3-vector array, of its per-row magnitude."""
+    if arr.ndim == 2 and arr.shape[1] == 3:
+        mag = np.linalg.norm(arr, axis=1)
+        return float(mag.min()), float(mag.max())
+    return float(arr.min()), float(arr.max())
+
+
 def metadata_for_series(paths: list[Path]) -> MeshMetadata:
     """Build MeshMetadata for a flat VTK series (an ordered list of per-step files).
 
     Fields and geometry come from frame 0; n_steps is the file count; times are
-    step indices; scalar bounds are the global min/max of each scalar field across
-    every frame (so the colour ramp is stable while scrubbing). Computed in memory
-    — a flat series has no single file to anchor a .meta.json sidecar to.
+    step indices; global bounds are the min/max of each scalar field (and each
+    vector field's magnitude) across every frame, so the colour ramp is stable
+    while scrubbing. Computed in memory — a flat series has no single file to
+    anchor a .meta.json sidecar to.
     """
     if not paths:
         raise ValueError("metadata_for_series called with no files")
@@ -465,19 +483,20 @@ def metadata_for_series(paths: list[Path]) -> MeshMetadata:
     base["n_steps"] = len(paths)
     base["times"] = [float(i) for i in range(len(paths))]
 
-    scalar_fields = [name for name, info in base["fields"].items() if info.get("shape") == [1]]
-    if scalar_fields:
-        logger.info(f"Computing global scalar bounds for VTK series ({len(paths)} frames)…")
-        bounds: dict[str, list[float]] = {n: [float("inf"), float("-inf")] for n in scalar_fields}
+    fields = _boundable_fields(base["fields"])
+    if fields:
+        logger.info(f"Computing global field bounds for VTK series ({len(paths)} frames)…")
+        bounds: dict[str, list[float]] = {n: [float("inf"), float("-inf")] for n in fields}
         for p in paths:
             mesh = cast(pv.DataSet, pv.read(str(p)))
-            for name in scalar_fields:
+            for name in fields:
                 arr = mesh.point_data.get(name)
                 if arr is None:
                     arr = mesh.cell_data.get(name)
                 if arr is not None:
-                    bounds[name][0] = min(bounds[name][0], float(arr.min()))
-                    bounds[name][1] = max(bounds[name][1], float(arr.max()))
+                    lo, hi = _array_minmax(arr)
+                    bounds[name][0] = min(bounds[name][0], lo)
+                    bounds[name][1] = max(bounds[name][1], hi)
         base["scalar_bounds"] = bounds
 
     return MeshMetadata(schema_hash=MESH_METADATA_HASH, **base)
@@ -525,19 +544,20 @@ def metadata_for_d3plot(ddir: Path) -> MeshMetadata:
         "fields": _frame_field_shapes(frame0),
     }
 
-    scalar_fields = [n for n, info in base["fields"].items() if info.get("shape") == [1]]
-    if scalar_fields:
-        logger.info(f"Computing global scalar bounds for d3plot ({len(times)} frames)…")
-        bounds: dict[str, list[float]] = {n: [float("inf"), float("-inf")] for n in scalar_fields}
+    fields = _boundable_fields(base["fields"])
+    if fields:
+        logger.info(f"Computing global field bounds for d3plot ({len(times)} frames)…")
+        bounds: dict[str, list[float]] = {n: [float("inf"), float("-inf")] for n in fields}
         for k in range(len(times)):
             mesh = _load_d3plot_frame(ddir, k)
-            for name in scalar_fields:
+            for name in fields:
                 arr = mesh.point_data.get(name)
                 if arr is None:
                     arr = mesh.cell_data.get(name)
                 if arr is not None:
-                    bounds[name][0] = min(bounds[name][0], float(arr.min()))
-                    bounds[name][1] = max(bounds[name][1], float(arr.max()))
+                    lo, hi = _array_minmax(arr)
+                    bounds[name][0] = min(bounds[name][0], lo)
+                    bounds[name][1] = max(bounds[name][1], hi)
         base["scalar_bounds"] = {
             n: b for n, b in bounds.items()
             if b[0] != float("inf") and b[1] != float("-inf")
@@ -554,26 +574,39 @@ def metadata_for_d3plot(ddir: Path) -> MeshMetadata:
 
 # Global scalar bounds
 
+def _mesh_array(mesh: pv.DataSet, name: str) -> "np.ndarray | None":
+    """Fetch a field array by name from point or cell data."""
+    arr = mesh.point_data.get(name)
+    if arr is None:
+        arr = mesh.cell_data.get(name)
+    return arr
+
+
 def _compute_scalar_bounds(
     path: Path,
     fmt: str,
     fields: dict,
     n_steps: int,
 ) -> dict[str, list[float]]:
-    """Return {field: [global_min, global_max]} for every scalar field across all timesteps."""
-    scalar_fields = [name for name, info in fields.items() if info.get("shape") == [1]]
-    if not scalar_fields:
+    """Return {field: [global_min, global_max]} across all timesteps.
+
+    Covers scalar fields directly and vector fields by their magnitude |v|, so a
+    vector-magnitude view has a stable colour scale while scrubbing.
+    """
+    boundable = _boundable_fields(fields)
+    if not boundable:
         return {}
 
-    logger.info(f"Computing global scalar bounds for '{path.name}' ({n_steps} step(s))…")
+    logger.info(f"Computing global field bounds for '{path.name}' ({n_steps} step(s))…")
 
     bounds: dict[str, list[float]] = {
-        name: [float("inf"), float("-inf")] for name in scalar_fields
+        name: [float("inf"), float("-inf")] for name in boundable
     }
 
     def _update(name: str, arr: np.ndarray) -> None:
-        bounds[name][0] = min(bounds[name][0], float(arr.min()))
-        bounds[name][1] = max(bounds[name][1], float(arr.max()))
+        lo, hi = _array_minmax(arr)
+        bounds[name][0] = min(bounds[name][0], lo)
+        bounds[name][1] = max(bounds[name][1], hi)
 
     if fmt == "timeseries_xdmf":
         with meshio.xdmf.TimeSeriesReader(path) as reader:
@@ -583,7 +616,7 @@ def _compute_scalar_bounds(
                     _, point_data, cell_data = reader.read_data(step)
                 except Exception:
                     continue
-                for name in scalar_fields:
+                for name in boundable:
                     data = point_data.get(name)
                     if data is None:
                         blocks = cell_data.get(name)
@@ -620,13 +653,10 @@ def _compute_scalar_bounds(
         for _, vtu_path in _parse_pvd(path):
             try:
                 mesh = cast(pv.DataSet, pv.read(str(vtu_path)))
-                for name in scalar_fields:
-                    try:
-                        lo, hi = mesh.get_data_range(name)
-                        bounds[name][0] = min(bounds[name][0], float(lo))
-                        bounds[name][1] = max(bounds[name][1], float(hi))
-                    except Exception:
-                        pass
+                for name in boundable:
+                    arr = _mesh_array(mesh, name)
+                    if arr is not None:
+                        _update(name, arr)
             except Exception as e:
                 logger.warning(f"Skipping '{vtu_path.name}' during bounds scan: {e}")
 
@@ -634,13 +664,10 @@ def _compute_scalar_bounds(
         # Static / single-step - load once
         try:
             mesh = _load_static(path)
-            for name in scalar_fields:
-                try:
-                    lo, hi = mesh.get_data_range(name)
-                    bounds[name][0] = float(lo)
-                    bounds[name][1] = float(hi)
-                except Exception:
-                    pass
+            for name in boundable:
+                arr = _mesh_array(mesh, name)
+                if arr is not None:
+                    _update(name, arr)
         except Exception as e:
             logger.warning(f"Failed to load '{path.name}' for bounds scan: {e}")
 

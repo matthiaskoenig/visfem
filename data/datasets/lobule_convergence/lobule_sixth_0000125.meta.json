@@ -1110,9 +1110,25 @@
   },
   "bounds": null,
   "scalar_bounds": {
+    "displacement": [
+      0.0,
+      0.00005094413063488901
+    ],
     "effective_fluid_pressure_TPM": [
       0.0,
       1599.0
+    ],
+    "fluid_flux_TPM": [
+      0.0,
+      0.0002128850610461086
+    ],
+    "S_ext": [
+      0.0,
+      1.7682659780859922e-9
+    ],
+    "P_ext": [
+      0.0,
+      5.8185288184797734e-12
     ],
     "rr_necrosis": [
       0.0,

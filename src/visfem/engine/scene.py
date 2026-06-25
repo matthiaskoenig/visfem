@@ -308,15 +308,24 @@ def redraw_xdmf(
     if field is None:
         field = next(iter(mesh_meta.fields), None) if mesh_meta else None
 
-    # Use precomputed global bounds so the colormap scale is stable across all timesteps
-    # Fall back to the current step's range if bounds were not cached yet
+    # Vector fields are coloured by magnitude: compute |v| into a temp scalar on
+    # the (already-detached) frame and colour by that.
+    colour_by = field
+    is_vector = bool(field) and field in mesh.array_names and getattr(mesh[field], "ndim", 1) == 2 and mesh[field].shape[1] == 3
+    if is_vector:
+        colour_by = f"{field}__mag"
+        mesh[colour_by] = np.linalg.norm(mesh[field], axis=1)
+
+    # Use precomputed global bounds (scalar fields and vector magnitudes are both
+    # keyed by field name) so the colormap scale is stable across all timesteps.
+    # Fall back to the current step's range if bounds were not cached yet.
     clim: list[float] | None = None
     if field and mesh_meta and field in mesh_meta.scalar_bounds:
         clim = mesh_meta.scalar_bounds[field]
 
     _xdmf_actor = plotter.add_mesh(
         mesh,
-        scalars=field,
+        scalars=colour_by,
         cmap=cmap,
         clim=clim,
         show_edges=False,
@@ -334,11 +343,12 @@ def redraw_xdmf(
     if field:
         if clim is None:
             try:
-                lo, hi = mesh.get_data_range(field)
+                lo, hi = mesh.get_data_range(colour_by)
                 clim = [float(lo), float(hi)]
             except Exception:
                 pass
         if clim is not None:
+            # Bar label shows the field name (magnitude is implied by the selector).
             scalar_bar = _scalar_bar_dict(field, clim, cmap)
 
     return RenderResult(mesh_stats=stats, scalar_bar_info=scalar_bar)

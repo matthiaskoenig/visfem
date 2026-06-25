@@ -365,21 +365,27 @@ def is_patient_renderer(cfg: RenderConfig) -> bool:
 
 
 def _scalar_fields(mesh_meta: MeshMetadata | None, cfg: RenderConfig) -> list[dict[str, str]]:
-    """Selectable {name,label} fields: explicit cfg list, else discovered minus deny-list."""
+    """Selectable {name,label} fields: explicit cfg list, else discovered minus deny-list.
+
+    Scalar fields (shape [1]) are offered directly; vector fields (shape [3]) are
+    offered too, coloured by their magnitude (the render path computes |v|).
+    Tensor fields are excluded.
+    """
     from visfem.engine.scene import field_label
     if cfg.fields:
         return [{"name": f.name, "label": f.label or field_label(f.name)} for f in cfg.fields]
     if mesh_meta is None:
         return []
     deny = set(cfg.exclude_fields)
-    return sorted(
-        [
-            {"name": fname, "label": field_label(fname)}
-            for fname, finfo in mesh_meta.fields.items()
-            if finfo.shape == [1] and fname not in deny
-        ],
-        key=lambda f: f["label"].lower(),
-    )
+    out: list[dict[str, str]] = []
+    for fname, finfo in mesh_meta.fields.items():
+        if fname in deny:
+            continue
+        if finfo.shape == [1]:
+            out.append({"name": fname, "label": field_label(fname)})
+        elif finfo.shape == [3]:
+            out.append({"name": fname, "label": f"{field_label(fname)} (magnitude)"})
+    return sorted(out, key=lambda f: f["label"].lower())
 
 
 def _timeseries_mesh_meta(ctx: RenderContext) -> MeshMetadata | None:

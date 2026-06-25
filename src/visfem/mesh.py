@@ -9,7 +9,10 @@ import threading
 import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from vtkmodules.vtkIOLSDyna import vtkLSDynaReader
 
 import h5py
 import meshio
@@ -123,7 +126,15 @@ def _parse_xdmf_base_grid(
 # Format detection
 
 def _detect_format(path: Path) -> str:
-    """Return a format string for the given file path."""
+    """Return a format string for the given file or directory path.
+
+    Most formats are detected by file suffix. An LS-DYNA d3plot database has no
+    suffix and is identified by *path* being a directory that contains the
+    ``d3plot`` master file — checked first, since a directory can never collide
+    with a file-suffix format.
+    """
+    if path.is_dir() and (path / _LSDYNA_MASTER).exists():
+        return "lsdyna_d3plot"
     suffix = path.suffix.lower()
     if suffix == ".pvd":
         return "pvd_timeseries"
@@ -199,6 +210,65 @@ def vtk_series_steps(ddir: Path, pattern: str) -> list[tuple[float, Path]]:
     """
     files = sorted(ddir.glob(pattern), key=lambda p: _natural_key(p.name))
     return [(float(i), p) for i, p in enumerate(files)]
+
+
+# LS-DYNA d3plot helpers
+#
+# A d3plot database is a directory (the dataset dir) holding the `d3plot` master
+# file plus sequential parts. vtkLSDynaReader reads it by directory and streams
+# one timestep at a time, so the multi-GB database is never resident. The reader
+# is costly to instantiate and is stateful / not thread-safe (one
+# UPDATE_TIME_STEP + Update mutates its shared output), so we cache one reader per
+# directory and serialise every frame read with a per-directory lock. The step
+# times are memoised at reader creation so a locked read never re-locks.
+
+_LSDYNA_MASTER = "d3plot"
+_lsdyna_readers: dict[Path, "vtkLSDynaReader"] = {}
+_lsdyna_times: dict[Path, list[float]] = {}
+_lsdyna_locks: dict[Path, threading.Lock] = {}
+_lsdyna_registry_lock = threading.Lock()
+
+
+def _lsdyna_lock(ddir: Path) -> threading.Lock:
+    with _lsdyna_registry_lock:
+        return _lsdyna_locks.setdefault(ddir, threading.Lock())
+
+
+def _lsdyna_reader(ddir: Path) -> "vtkLSDynaReader":
+    """Return a cached vtkLSDynaReader for *ddir* (call under _lsdyna_lock(ddir))."""
+    reader = _lsdyna_readers.get(ddir)
+    if reader is None:
+        from vtkmodules.vtkCommonExecutionModel import vtkStreamingDemandDrivenPipeline as _SDDP
+        from vtkmodules.vtkIOLSDyna import vtkLSDynaReader
+        reader = vtkLSDynaReader()
+        reader.SetDatabaseDirectory(str(ddir))
+        reader.UpdateInformation()
+        info = reader.GetOutputInformation(0)
+        n = info.Length(_SDDP.TIME_STEPS())
+        _lsdyna_times[ddir] = [float(info.Get(_SDDP.TIME_STEPS(), i)) for i in range(n)]
+        _lsdyna_readers[ddir] = reader
+    return reader
+
+
+def lsdyna_steps(ddir: Path) -> list[float]:
+    """Return the timestep values of a d3plot database (single source of truth)."""
+    with _lsdyna_lock(ddir):
+        _lsdyna_reader(ddir)              # ensures times are memoised
+        return list(_lsdyna_times[ddir])
+
+
+def _load_d3plot_frame(ddir: Path, step: int = 0) -> pv.DataSet:
+    """Read one timestep of a d3plot database as a combined UnstructuredGrid."""
+    from vtkmodules.vtkCommonExecutionModel import vtkStreamingDemandDrivenPipeline as _SDDP
+    with _lsdyna_lock(ddir):
+        reader = _lsdyna_reader(ddir)
+        times = _lsdyna_times[ddir]
+        step = max(0, min(step, len(times) - 1))
+        info = reader.GetOutputInformation(0)
+        info.Set(_SDDP.UPDATE_TIME_STEP(), times[step])
+        reader.Update()
+        combined = pv.wrap(reader.GetOutput()).combine()  # MultiBlock -> one grid
+    return cast(pv.DataSet, combined)
 
 
 # Metadata extraction
@@ -411,6 +481,75 @@ def metadata_for_series(paths: list[Path]) -> MeshMetadata:
         base["scalar_bounds"] = bounds
 
     return MeshMetadata(schema_hash=MESH_METADATA_HASH, **base)
+
+
+def _frame_field_shapes(mesh: pv.DataSet) -> dict[str, dict]:
+    """{name: {center, shape}} for all point + cell arrays of a frame."""
+    def shape(arr: np.ndarray) -> list[int]:
+        return list(arr.shape[1:]) if arr.ndim > 1 else [1]
+    return {
+        **{n: {"center": "point", "shape": shape(a)} for n, a in mesh.point_data.items()},
+        **{n: {"center": "cell", "shape": shape(a)} for n, a in mesh.cell_data.items()},
+    }
+
+
+def metadata_for_d3plot(ddir: Path) -> MeshMetadata:
+    """Build MeshMetadata for an LS-DYNA d3plot database, cached as a sidecar.
+
+    Geometry + fields come from frame 0; n_steps/times from the reader; global
+    scalar bounds are scanned across every frame (so the colour ramp is stable
+    while scrubbing). The full scan is the one expensive step (~0.3 s/frame), so
+    the result is persisted to ``<ddir>/d3plot.meta.json`` (keyed on the schema
+    hash) and reused on later launches. Vector/tensor fields are recorded but
+    filtered out of selectable scalars downstream by the shape==[1] gate.
+    """
+    sidecar = ddir / "d3plot.meta.json"
+    if sidecar.exists():
+        try:
+            cached = MeshMetadata.model_validate_json(sidecar.read_text())
+            if cached.schema_hash == MESH_METADATA_HASH:
+                logger.debug(f"Cache hit: '{sidecar.name}'")
+                return cached
+        except (ValueError, KeyError):
+            logger.debug(f"Invalid d3plot sidecar, regenerating '{sidecar.name}'")
+
+    times = lsdyna_steps(ddir)
+    frame0 = _load_d3plot_frame(ddir, 0)
+    base: dict = {
+        "format": "lsdyna_d3plot",
+        "n_steps": len(times),
+        "times": times,
+        "n_points": frame0.n_points,
+        "n_cells": frame0.n_cells,
+        "cell_types": [str(ct.name).lower() for ct in frame0.distinct_cell_types],
+        "fields": _frame_field_shapes(frame0),
+    }
+
+    scalar_fields = [n for n, info in base["fields"].items() if info.get("shape") == [1]]
+    if scalar_fields:
+        logger.info(f"Computing global scalar bounds for d3plot ({len(times)} frames)…")
+        bounds: dict[str, list[float]] = {n: [float("inf"), float("-inf")] for n in scalar_fields}
+        for k in range(len(times)):
+            mesh = _load_d3plot_frame(ddir, k)
+            for name in scalar_fields:
+                arr = mesh.point_data.get(name)
+                if arr is None:
+                    arr = mesh.cell_data.get(name)
+                if arr is not None:
+                    bounds[name][0] = min(bounds[name][0], float(arr.min()))
+                    bounds[name][1] = max(bounds[name][1], float(arr.max()))
+        base["scalar_bounds"] = {
+            n: b for n, b in bounds.items()
+            if b[0] != float("inf") and b[1] != float("-inf")
+        }
+
+    meta = MeshMetadata(schema_hash=MESH_METADATA_HASH, **base)
+    try:
+        sidecar.write_text(meta.model_dump_json(indent=2))
+        logger.debug(f"Cached d3plot metadata to '{sidecar.name}'")
+    except OSError as e:
+        logger.warning(f"Could not write d3plot sidecar: {e}")
+    return meta
 
 
 # Global scalar bounds
@@ -638,7 +777,11 @@ def _detached_copy(cached: pv.DataSet) -> pv.DataSet:
 
 
 def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
-    """Load any supported mesh file and return a PyVista dataset."""
+    """Load any supported mesh and return a PyVista dataset.
+
+    *path* is usually a file; for an LS-DYNA d3plot database it is the database
+    *directory* (detected by `_detect_format`), and *step* selects the timestep.
+    """
     fmt = _detect_format(path)
     logger.debug(f"Loading '{path.name}' as '{fmt}' step {step}")
 
@@ -661,6 +804,8 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
         mesh = _load_pvd(path, step)
     elif fmt == "fenics_xdmf":
         mesh = _load_fenics_xdmf(path, step)
+    elif fmt == "lsdyna_d3plot":
+        mesh = _load_d3plot_frame(path, step)
     else:
         mesh = _load_timeseries_xdmf(path, step)
     with _step_cache_lock:

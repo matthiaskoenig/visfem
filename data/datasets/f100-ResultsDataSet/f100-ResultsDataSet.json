@@ -1,0 +1,24 @@
+{
+  "data_path": "f100-ResultsDataSet",
+  "name": "Agonist-Antagonist Myoneural Interface (AMI)",
+  "pi": "Dominik Göddeke, Miriam Schulte, Oliver Röhrle",
+  "institution": [
+    "University of Stuttgart, Institute of Applied Analysis and Numerical Simulation (IANS)",
+    "University of Stuttgart, Institute for Parallel and Distributed Systems (IPVS)",
+    "University of Stuttgart, Institute for Modelling and Simulation of Biomechanical Systems (IMBS)"
+  ],
+  "biological_scale": "organ_system",
+  "organ_system": ["musculoskeletal"],
+  "description": "Multiphysics, closed-loop finite-element model of the agonist-antagonist myoneural interface (AMI) amputation technique, coupling continuum mechanics with physiological neural feedback from muscle spindles and Golgi tendon organs. A realistic anatomical upper-limb geometry in LS-DYNA simulates muscle activation, force distribution and reflex responses under isometric and perturbation scenarios.",
+  "mesh_format": "LS-DYNA",
+  "references": [
+    "Multiphysics model for the Agonist-Antagonist Myoneural Interface (AMI) integrating Continuum Mechanics and neural feedback organs. (Submitted)"
+  ],
+  "spp_project": "Modeling, simulation and optimization of agonist-antagonist myoneural interface amputations",
+  "spp_badge": true,
+  "render": {
+    "renderer": "timeseries",
+    "database": "d3plot",
+    "default_field": "EffPlastStrn"
+  }
+}

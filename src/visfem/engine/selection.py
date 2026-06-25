@@ -271,9 +271,9 @@ def select_step(
 
         field: str | None = state.active_scalar_field
 
-        # Flat VTK series: each step is a distinct whole-mesh file — render it via
-        # the registry (no manifest path / in-place fast-path applies).
-        if cfg.series:
+        # Flat VTK series or LS-DYNA d3plot: each step is a distinct whole mesh —
+        # render it via the registry (no manifest path / in-place fast-path).
+        if cfg.series or cfg.database:
             ctx = _build_context(plotter, ctrl, state, meta, cfg, ddir,
                                  xdmf_meta, field=field, step=step, reset_camera=False)
             result = dispatch_render(ctx)

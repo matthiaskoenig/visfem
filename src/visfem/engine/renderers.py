@@ -21,7 +21,7 @@ import pyvista as pv
 
 from visfem.engine.colors import region_colors
 from visfem.engine.discovery import discover_xdmf, grasp_phase_pvd, pvd_file_path
-from visfem.mesh import metadata_for_series, vtk_series_steps
+from visfem.mesh import metadata_for_d3plot, metadata_for_series, vtk_series_steps
 from visfem.engine.scene import (
     RenderResult, TrameCtrl,
     _load_multi_part_vtk, _render_labeled_parts, _render_region_array_mesh,
@@ -90,8 +90,12 @@ def resolve_render_config(
     """
     cfg = meta.render.model_copy(deep=True) if meta.render is not None else RenderConfig()
     if cfg.renderer is None:
-        # A declared flat VTK series is a time series regardless of mesh_format (VTK).
-        cfg.renderer = RendererName.TIMESERIES if cfg.series else _infer_renderer(meta, ddir)
+        # A declared flat VTK series or LS-DYNA database is a time series
+        # regardless of mesh_format.
+        cfg.renderer = (
+            RendererName.TIMESERIES if (cfg.series or cfg.database)
+            else _infer_renderer(meta, ddir)
+        )
     if (
         cfg.renderer == RendererName.SURFACE
         and cfg.mesh_file is None
@@ -195,6 +199,16 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
     whole with the series' global scalar bounds. Manifest series (XDMF/PVD):
     rendered by indexing the manifest at the step.
     """
+    if ctx.cfg.database:
+        # LS-DYNA d3plot: the database dir IS the path; load_mesh(dir, step)
+        # streams the frame, the dir/step cache keys it, and the in-memory
+        # metadata carries the global scalar bounds.
+        return redraw_xdmf(
+            ctx.plotter, ctx.ctrl, ctx.ddir, ctx.xdmf_meta,
+            dark_mode=ctx.state.dark_mode, opacity=ctx.opacity,
+            field=ctx.field, step=ctx.step, reset_camera=ctx.reset_camera, cmap=ctx.cmap,
+            mesh_meta=_d3plot_metadata(ctx.ddir),
+        )
     if ctx.cfg.series:
         files = _series_paths(ctx.ddir, ctx.cfg.series)
         if not files:
@@ -299,6 +313,18 @@ def _series_metadata(ddir: Path, pattern: str) -> MeshMetadata | None:
     return _series_meta_cache[key]
 
 
+# LS-DYNA d3plot metadata is resolved lazily (the first select triggers the
+# one-time global-bounds scan / sidecar read) and memoised per database dir.
+_d3plot_meta_cache: dict[Path, MeshMetadata] = {}
+
+
+def _d3plot_metadata(ddir: Path) -> MeshMetadata | None:
+    """MeshMetadata for an LS-DYNA d3plot database (memoised; sidecar-backed)."""
+    if ddir not in _d3plot_meta_cache:
+        _d3plot_meta_cache[ddir] = metadata_for_d3plot(ddir)
+    return _d3plot_meta_cache[ddir]
+
+
 RENDERER_REGISTRY: dict[RendererName, Renderer] = {
     RendererName.SURFACE:          render_surface,
     RendererName.MULTI_PART:       render_multi_part,
@@ -358,6 +384,8 @@ def _scalar_fields(mesh_meta: MeshMetadata | None, cfg: RenderConfig) -> list[di
 
 def _timeseries_mesh_meta(ctx: RenderContext) -> MeshMetadata | None:
     """MeshMetadata for the active timeseries (for field/step UI population)."""
+    if ctx.cfg.database:
+        return _d3plot_metadata(ctx.ddir)
     if ctx.cfg.series:
         return _series_metadata(ctx.ddir, ctx.cfg.series)
     path = _timeseries_path(ctx)

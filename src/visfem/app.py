@@ -298,6 +298,10 @@ class VisfemApp(TrameApp):
         if not key or key not in self._project_metadata:
             return None
         meta = self._project_metadata[key]
+        # LS-DYNA d3plot: the database directory itself is the load_mesh path
+        # (step resolved by the `step` passed to load_mesh during warmup/preload).
+        if meta.render is not None and meta.render.database:
+            return dataset_dir(meta)
         # Flat VTK series: the active path is the per-step file at active_step.
         if meta.render is not None and meta.render.series:
             steps = vtk_series_steps(dataset_dir(meta), meta.render.series)

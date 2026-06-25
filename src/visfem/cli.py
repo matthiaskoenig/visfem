@@ -94,6 +94,9 @@ def _check_render_files(ddir: Path, cfg: RenderConfig) -> list[str]:
     elif cfg.renderer == RendererName.TIMESERIES and cfg.series:
         if not any(ddir.glob(cfg.series)):
             problems.append(f"series glob '{cfg.series}' matched no files")
+    elif cfg.renderer == RendererName.TIMESERIES and cfg.database:
+        if not (ddir / cfg.database).exists():
+            problems.append(f"d3plot master '{cfg.database}' not found in {ddir}")
     elif cfg.renderer == RendererName.SURFACE and not patient_driven:
         from visfem.engine.renderers import resolve_mesh_file
         if resolve_mesh_file(ddir, cfg) is None:
@@ -177,7 +180,8 @@ _EXAMPLES: dict[RendererName, dict] = {
             "renderer": "timeseries",
             # A flat series of per-step mesh files (no .pvd/XDMF needed); files are
             # natural-sorted into steps. For XDMF/PVD datasets, omit "series" and the
-            # manifest is read directly.
+            # manifest is read directly. For an LS-DYNA d3plot database, instead set
+            # "database": "d3plot" (the dataset folder is the database directory).
             "series": "frame_*.vtk",
             "default_field": "concentration",
             "fields": [

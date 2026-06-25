@@ -162,6 +162,7 @@ class RenderConfig(BaseModel):
 
     # timeseries renderer: flat VTK series (no .pvd/XDMF manifest)
     series: str | None = None                 # glob (relative to dataset dir) of per-step mesh files, natural-sorted
+    database: str | None = None               # LS-DYNA d3plot master filename (e.g. "d3plot"); dataset dir is the database dir
 
     # renderer-specific options
     fiber: FiberOptions | None = None         # region_id fibre overlay; None => no fibres

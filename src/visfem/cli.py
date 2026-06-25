@@ -290,10 +290,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_SUBCOMMANDS = ("serve", "validate-data", "schema", "example", "new-dataset")
+
+
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. No subcommand (or `serve`) launches the app."""
+    """CLI entry point."""
     argv = sys.argv[1:] if argv is None else argv
-    if not argv or argv[0] == "serve":
+    if not argv or argv[0] not in _SUBCOMMANDS or argv[0] == "serve":
         return _serve()
 
     parser = build_parser()

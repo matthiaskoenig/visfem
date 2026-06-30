@@ -276,7 +276,7 @@ def render_scalar_field(ctx: RenderContext) -> RenderResult:
     )
 
 
-def _timeseries_path(ctx: RenderContext):
+def _timeseries_path(ctx: RenderContext) -> Path | None:
     """Resolve the active timeseries file: PVD, the active XDMF, or the first found."""
     if ctx.meta.mesh_format.upper() == "PVD":
         return pvd_file_path(ctx.meta)

@@ -70,7 +70,7 @@ def load_project_metadata() -> dict[str, ProjectMetadata]:
             continue
         if ALLOWED_DATASETS is not None and path.stem not in ALLOWED_DATASETS:
             continue
-        result[path.stem] = ProjectMetadata.model_validate_json(path.read_text())
+        result[path.stem] = ProjectMetadata.model_validate_json(path.read_text(encoding="utf-8"))
     return result
 
 

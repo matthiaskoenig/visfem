@@ -284,7 +284,7 @@ def get_metadata(path: Path) -> MeshMetadata:
 
     if sidecar.exists():
         try:
-            cached = MeshMetadata.model_validate_json(sidecar.read_text())
+            cached = MeshMetadata.model_validate_json(sidecar.read_text(encoding="utf-8"))
             if cached.schema_hash == MESH_METADATA_HASH:
                 logger.debug(f"Cache hit: '{sidecar.name}'")
                 return cached
@@ -525,7 +525,7 @@ def metadata_for_d3plot(ddir: Path) -> MeshMetadata:
     sidecar = ddir / "d3plot.meta.json"
     if sidecar.exists():
         try:
-            cached = MeshMetadata.model_validate_json(sidecar.read_text())
+            cached = MeshMetadata.model_validate_json(sidecar.read_text(encoding="utf-8"))
             if cached.schema_hash == MESH_METADATA_HASH:
                 logger.debug(f"Cache hit: '{sidecar.name}'")
                 return cached
@@ -914,7 +914,7 @@ def parse_labels_file(path: Path) -> dict[str, dict[int, list[str]]]:
     raw: dict[str, dict[int, list[str]]] = {}
     current_mesh: str | None = None
 
-    for raw_line in path.read_text().splitlines():
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line:
             continue

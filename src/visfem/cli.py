@@ -47,7 +47,7 @@ def cmd_validate_data(_args: argparse.Namespace) -> int:
         if path.name.endswith(".meta.json"):
             continue
         try:
-            meta = ProjectMetadata.model_validate_json(path.read_text())
+            meta = ProjectMetadata.model_validate_json(path.read_text(encoding="utf-8"))
         except ValidationError as e:
             errors.append(f"{path}: invalid metadata\n{e}")
             continue

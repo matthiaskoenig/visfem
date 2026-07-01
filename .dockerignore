@@ -4,7 +4,7 @@ __pycache__/
 .github
 .git/
 .tox/
-data/           ← add this
+data/
 deploy/server/
 docs/
 exploration/

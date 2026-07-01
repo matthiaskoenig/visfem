@@ -1,6 +1,6 @@
 # Build and start
 #  Update dependencies
-#    uv export --frozen --no-dev --no-editable -o deploy/setup/requirements.txt
+#    uv export --frozen --no-dev --no-editable -o setup/requirements.txt
 #  Build
 #    docker compose up --build
 

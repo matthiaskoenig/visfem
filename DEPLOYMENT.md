@@ -5,6 +5,10 @@ How to host VisFEM publicly on a Linux server:
 - **Landing page** → `https://visfem.de/`
 - **Web app** → `https://app.visfem.de/`
 
+This self-hosted setup serves both the landing page and the app. Until it is in
+place, `visfem.de` is served temporarily by GitHub Pages from `docs/`; that
+interim site can be retired once this deployment is live.
+
 ---
 
 ## 1. What you are deploying

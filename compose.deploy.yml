@@ -29,4 +29,4 @@ services:
       TRAME_USE_HOST: "wss://app.visfem.de"   # <-- the app subdomain
       # Public deployment exposes the SPP2311 subset plus the synthetic vessel-tree
       # demos (not SPP2311, but kept public on the PI's request). Unset = all datasets.
-      VISFEM_DATASETS: "ia_ai4ia,avm_md,aneurysm,aneurysm_coils,heart,heart_ep,heart_iv,lobule_convergence,tibia_mesh,tibia_simulation,meniscus_regeneration,f100-ResultsDataSet,liver_vessels,rectangle_one_tree,rectangle_two_trees,rectangle_quad_500,rectangle_quad_2000,rectangle_quad_3000"
+      VISFEM_DATASETS: "ia_ai4ia,avm_md,aneurysm,aneurysm_coils,heart,heart_ep,heart_iv,lobule_convergence,tibia_mesh,tibia_simulation,meniscus_regeneration,ami,liver_vessels,rectangle_one_tree,rectangle_two_trees,rectangle_quad_500,rectangle_quad_2000,rectangle_quad_3000"

@@ -62,9 +62,8 @@ def _make_push_full(view: VtkRemoteLocalView) -> object:
         try:
             helper = view._helper
             vtk_view = getattr(view, "_VtkRemoteLocalView__view")
-            # Refresh the mount/reconnect snapshot (server.state[...Scene]) and camera
-            # first, then publish the authoritative full state last so it is the final
-            # payload the client applies for this switch.
+            # update() first (refreshes the reconnect snapshot + camera), then
+            # publish the full state last so it is the payload the client applies.
             view.update()
             full_state = helper.scene(vtk_view, new_state=True)
             server.protocol.publish("trame.vtk.delta", full_state)

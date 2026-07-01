@@ -104,9 +104,8 @@ class VisfemApp(TrameApp):
         self.plotter = pv.Plotter(off_screen=True, theme=pv.themes.DarkTheme())
         self.plotter.enable_depth_peeling(number_of_peels=4)
         self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
-        # Physical scale is NOT set here: Python SetPhysicalScale does not propagate to the
-        # vtk.js client via the trame-vtk sync protocol. The JS selectstart handler already
-        # multiplies XR metres by 1000 to match VTK world mm, which is the correct transform.
+        # Physical scale stays default: SetPhysicalScale doesn't propagate to the vtk.js
+        # client, so the JS selectstart handler multiplies XR metres by 1000 to match VTK mm.
 
     @staticmethod
     def _favicon_data_uri() -> str:
@@ -187,8 +186,6 @@ class VisfemApp(TrameApp):
         if key in self._project_metadata:
             asyncio.ensure_future(self.select_dataset(key))
 
-    # ---- Panel toggles ----
-
     def toggle_left_panel(self) -> None:
         """Toggle the left dataset panel open/closed."""
         self.state.left_panel_open = not self.state.left_panel_open
@@ -196,8 +193,6 @@ class VisfemApp(TrameApp):
     def toggle_right_panel(self) -> None:
         """Toggle the right view-controls panel open/closed."""
         self.state.right_panel_open = not self.state.right_panel_open
-
-    # ---- Theme ----
 
     def toggle_theme(self) -> None:
         """Toggle between dark and light mode."""
@@ -207,8 +202,6 @@ class VisfemApp(TrameApp):
         else:
             self.plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)
         self.ctrl.view_update()
-
-    # ---- Camera ----
 
     async def reset_camera(self) -> None:
         """Restore the camera to the initial pose captured at dataset load."""
@@ -232,8 +225,6 @@ class VisfemApp(TrameApp):
     def take_screenshot(self) -> None:
         """Trigger vtk.js canvas capture and browser PNG download."""
         self.ctrl.capture_screenshot()
-
-    # ---- XR (delegated to XRManager) ----
 
     @change("xr_exit_triggered")
     def _on_xr_exit_triggered(self, xr_exit_triggered: bool, **_: object) -> None:
@@ -277,8 +268,6 @@ class VisfemApp(TrameApp):
         if scalar_bar:
             self.state.clim_override = [lo, hi]
             self.state.scalar_bar = scalar_bar
-
-    # ---- Step pre-loading ----
 
     def _cancel_preload(self) -> None:
         """Cancel any running background step-preload task."""
@@ -369,8 +358,6 @@ class VisfemApp(TrameApp):
         self._cancel_preload()
         self._preload_task = asyncio.ensure_future(preload_steps(path, steps))
 
-    # ---- Reactive callbacks ----
-
     @change("ctrl_opacity")
     def _on_opacity_change(self, ctrl_opacity: float, **_: object) -> None:
         """Show feedback immediately; debounce the actual render for heavy meshes."""
@@ -414,8 +401,6 @@ class VisfemApp(TrameApp):
             return
         self._fiber_actor.SetVisibility(bool(show_fibers))
         self.ctrl.view_update()
-
-    # ---- Dataset selection ----
 
     async def select_dataset(self, key: str) -> None:
         """Route to the correct redraw based on dataset key."""
@@ -534,8 +519,6 @@ class VisfemApp(TrameApp):
             self._project_metadata, self._xdmf_meta,
         )
         self.state.busy = False
-
-    # ---- Autoplay ----
 
     def toggle_autoplay(self) -> None:
         """Start or stop automatic step playback."""

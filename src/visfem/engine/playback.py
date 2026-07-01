@@ -78,7 +78,7 @@ async def autoplay_loop(
             inc = int(state.step_inc)
             next_step = 0 if step + inc >= n else step + inc
             select_step(plotter, ctrl, state, project_metadata, xdmf_meta, next_step)
-            with state:
+            with state:  # flush the step change to the client
                 pass
             speed = float(getattr(state, "playback_speed", 1.0)) or 1.0
             await asyncio.sleep(frame_sleep / speed)

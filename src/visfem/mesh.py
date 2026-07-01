@@ -92,11 +92,7 @@ def _require(element: ET.Element | None, tag: str, context: str) -> ET.Element:
 
 
 def _filter_to_max_dim_cells(cells: list) -> list:
-    """Return only the highest-dimensional cell blocks from a mixed-topology list.
-
-    Drops lower-dimensional boundary markers (e.g. PolyLine alongside tetra)
-    that would otherwise crash pv.from_meshio().
-    """
+    """Return only the highest-dimensional cell blocks, dropping boundary markers that would crash pv.from_meshio()."""
     if not cells:
         return cells
     max_dim = max(_CELL_DIM.get(block.type, 0) for block in cells)
@@ -126,12 +122,10 @@ def _parse_xdmf_base_grid(
 # Format detection
 
 def _detect_format(path: Path) -> str:
-    """Return a format string for the given file or directory path.
+    """Return a format string for a file or directory path.
 
-    Most formats are detected by file suffix. An LS-DYNA d3plot database has no
-    suffix and is identified by *path* being a directory that contains the
-    ``d3plot`` master file — checked first, since a directory can never collide
-    with a file-suffix format.
+    Detected by suffix, except an LS-DYNA d3plot database: a directory holding a
+    ``d3plot`` master file, checked first since a dir can't collide with a suffix.
     """
     if path.is_dir() and (path / _LSDYNA_MASTER).exists():
         return "lsdyna_d3plot"
@@ -146,11 +140,7 @@ def _detect_format(path: Path) -> str:
 
 
 def _detect_xdmf_subtype(path: Path) -> str:
-    """Distinguish FEniCS-style from meshio-style XDMF by counting Temporal Collections.
-
-    FEniCS writes one Temporal Collection per field (N collections).
-    Meshio writes one Temporal Collection containing all fields per timestep.
-    """
+    """Distinguish FEniCS-style (one Temporal Collection per field) from meshio-style (one for all fields) XDMF."""
     tree = ET.parse(path)
     domain = tree.getroot().find("Domain")
     if domain is None:
@@ -184,10 +174,7 @@ def _parse_pvd(path: Path) -> list[tuple[float, Path]]:
 
 
 def pvd_steps(path: Path) -> list[tuple[float, Path]]:
-    """Public wrapper for _parse_pvd: (timestep, vtu_path) pairs sorted by time.
-
-    Single source of truth for the step count and per-step paths of a PVD series.
-    """
+    """Public wrapper for _parse_pvd: (timestep, vtu_path) pairs sorted by time (single source of truth for a PVD series)."""
     return _parse_pvd(path)
 
 
@@ -199,14 +186,10 @@ def _natural_key(name: str) -> list:
 
 
 def vtk_series_steps(ddir: Path, pattern: str) -> list[tuple[float, Path]]:
-    """Return (step_index, path) for files matching *pattern* under *ddir*.
+    """Return (step_index, path) for files matching *pattern* under *ddir* (a flat per-step series with no .pvd manifest).
 
-    A flat directory of per-step mesh files (e.g. ``stimulus_*.vtk`` from a
-    FreeFEM/ParaView run with no .pvd manifest) is treated as one time series.
-    Files are natural-sorted by name so numeric segments order correctly, and the
-    step index is used as the timeline value (filenames may encode several axes,
-    not a single physical time). Single source of truth for a flat series'
-    step count and per-step paths — mirrors pvd_steps.
+    Natural-sorted so numeric segments order correctly; the step index is the
+    timeline value, since filenames may encode several axes, not physical time.
     """
     files = sorted(ddir.glob(pattern), key=lambda p: _natural_key(p.name))
     return [(float(i), p) for i, p in enumerate(files)]
@@ -274,12 +257,7 @@ def _load_d3plot_frame(ddir: Path, step: int = 0) -> pv.DataSet:
 # Metadata extraction
 
 def get_metadata(path: Path) -> MeshMetadata:
-    """Return a format-agnostic metadata descriptor for any supported mesh file.
-
-    Caches the result as a .meta.json sidecar next to the source file.
-    The sidecar is automatically regenerated if the MeshMetadata schema
-    has changed since it was written (detected via schema_hash).
-    """
+    """Return metadata for any supported mesh, cached as a .meta.json sidecar (regenerated on schema_hash change)."""
     sidecar = path.with_suffix(".meta.json")
 
     if sidecar.exists():
@@ -338,10 +316,7 @@ def _metadata_timeseries_xdmf(path: Path, fmt: str) -> dict:
 
 
 def _metadata_pvd(path: Path, fmt: str) -> dict:
-    """Extract metadata from a PVD timeseries.
-
-    Parses the PVD XML for timestep list; reads step 0 VTU for field shapes.
-    """
+    """Extract PVD metadata: timesteps from the PVD XML, field shapes from the step-0 VTU."""
     entries = _parse_pvd(path)
     times = [t for t, _ in entries]
     mesh = cast(pv.DataSet, pv.read(str(entries[0][1]))) if entries else pv.UnstructuredGrid()
@@ -366,11 +341,7 @@ def _metadata_pvd(path: Path, fmt: str) -> dict:
 
 
 def _metadata_fenics_xdmf(path: Path, fmt: str) -> dict:
-    """Extract metadata from a FEniCS-style XDMF file via h5py.
-
-    Reads the base Uniform grid for geometry dimensions, then iterates
-    Temporal Collections to collect timestamps and per-field shapes.
-    """
+    """Extract FEniCS-style XDMF metadata via h5py: geometry from the base grid, then per-field timestamps/shapes."""
     domain, topology_elem, topo_item, geo_item = _parse_xdmf_base_grid(path)
 
     # Dimensions attribute is "n_rows n_cols"; first token is the count
@@ -694,11 +665,7 @@ def _load_pvd(path: Path, step: int = 0) -> pv.DataSet:
 
 
 def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
-    """Load one timestep from a FEniCS-style XDMF file.
-
-    Reads geometry from HDF5, builds the base mesh, then attaches all
-    field arrays at the requested step.
-    """
+    """Load one timestep from a FEniCS-style XDMF file (geometry from HDF5, then field arrays at *step*)."""
     domain, topology_elem, topo_item, geo_item = _parse_xdmf_base_grid(path)
 
     topo_type_raw = topology_elem.get("TopologyType", "").lower()
@@ -804,11 +771,7 @@ def _detached_copy(cached: pv.DataSet) -> pv.DataSet:
 
 
 def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
-    """Load any supported mesh and return a PyVista dataset.
-
-    *path* is usually a file; for an LS-DYNA d3plot database it is the database
-    *directory* (detected by `_detect_format`), and *step* selects the timestep.
-    """
+    """Load any supported mesh as a PyVista dataset (*path* is a file, or a d3plot database *directory*; *step* selects the timestep)."""
     fmt = _detect_format(path)
     logger.debug(f"Loading '{path.name}' as '{fmt}' step {step}")
 
@@ -844,11 +807,7 @@ _surface_cache: dict[Path, pv.PolyData] = {}
 
 
 def load_surface(path: Path) -> pv.PolyData:
-    """Load a mesh and return its external surface as PolyData (cached).
-
-    For large raw UnstructuredGrids that must reach the vtk.js client as an
-    explicit-poly surface to avoid client-side faceting artifacts.
-    """
+    """Load a mesh and return its external surface as PolyData, cached (explicit polys avoid client-side faceting)."""
     if path not in _surface_cache:
         mesh = load_mesh(path)
         # PolyData passes through unchanged; only UnstructuredGrids need extraction.

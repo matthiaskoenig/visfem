@@ -24,10 +24,7 @@ Bounds3D = tuple[float, float, float, float, float, float]
 
 
 class MeshMetadata(BaseModel):
-    """Auto-generated metadata for a single mesh file, cached as a .meta.json sidecar.
-
-    Sidecars are invalidated and regenerated when the schema changes (detected via schema_hash).
-    """
+    """Auto-generated per-mesh metadata, cached as a .meta.json sidecar (regenerated when schema_hash changes)."""
     schema_hash: str = ""
     format: str           # fenics_xdmf | timeseries_xdmf | pyvista_native | meshio_fallback
     n_steps: int = Field(ge=1)
@@ -42,10 +39,7 @@ class MeshMetadata(BaseModel):
 
 
 def compute_mesh_metadata_hash() -> str:
-    """Return an 8-char hash of MeshMetadata field names and types.
-
-    Changes automatically whenever fields are added, removed, or retyped.
-    """
+    """Return an 8-char hash of MeshMetadata field names and types (changes when fields are added/removed/retyped)."""
     fields = {
         name: str(field.annotation)
         for name, field in MeshMetadata.model_fields.items()
@@ -86,12 +80,9 @@ class OrganSystem(StrEnum):
 
 # Rendering configuration
 #
-# A dataset's rendering behaviour is declared in its JSON under an optional
-# `render` block, so adding a dataset is a data-only operation (no Python edits)
-# even for pip-installed users pointing DATA_DIR at their own data folder. Every
-# field is optional; omitted values are inferred from mesh_format + file
-# discovery (see engine.renderers.resolve_render_config), so the simplest
-# datasets (a single STL, an XDMF series) need little or no `render` block.
+# Declared per dataset in an optional JSON `render` block. Every field is
+# optional; omitted values are inferred from mesh_format + file discovery
+# (engine.renderers.resolve_render_config), so simple datasets need no block.
 
 class RendererName(StrEnum):
     """Built-in renderer selected by a dataset's render config."""
@@ -117,11 +108,7 @@ class ScalarField(BaseModel):
 
 
 class FiberOptions(BaseModel):
-    """Fibre glyph overlay options for the region_id renderer.
-
-    When set on a region_id dataset, a vector cell array is drawn as oriented
-    glyphs over the coloured mesh (e.g. cardiac fibre directions).
-    """
+    """Fibre glyph overlay for the region_id renderer: a vector cell array drawn as oriented glyphs (e.g. cardiac fibres)."""
     array: str = "Fiber"                      # cell array to orient glyphs by
     stride: int = Field(default=5, ge=1)      # subsample every Nth cell
     scale: float = 1.5
@@ -135,11 +122,7 @@ class TubeOptions(BaseModel):
 
 
 class RenderConfig(BaseModel):
-    """Declarative rendering config for a dataset.
-
-    All fields optional; omitted values are inferred from mesh_format + file
-    discovery in engine.renderers.resolve_render_config.
-    """
+    """Declarative per-dataset render config; omitted fields are inferred in engine.renderers.resolve_render_config."""
     renderer: RendererName | None = None
 
     # mesh location
@@ -181,10 +164,7 @@ class RenderConfig(BaseModel):
 
 
 class ProjectMetadata(BaseModel):
-    """Hand-authored descriptor for a dataset, stored in data/metadata/*.json.
-
-    Captures scientific context for UI display.
-    """
+    """Hand-authored per-dataset descriptor (scientific context for the UI), stored in data/datasets/**/*.json."""
     data_path: str
     labels_file: str | None = None
     name: str

@@ -37,7 +37,7 @@ logger = get_logger(__name__)
 # be applied as a fast in-place recolor instead of a full re-render. (scalar_field
 # is excluded: it has its own dedicated fast-path, update_scalar_field_view.)
 _RECOLORABLE: frozenset[RendererName] = frozenset({
-    RendererName.REGION_ID,      # includes the former heart (region_id + fibre)
+    RendererName.REGION_ID,
     RendererName.MULTI_PART,
     RendererName.PATIENT_ORGANS,
 })
@@ -342,11 +342,7 @@ def select_patient(
 
 
 def _recolor_active_actor(plotter: pv.Plotter, ctrl: TrameCtrl, state: Any) -> bool:
-    """Fast-path: swap the categorical LUT on the active actor and recolor the legend.
-
-    Returns True if an actor was recolored, False if no actor is tracked (caller
-    must fall back to a full redraw).
-    """
+    """Fast-path recolor of the active actor's categorical LUT + legend; False if no actor (caller does a full redraw)."""
     if get_active_actor() is None:
         return False
     n = len(state.legend_items)

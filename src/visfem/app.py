@@ -27,10 +27,11 @@ logger = get_logger(__name__)
 
 _TARGET_FRAMES: int = 30    # max rendered frames for autoplay
 _FRAME_SLEEP: float = 0.2   # seconds between frames (scalar-field timeseries)
-# GRASP phase series does a full redraw per phase and benefits from a slower cadence so
-# the contrast wash-in is watchable rather than a fast flicker.
+# GRASP phase series redraws fully per phase; slower cadence makes the contrast
+# wash-in watchable rather than a fast flicker.
 _PHASE_FRAME_SLEEP: float = 0.7
-# Hold the loading overlay this long after pushing geometry, to cover the client-side
+# Hold the loading overlay this long after pushing geometry, covering the
+# client-side WebGL paint.
 _RENDER_SETTLE: float = 1.6  # seconds
 
 
@@ -222,7 +223,8 @@ class VisfemApp(TrameApp):
         self.plotter.camera_position = self._initial_camera
         self.ctrl.view_push_camera()
         self.ctrl.view_update()
-        # Hold the spinner for a fixed window; the server has no callback for when the client finishes the WebGL re-render on the new camera pose.
+        # Fixed hold: the server has no callback for when the client finishes the
+        # WebGL re-render on the new camera pose.
         await asyncio.sleep(0.4)
         self.state.camera_resetting = False
         self.state.busy = False
@@ -323,13 +325,7 @@ class VisfemApp(TrameApp):
         return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
 
     async def _start_vtkjs_warmup(self) -> None:
-        """Force a full scene resend, then (for time series) warm the step cache.
-
-        A dataset switch must reach the client as a *full* state, not a delta:
-        local-mode deltas can mis-decode reused arrays or miss in-place changes,
-        leaving stale colors or corrupted geometry until an F5. ``push_scene_full``
-        re-wraps the render window so the client rebuilds from scratch.
-        """
+        """Force a full scene resend (push_scene_full rebuilds the client scene), then warm the step cache for a series."""
         n_steps = int(self.state.n_steps)
         if n_steps <= 1:
             self.state.step_inc = 1

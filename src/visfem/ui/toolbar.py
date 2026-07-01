@@ -66,8 +66,7 @@ def build_toolbar(
 
     html.Span(style=_SEP_STYLE)
 
-    # VR/XR button temporarily disabled for deployment — keep the code so it can
-    # be re-enabled later by uncommenting this block.
+    # VR/XR button disabled; uncomment to re-enable.
     # with v3.VTooltip(text=("xr_active ? 'Exit VR' : 'Enter VR'",), location="bottom"):
     #     with v3.Template(v_slot_activator="{ props }"):
     #         v3.VBtn(

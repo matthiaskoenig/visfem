@@ -30,7 +30,6 @@ def build_left_panel(
     """Left panel content: dataset tree (top) + active dataset info (bottom)."""
     with html.Div(style="display:flex; flex-direction:column; height:100%;"):
 
-        # Section: Datasets
         with html.Div(
             style=f"padding:{PAD_MD} {PAD_LG} 4px {PAD_LG}; display:flex; align-items:center; gap:{GAP_MD}; flex-shrink:0; cursor:pointer; user-select:none;",
             click="left_datasets_section_open = !left_datasets_section_open",
@@ -167,7 +166,6 @@ def build_left_panel(
                                 for key, meta in subgroup_datasets:
                                     _render_dataset_item(key, meta, "24px")
 
-        # Section: Dataset Info
         v3.VDivider()
 
         with html.Div(
@@ -206,7 +204,6 @@ def build_left_panel(
                         style=f"font-size:{FS_XS}; padding:3px 8px; border-radius:{RADIUS_MD}; background:{SPP_DIM}; color:{SPP_COLOR}; font-weight:{FW_BOLD}; letter-spacing:{LS_WIDER}; border:1px solid {SPP_COLOR}; flex-shrink:0; line-height:1.6;",
                     )
 
-                # Organ system tags
                 with html.Div(style=f"display:flex; flex-wrap:wrap; gap:{GAP_SM}; margin-bottom:10px;"):
                     with html.Div(v_for="sys in active_meta.organ_system", key="sys"):
                         html.Span(
@@ -214,7 +211,6 @@ def build_left_panel(
                             style=f"font-size:{FS_XS}; padding:{PAD_XS} {PAD_SM}; border-radius:{RADIUS_MD}; background:{ACCENT_DIM}; color:{ACCENT}; text-transform:uppercase; letter-spacing:{LS_WIDE};",
                         )
 
-                # Description
                 html.Div(
                     "{{ active_meta.description }}",
                     style=f"font-size:{FS_MD}; line-height:1.5; opacity:{OP_BODY}; margin-bottom:12px;",
@@ -222,7 +218,6 @@ def build_left_panel(
 
                 v3.VDivider(style="margin-bottom:10px;")
 
-                # SPP2311 project title
                 with html.Div(
                     v_if="active_meta && active_meta.spp_project",
                     style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;",
@@ -232,7 +227,6 @@ def build_left_panel(
                         _label("SPP2311 Project")
                         html.Div("{{ active_meta.spp_project }}", style=f"font-size:{FS_MD}; line-height:1.4; opacity:{OP_BODY};")
 
-                # PI(s)
                 with html.Div(style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;"):
                     v3.VIcon("mdi-account-outline", size=ICON_SM, style=f"opacity:{OP_DIM}; margin-top:2px; flex-shrink:0;")
                     with html.Div():
@@ -242,7 +236,6 @@ def build_left_panel(
                         )
                         html.Div("{{ active_meta.pi }}", style=f"font-size:{FS_MD};")
 
-                # Institution
                 with html.Div(style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;"):
                     v3.VIcon("mdi-bank-outline", size=ICON_SM, style=f"opacity:{OP_DIM}; margin-top:2px; flex-shrink:0;")
                     with html.Div():
@@ -250,13 +243,10 @@ def build_left_panel(
                         with html.Div(v_for="inst in active_meta.institution", key="inst"):
                             html.Div("{{ inst }}", style=f"font-size:{FS_MD}; line-height:1.5;")
 
-                # Biological scale
                 _row("mdi-magnify", "Biological scale", "{{ active_meta.biological_scale }}")
 
-                # Mesh format
                 _row("mdi-cube-scan", "Mesh format", "{{ active_meta.mesh_format }}")
 
-                # Mesh stats
                 with html.Div(
                     v_if="mesh_stats !== null",
                     style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;",
@@ -269,7 +259,6 @@ def build_left_panel(
                             style=f"font-size:{FS_MD};",
                         )
 
-                # References
                 with html.Div(
                     v_if="active_meta && (active_meta.ref_urls.length > 0 || active_meta.ref_texts.length > 0)",
                     style="margin-top:10px;",

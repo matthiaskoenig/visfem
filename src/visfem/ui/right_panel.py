@@ -1,4 +1,4 @@
-"""Right panel: all view controls (opacity, field, color, playback, scalar bar)."""
+"""Right panel: view controls (opacity, field, color, playback, scalar bar)."""
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
@@ -27,7 +27,6 @@ def build_right_panel(
     with html.Div(style=f"padding:{PAD_MD} {PAD_LG}; display:flex; flex-direction:column; height:100%; overflow-y:auto; box-sizing:border-box;"):
 
 
-        # Section: View
 
         _section_header("mdi-eye-outline", "View", "right_view_open")
 
@@ -77,7 +76,7 @@ def build_right_panel(
         v3.VDivider(style="margin-bottom:10px;")
 
 
-        # Section: Fibers (datasets with a fibre overlay)
+        # Fibers: only when the dataset has a fibre overlay.
 
         with html.Div(v_if="has_fibers"):
             _section_header("mdi-grain", "Fibers", "right_fibers_open")
@@ -91,7 +90,7 @@ def build_right_panel(
             v3.VDivider(style="margin-bottom:10px;")
 
 
-        # Section: Scalar Field (multi-field datasets only)
+        # Scalar Field: only for multi-field datasets.
 
         with html.Div(v_if="available_scalar_fields && available_scalar_fields.length > 1"):
             _section_header("mdi-layers-outline", "Scalar Field", "right_scalar_field_open")
@@ -113,12 +112,10 @@ def build_right_panel(
             v3.VDivider(style="margin-bottom:10px;")
 
 
-        # Section: Color — inline header so we can embed the reverse toggle
 
         with html.Div(
             style=f"display:flex; align-items:center; gap:{GAP_MD}; margin-bottom:6px; user-select:none;",
         ):
-            # Left: icon + label — clicking this area toggles collapse
             with html.Div(
                 style="display:flex; align-items:center; gap:6px; flex:1; cursor:pointer;",
                 click="right_color_open = !right_color_open",
@@ -128,7 +125,6 @@ def build_right_panel(
                     "Color",
                     style=f"font-size:{FS_MD}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:{OP_SUBDUED};",
                 )
-            # Reverse toggle — isolated so it doesn't trigger collapse
             with v3.VTooltip(text="Reverse color order", location="bottom"):
                 with v3.Template(v_slot_activator="{ props }"):
                     v3.VBtn(
@@ -141,13 +137,12 @@ def build_right_panel(
                         click=on_toggle_color_reversed,
                         v_bind="props",
                     )
-            # Chevron — clicking this also toggles collapse
             with html.Div(style="cursor:pointer;", click="right_color_open = !right_color_open"):
                 v3.VIcon("mdi-chevron-down", size="small", v_show="right_color_open")
                 v3.VIcon("mdi-chevron-right", size="small", v_show="!right_color_open")
 
         with html.Div(v_show="right_color_open"):
-            # Categorical palettes (no continuous scalar field)
+            # Categorical palettes (no continuous field active)
             with html.Div(
                 v_if="scalar_bar === null || scalar_bar === undefined",
                 style="margin-bottom:8px;",
@@ -168,7 +163,7 @@ def build_right_panel(
                                         with html.Div(v_for="(swatch, i) in palette.swatches", key="i"):
                                             html.Div(style=(f"'{SWATCH_STYLE} background:' + swatch + ';'",))
 
-            # Continuous colormaps (continuous scalar field active)
+            # Continuous colormaps (continuous field active)
             with html.Div(
                 v_if="scalar_bar !== null && scalar_bar !== undefined",
                 style="margin-bottom:8px;",
@@ -188,7 +183,7 @@ def build_right_panel(
                                     html.Div(style=("'flex:1; height:14px; border-radius:4px; background:' + cmap.gradient + '; ' + (color_reversed ? 'transform:scaleX(-1);' : '')",))
 
 
-        # Section: Regions (categorical datasets with legend)
+        # Regions: only for categorical datasets with a legend.
 
         with html.Div(v_if="legend_items && legend_items.length > 0"):
             v3.VDivider(style="margin-bottom:10px;")
@@ -208,7 +203,7 @@ def build_right_panel(
                             html.Span("{{ n }}", style=f"font-size:{FS_SM}; line-height:1.6;")
 
 
-        # Section: Playback (multi-step datasets only)
+        # Playback: only for multi-step datasets.
 
         with html.Div(v_if="n_steps > 1"):
             v3.VDivider(style="margin-bottom:10px;")
@@ -273,7 +268,7 @@ def build_right_panel(
                 )
 
 
-        # Section: Scalar Bar (continuous scalar field only)
+        # Scalar Bar: only for a continuous scalar field.
 
         with html.Div(v_if="scalar_bar !== null"):
             v3.VDivider(style="margin-bottom:10px;")

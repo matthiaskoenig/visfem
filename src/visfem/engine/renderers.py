@@ -1,15 +1,11 @@
 """Renderer registry and render-config resolution.
 
-A dataset's rendering behaviour is declared in its JSON ``render`` block
-(``visfem.models.RenderConfig``). This module turns that declarative config — or,
-when absent, an inferred one — into a call to one of a small set of built-in
-renderers. The point is that adding a dataset is data-only: no Python edits, even
-for a pip-installed user pointing ``DATA_DIR`` at their own data folder.
-
-``resolve_render_config`` fills in an unset ``renderer`` (and a few unset paths)
-by inspecting ``mesh_format`` and the files on disk, so the simplest datasets need
-little or no ``render`` block. The renderers themselves are thin adapters over the
-generic helpers in ``visfem.engine.scene`` — the VTK code is reused, not rewritten.
+A dataset's rendering is declared in its JSON ``render`` block
+(``visfem.models.RenderConfig``) and dispatched to one of a few built-in
+renderers, so adding a dataset is data-only. ``resolve_render_config`` infers an
+unset ``renderer`` (and simple mesh paths) from ``mesh_format`` and the files on
+disk, so the simplest datasets need no ``render`` block. Renderers are thin
+adapters over ``visfem.engine.scene``.
 """
 from __future__ import annotations
 
@@ -48,11 +44,7 @@ def _first_patient_dir(ddir: Path) -> Path | None:
 
 
 def _infer_renderer(meta: ProjectMetadata, ddir: Path) -> RendererName:
-    """Infer a renderer from mesh_format + on-disk layout.
-
-    Precedence mirrors the previous hardcoded fallthrough in select_dataset:
-    PVD/XDMF time series first, then patient-folder shapes, then a plain surface.
-    """
+    """Infer a renderer from mesh_format + on-disk layout (time series, then patient dirs, then surface)."""
     fmt = meta.mesh_format.upper()
     if fmt == "PVD":
         return RendererName.TIMESERIES
@@ -82,12 +74,7 @@ def resolve_render_config(
     meta: ProjectMetadata,
     ddir: Path,
 ) -> RenderConfig:
-    """Return a RenderConfig with a concrete ``renderer`` (explicit or inferred).
-
-    Starts from ``meta.render`` if present, else an empty config, then fills an
-    unset ``renderer`` via inference and an unset single ``mesh_file`` for the
-    surface renderer where it can be determined unambiguously.
-    """
+    """Return a RenderConfig with a concrete ``renderer``, inferring it (and an unambiguous surface mesh_file) when unset."""
     cfg = meta.render.model_copy(deep=True) if meta.render is not None else RenderConfig()
     if cfg.renderer is None:
         # A declared flat VTK series or LS-DYNA database is a time series
@@ -159,8 +146,7 @@ def render_surface(ctx: RenderContext) -> RenderResult:
 
 
 def render_region_id(ctx: RenderContext) -> RenderResult:
-    """One mesh coloured by an integer cell array, with a per-region legend and
-    (when cfg.fiber is set) an optional fibre glyph overlay."""
+    """One mesh coloured by an integer cell array, with a per-region legend and optional fibre overlay (cfg.fiber)."""
     cfg = ctx.cfg
     if not cfg.mesh_file or not cfg.region_array:
         logger.error("region_id renderer requires mesh_file and region_array")
@@ -193,12 +179,7 @@ def render_multi_part(ctx: RenderContext) -> RenderResult:
 
 
 def render_timeseries(ctx: RenderContext) -> RenderResult:
-    """Scalar-field time series from XDMF, PVD, or a flat VTK series.
-
-    Flat series (cfg.series set): the per-step file is a complete mesh, rendered
-    whole with the series' global scalar bounds. Manifest series (XDMF/PVD):
-    rendered by indexing the manifest at the step.
-    """
+    """Scalar-field time series: a flat VTK series (cfg.series) rendered whole per step, or an XDMF/PVD manifest indexed by step."""
     if ctx.cfg.database:
         # LS-DYNA d3plot: the database dir IS the path; load_mesh(dir, step)
         # streams the frame, the dir/step cache keys it, and the in-memory
@@ -251,11 +232,7 @@ def render_patient_organs(ctx: RenderContext) -> RenderResult:
 
 
 def render_scalar_field(ctx: RenderContext) -> RenderResult:
-    """Static single-mesh dataset coloured by a selectable scalar field.
-
-    Continuous fields use a percentile-clamped colour ramp; fields named in
-    cfg.categorical_fields render as discrete zones with a region legend.
-    """
+    """Static mesh coloured by a selectable field: a percentile-clamped ramp, or discrete zones for cfg.categorical_fields."""
     cfg = ctx.cfg
     if not cfg.mesh_file:
         logger.error("scalar_field renderer requires mesh_file")
@@ -349,11 +326,7 @@ TIMESERIES_RENDERERS: frozenset[RendererName] = frozenset({
 
 
 def dispatch_render(ctx: RenderContext) -> RenderResult:
-    """Render *ctx* via the registry entry for its resolved renderer.
-
-    ``ctx.cfg`` must come from ``resolve_render_config`` (which always sets a
-    concrete renderer); the assert both documents that and narrows the type.
-    """
+    """Render *ctx* via the registry entry for its resolved renderer (set by resolve_render_config)."""
     renderer = ctx.cfg.renderer
     assert renderer is not None, "render config has no resolved renderer"
     return RENDERER_REGISTRY[renderer](ctx)
@@ -365,12 +338,7 @@ def is_patient_renderer(cfg: RenderConfig) -> bool:
 
 
 def _scalar_fields(mesh_meta: MeshMetadata | None, cfg: RenderConfig) -> list[dict[str, str]]:
-    """Selectable {name,label} fields: explicit cfg list, else discovered minus deny-list.
-
-    Scalar fields (shape [1]) are offered directly; vector fields (shape [3]) are
-    offered too, coloured by their magnitude (the render path computes |v|).
-    Tensor fields are excluded.
-    """
+    """Selectable {name,label} fields (explicit cfg list, else discovered): scalars and vectors (by magnitude); tensors excluded."""
     from visfem.engine.scene import field_label
     if cfg.fields:
         return [{"name": f.name, "label": f.label or field_label(f.name)} for f in cfg.fields]
@@ -406,10 +374,7 @@ def apply_result_to_state(state: Any, result: RenderResult) -> None:
 
 
 def populate_timeseries_state(state: Any, ctx: RenderContext) -> str | None:
-    """Set available_scalar_fields/n_steps/step_times for a timeseries dataset.
-
-    Returns the chosen default field (so the caller can pass it to the renderer).
-    """
+    """Set available_scalar_fields/n_steps/step_times; return the chosen default field."""
     mesh_meta = _timeseries_mesh_meta(ctx)
     fields = _scalar_fields(mesh_meta, ctx.cfg)
     default = ctx.cfg.default_field or (fields[0]["name"] if fields else None)

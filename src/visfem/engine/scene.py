@@ -112,11 +112,7 @@ def _set_background(plotter: pv.Plotter, dark_mode: bool) -> None:
 
 
 def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
-    """Remove all actors from the renderer and reset scene state.
-
-    Actors are removed (not hidden) so the local-mode vtk.js client receives a
-    real deletion delta — hiding alone leaves stale geometry painted client-side.
-    """
+    """Remove all actors and reset scene state (removed, not hidden, so the local-mode client drops the geometry)."""
     global _active_actor, _xdmf_mesh, _xdmf_actor
     _active_actor = None
     _xdmf_mesh = None
@@ -145,12 +141,10 @@ def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) 
 def push_scene_full(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) -> None:
     """Force a full (non-delta) scene resend to the vtk.js client.
 
-    On dataset switches the local-mode *delta* can reference a stale array hash
-    (the serializer caches connectivity/scalar arrays under a value-dependent
-    dtype, keyed by content hash), so the client paints corrupted geometry or wrong
-    colors until an F5. ``view_push_full`` republishes the scene with every array
-    emitted fresh, making the client rebuild its whole scene graph. Falls back to a
-    plain delta push when no view is bound (e.g. headless tests).
+    ``view_push_full`` republishes every array fresh so the client rebuilds its
+    scene graph; a local-mode delta can reference a stale content-hash after a
+    dataset switch and paint old geometry or colors. Falls back to a plain delta
+    push when no view is bound (e.g. headless tests).
     """
     plotter.render()
     if reset_camera:
@@ -182,18 +176,14 @@ def _build_continuous_lut(cmap: str, lo: float, hi: float) -> pv.LookupTable:
 def update_actor_palette(
     plotter: pv.Plotter, ctrl: TrameCtrl, colors: list[str], n: int
 ) -> None:
-    """Swap the categorical LUT on the active actor — no scene rebuild needed.
-
-    Does nothing if no actor is currently tracked (falls back gracefully).
-    Callers are responsible for updating state.legend_items colors.
-    """
+    """Swap the categorical LUT on the active actor in place (no-op if none tracked; caller updates legend colors)."""
     if _active_actor is None:
         return
     mapper = _active_actor.GetMapper()
     mapper.SetLookupTable(_build_categorical_lut(colors, n))
     mapper.SetScalarRange(0, max(n - 1, 1))
     mapper.Modified()
-    # Full resend (not a delta): avoids stale content-hash colors. See push_scene_full.
+    # Full resend so the recolored LUT reaches the client. See push_scene_full.
     push_scene_full(plotter, ctrl, reset_camera=False)
 
 
@@ -289,10 +279,8 @@ def redraw_xdmf(
 ) -> RenderResult:
     """Load and render one step of a time-series mesh.
 
-    *path* may be an XDMF/PVD manifest (indexed by *step*) or, for a flat VTK
-    series, a single per-step file (read whole, with *step*=0). Pass *mesh_meta*
-    explicitly for a flat series (whose global scalar bounds aren't keyed by an
-    individual frame's stem); otherwise it is looked up by ``path.stem``.
+    *path* is an XDMF/PVD manifest (indexed by *step*) or a single flat-series
+    file. Pass *mesh_meta* for a flat series; else it is looked up by path.stem.
     """
     global _xdmf_mesh, _xdmf_actor
     clear_scene(plotter, dark_mode)
@@ -334,8 +322,7 @@ def redraw_xdmf(
         opacity=opacity,
         render=False,
     )
-    # Full (non-delta) resend: redraw_xdmf is the field-switch / step-fallback
-    # path; a delta here can paint wrong colors from a stale content-hash key.
+    # Full resend so the new field/step reaches the client. See push_scene_full.
     push_scene_full(plotter, ctrl, reset_camera=reset_camera)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
 
@@ -559,12 +546,7 @@ def redraw_stl_surface(
     palette: list[str] | None = None,
     reset_camera: bool = True,
 ) -> RenderResult:
-    """Render a single named STL/OBJ surface mesh in one solid color.
-
-    Generic single-surface renderer for datasets that are just one closed mesh
-    with no scalar fields (e.g. the AI4IA aneurysm and AVM models). Bind
-    *filename* per dataset via functools.partial in the selection registry.
-    """
+    """Render a single named STL/OBJ surface mesh in one solid colour (a closed mesh with no scalar fields)."""
     mesh_path = dataset_dir / filename
     if not mesh_path.exists():
         logger.error(f"Surface mesh not found: {mesh_path}")
@@ -663,12 +645,10 @@ def redraw_region_surface_step(
     reset_camera: bool = True,
     solid: bool = True,
 ) -> RenderResult:
-    """Render one phase (step) of a region-coloured PVD surface series (GRASP MRI).
+    """Render one phase of a region-coloured PVD surface series (GRASP MRI).
 
-    Each phase has independent topology, so this always does a full redraw (no
-    in-place swap). Loads via the PVD path so steps cache in the step cache.
-    Defaults to a single *solid* colour so the surface does not colour-flicker as
-    the connected-component count changes between contrast phases.
+    Each phase has independent topology, so this always does a full redraw.
+    *solid* defaults on to avoid colour-flicker as the region count changes.
     """
     try:
         mesh = load_mesh(pvd_path, step=step)
@@ -694,13 +674,11 @@ def redraw_scalar_field(
     percentile: int = _PERCENTILE_CLAMP,
     reset_camera: bool = True,
 ) -> RenderResult:
-    """Render a static mesh colored by *field*.
+    """Render a static mesh coloured by *field*.
 
-    Fields in *categorical_fields* are drawn as discrete zones (a dense
-    ``_zone_id`` cell array + region legend from *zone_labels*); other fields use
-    a continuous ramp clamped to the *percentile*-th value to avoid outlier
-    washout. ``_zone_id`` is precomputed for the active categorical field so the
-    in-place field fast-path (update_scalar_field_view) can switch to it.
+    *categorical_fields* are drawn as discrete zones (a dense ``_zone_id`` array +
+    legend); others use a ramp clamped to *percentile* against outlier washout.
+    ``_zone_id`` is precomputed so update_scalar_field_view can switch in place.
     """
     sim_path = dataset_dir / mesh_file
     if not sim_path.exists():
@@ -760,10 +738,7 @@ def _load_multi_part_vtk(
     parts: list[tuple[str, str]],
     extensions: list[str],
 ) -> list[pv.DataSet] | None:
-    """Load meshes for each part stem, trying each extension in order.
-
-    Returns None if any part is missing.
-    """
+    """Load meshes for each part stem, trying each extension in order; None if any part is missing."""
     meshes: list[pv.DataSet] = []
     for stem, _ in parts:
         path: Path | None = None
@@ -814,9 +789,8 @@ def _render_labeled_parts(
 ) -> RenderResult:
     """Merge labeled parts into one actor and push to scene.
 
-    Meshes with a 'radius' point array are converted to tubes when tubify=True.
-    *tube_stride* > 1 subsamples dense line meshes before tubing to keep the
-    serialized geometry within a browser-safe point budget.
+    Meshes with a 'radius' array are tubed when tubify=True; tube_stride > 1
+    subsamples dense line meshes first to keep the geometry browser-safe.
     """
     global _active_actor
     total_cells = 0

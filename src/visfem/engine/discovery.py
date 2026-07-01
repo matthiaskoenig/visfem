@@ -59,11 +59,7 @@ def xdmf_display_name(stem: str) -> str:
 # ---- Metadata ----
 
 def load_project_metadata() -> dict[str, ProjectMetadata]:
-    """Load and validate ProjectMetadata JSONs from data/datasets/.
-
-    If VISFEM_DATASETS is set, only those dataset keys are loaded (used to
-    restrict the public deployment to the SPP2311 subset); otherwise all are.
-    """
+    """Load and validate ProjectMetadata JSONs; if VISFEM_DATASETS is set, load only those keys."""
     result: dict[str, ProjectMetadata] = {}
     for path in sorted(DATASETS_DIR.rglob("*.json")):
         if path.name.endswith(".meta.json"):

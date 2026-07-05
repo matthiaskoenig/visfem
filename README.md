@@ -35,6 +35,7 @@ The CLI walks you through it:
 ```bash
 export DATA_DIR=/path/to/your/data
 
+visfem renderers                         # what each renderer draws, and when to use it
 visfem schema                            # the JSON fields and what they mean
 visfem example region_id                 # a ready-to-edit template for a renderer
 visfem new-dataset my_model --renderer region_id   # scaffold a folder + JSON
@@ -42,6 +43,20 @@ visfem new-dataset my_model --renderer region_id   # scaffold a folder + JSON
 visfem validate-data                     # check the JSON and that the files resolve
 visfem                                   # launch; my_model now appears
 ```
+
+### Try it with example data
+
+To explore VisFEM with real, openly available data, download the public
+[3D-IRCADb-01](https://www.ircad.fr/research/data-sets/liver-segmentation-3d-ircadb-01/)
+dataset: CT-segmented organ surface meshes from 20 patients
+
+```bash
+export DATA_DIR=/path/to/your/data
+visfem fetch-ircadb                      # download (~3 GB) and lay out the dataset
+visfem                                   # launch; '3D-IRCADb-01' appears in the sidebar
+```
+
+The 3D-IRCADb-01 dataset is provided by IRCAD under its own license terms.
 
 
 ## How to cite

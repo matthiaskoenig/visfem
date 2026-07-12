@@ -3,7 +3,7 @@ from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
 from visfem.ui.theme import (
-    ACCENT, TRACK_DARK,
+    ACCENT, TRACK_DARK, TRACK_LIGHT,
     SWATCH_STYLE,
     FS_XS, FS_SM, FS_MD,
     FW_BOLD, LS_WIDEST,
@@ -12,6 +12,9 @@ from visfem.ui.theme import (
     GAP_XS, GAP_SM, GAP_MD, GAP_LG,
     PAD_MD, PAD_LG,
 )
+
+# Slider track color, per theme.
+_TRACK_COLOR = (f"dark_mode ? '{TRACK_DARK}' : '{TRACK_LIGHT}'",)
 
 
 def build_right_panel(
@@ -67,7 +70,7 @@ def build_right_panel(
                     v_model=("ctrl_opacity", 0.9),
                     min=0.05, max=0.95, step=0.05,
                     density="compact", hide_details=True,
-                    color=ACCENT, track_color=TRACK_DARK,
+                    color=ACCENT, track_color=_TRACK_COLOR,
                     thumb_label=False,
                     disabled=("autoplay || busy",),
                     style="flex:1; margin:0; padding:0;",
@@ -234,7 +237,7 @@ def build_right_panel(
                         v_model=("active_step", 0),
                         min=0, max=("n_steps - 1",), step=("step_inc",),
                         density="compact", hide_details=True,
-                        color=ACCENT, track_color=TRACK_DARK,
+                        color=ACCENT, track_color=_TRACK_COLOR,
                         thumb_label=False,
                         disabled=("loading || busy",),
                         style="flex:1; margin:0; padding:0;",

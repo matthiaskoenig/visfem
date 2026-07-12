@@ -15,7 +15,24 @@ from visfem.ui.footer import FOOTER_STYLE, build_footer
 from visfem.ui.left_panel import build_left_panel
 from visfem.ui.right_panel import build_right_panel
 from visfem.ui.toolbar import build_toolbar
-from visfem.ui.theme import ACCENT, BG_DARK, BG_LIGHT, LEFT_PANEL_WIDTH, PAD_LG, RIGHT_PANEL_WIDTH
+from visfem.ui.theme import (
+    ACCENT,
+    BG_DARK,
+    BG_LIGHT,
+    LEFT_PANEL_WIDTH,
+    LIGHT_THEME_COLORS,
+    PAD_LG,
+    RIGHT_PANEL_WIDTH,
+)
+
+# Register the custom light theme; Vuetify merges it over its light defaults.
+_VUETIFY_CONFIG = {
+    "theme": {
+        "themes": {
+            "light": {"colors": LIGHT_THEME_COLORS},
+        },
+    },
+}
 
 
 @dataclass
@@ -82,7 +99,11 @@ def build_ui(
     callbacks: UICallbacks,
 ) -> SinglePageLayout:
     """Assemble the full SinglePageLayout and return it."""
-    with SinglePageLayout(server, theme=("dark_mode ? 'dark' : 'light'",)) as layout:
+    with SinglePageLayout(
+        server,
+        theme=("dark_mode ? 'dark' : 'light'",),
+        vuetify_config=_VUETIFY_CONFIG,
+    ) as layout:
         layout.title.hide()
         layout.icon.hide()
 

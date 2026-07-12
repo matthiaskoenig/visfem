@@ -9,12 +9,21 @@ SPP_COLOR = "#c49a00"                  # SPP2311 badge text/border (amber)
 SPP_DIM   = "rgba(196,154,0,0.15)"    # SPP2311 badge background
 
 TRACK_DARK = "rgba(255,255,255,0.15)"   # inactive slider track (dark mode)
+TRACK_LIGHT = "rgba(0,0,0,0.12)"        # inactive slider track (light mode)
 
 SEP_DIM    = "rgba(128,128,128,0.22)"   # toolbar dividers between button groups
 SEP_NORMAL = "rgba(128,128,128,0.30)"   # view-section inline separator
 
-BG_DARK  = "rgb(20,26,26)"     # dark-mode viewport background
-BG_LIGHT = "rgb(209,214,214)"  # light-mode viewport background
+BG_DARK  = "rgb(20,26,26)"       # dark-mode viewport background
+BG_LIGHT = "rgb(255,255,255)"    # light-mode viewport background (white)
+
+# Custom Vuetify light theme (dark keeps Vuetify's stock theme).
+LIGHT_THEME_COLORS = {
+    "primary":    ACCENT,       # active items, toggles, progress bars
+    "surface":    "#EDF1F1",    # panels, toolbar, footer
+    "background": "#F4F7F7",    # app background
+    "on-surface": "#1B2524",    # text
+}
 
 # Typography
 

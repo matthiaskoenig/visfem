@@ -5,8 +5,8 @@ import pyvista.plotting.colors as pvc
 
 BG_DARK_BOTTOM  = (0.08, 0.10, 0.10)
 BG_DARK_TOP     = (0.13, 0.16, 0.16)
-BG_LIGHT_BOTTOM = (0.82, 0.84, 0.84)
-BG_LIGHT_TOP    = (0.95, 0.96, 0.96)
+BG_LIGHT_BOTTOM = (1.0, 1.0, 1.0)   # white viewport in light mode
+BG_LIGHT_TOP    = (1.0, 1.0, 1.0)
 
 
 # ---- Color palettes ----

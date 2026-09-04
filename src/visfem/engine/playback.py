@@ -1,15 +1,17 @@
 """Async background coroutines: vtk.js warmup, step preloading, and autoplay."""
 import asyncio
 import math
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pyvista as pv
 
 from visfem.engine.selection import select_step
+from visfem.log import get_logger
 from visfem.mesh import load_mesh
 from visfem.models import MeshMetadata, ProjectMetadata
+
+logger = get_logger(__name__)
 
 
 async def preload_steps(path: Path, steps: list[int]) -> None:
@@ -23,38 +25,30 @@ async def preload_steps(path: Path, steps: list[int]) -> None:
         try:
             await loop.run_in_executor(None, load_mesh, path, step)
         except Exception:
-            pass
+            logger.warning("preload: failed to load step %d from %s", step, path, exc_info=True)
 
 
 async def vtkjs_warmup(
-    gen: int,
-    get_gen: Callable[[], int],
     state: Any,
     path: Path,
     n_frames: int,
 ) -> None:
-    """Warm the server-side mesh LRU cache for all keyframes, then clear loading state."""
+    """Warm the mesh cache for keyframes in the active series."""
     n_steps = int(state.n_steps)
     if n_steps <= 1:
         return
     loop = asyncio.get_running_loop()
     inc = math.ceil(n_steps / n_frames)
     steps = list(range(0, n_steps, inc))
-    try:
-        for step in steps:
-            try:
-                await asyncio.sleep(0)
-            except asyncio.CancelledError:
-                return
-            try:
-                await loop.run_in_executor(None, load_mesh, path, step)
-            except Exception:
-                pass
-    finally:
-        if get_gen() == gen:
-            with state:
-                state.loading = False
-                state.busy = False
+    for step in steps:
+        try:
+            await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            return
+        try:
+            await loop.run_in_executor(None, load_mesh, path, step)
+        except Exception:
+            logger.warning("warmup: failed to load step %d from %s", step, path, exc_info=True)
 
 
 async def autoplay_loop(
@@ -65,12 +59,7 @@ async def autoplay_loop(
     xdmf_meta: dict[str, MeshMetadata],
     frame_sleep: float,
 ) -> None:
-    """Advance one step at a time until stopped or the end of the sequence.
-
-    ``frame_sleep`` is the base delay at 1x speed; the live ``playback_speed`` state
-    (cycled from the UI) divides it, so changing speed mid-playback takes effect on
-    the next frame.
-    """
+    """Advance steps until stopped or the sequence ends."""
     try:
         while state.autoplay:
             step = int(state.active_step)

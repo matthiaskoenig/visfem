@@ -278,6 +278,8 @@ def build_ui(
                         still_quality=100,
                         interactive_quality=100,
                         disable_auto_switch=True,
+                        # Dismiss the overlay after vtk.js loads the new mesh.
+                        after_scene_loaded=(ctrl.on_scene_loaded,),
                         on_local_image_capture="utils.download(`screenshot_${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,16).replace('T','_').replace(':','-')}.png`, $event)",
                     ) as view:
                         ctrl.reset_camera = view.reset_camera
@@ -294,12 +296,13 @@ def build_ui(
                         ctrl.start_xr = webxr_helper.start_xr
                         ctrl.stop_xr = webxr_helper.stop_xr
 
+                    # Keep the shield mounted to block pointer events while vtk.js paints.
                     with html.Div(
-                        v_if="loading",
+                        v_show="loading",
                         style=(
                             "position:absolute; inset:0; z-index:10; "
                             f"display:flex; flex-direction:column; align-items:center; justify-content:center; gap:{PAD_LG}; "
-                            "background:rgba(0,0,0,0.88);"
+                            "background:rgba(0,0,0,0.88); pointer-events:auto; cursor:progress;"
                         ),
                     ):
                         v3.VProgressCircular(indeterminate=True, color=ACCENT, size="36", width="2")

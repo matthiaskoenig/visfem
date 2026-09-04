@@ -8,8 +8,11 @@ from typing import Any
 import pyvista as pv
 
 from visfem.engine.selection import select_step
+from visfem.log import get_logger
 from visfem.mesh import load_mesh
 from visfem.models import MeshMetadata, ProjectMetadata
+
+logger = get_logger(__name__)
 
 
 async def preload_steps(path: Path, steps: list[int]) -> None:
@@ -23,7 +26,7 @@ async def preload_steps(path: Path, steps: list[int]) -> None:
         try:
             await loop.run_in_executor(None, load_mesh, path, step)
         except Exception:
-            pass
+            logger.warning("preload: step %d from %s failed", step, path, exc_info=True)
 
 
 async def vtkjs_warmup(
@@ -49,7 +52,7 @@ async def vtkjs_warmup(
             try:
                 await loop.run_in_executor(None, load_mesh, path, step)
             except Exception:
-                pass
+                logger.warning("warmup: step %d from %s failed", step, path, exc_info=True)
     finally:
         if get_gen() == gen:
             with state:

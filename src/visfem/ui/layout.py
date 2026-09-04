@@ -165,6 +165,25 @@ def build_ui(
             "  }, true);"
             "})();"
         )
+        # Probe for usable WebGL; privacy features can block it without explanation.
+        Script(
+            "(function() {"
+            "  function probe() {"
+            "    try {"
+            "      var c = document.createElement('canvas');"
+            "      var gl = c.getContext('webgl2') || c.getContext('webgl');"
+            "      if (!gl) { return false; }"
+            "      return !!(gl.getParameter && gl.getParameter(gl.VERSION));"
+            "    } catch (e) { return false; }"
+            "  }"
+            "  function report() {"
+            "    var s = window.trame && window.trame.state;"
+            "    if (!s) { return window.setTimeout(report, 300); }"
+            "    if (!probe()) { s.set('webgl_blocked', true); }"
+            "  }"
+            "  report();"
+            "})();"
+        )
         Script(
             "document.addEventListener('fullscreenchange', function() {"
             "  if (window.trame && window.trame.state) {"
@@ -306,6 +325,29 @@ def build_ui(
                         html.Span(
                             "Loading",
                             style="font-size:0.7rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;",
+                        )
+
+                    # Shown instead of a silently empty viewport when the
+                    # browser blocks WebGL. v_if: absent entirely when fine.
+                    with html.Div(
+                        v_if="webgl_blocked",
+                        style=(
+                            "position:absolute; inset:0; z-index:11; "
+                            f"display:flex; flex-direction:column; align-items:center; justify-content:center; gap:{PAD_LG}; "
+                            "padding:2rem; text-align:center; background:rgba(0,0,0,0.94);"
+                        ),
+                    ):
+                        html.Div("\u26a0", style="font-size:2rem; opacity:0.7;")
+                        html.Div(
+                            "3D rendering is blocked by this browser",
+                            style="font-size:0.95rem; font-weight:600;",
+                        )
+                        html.Div(
+                            "VisFEM renders meshes with WebGL. A privacy setting is "
+                            "blocking it \u2014 in Brave lower Shields for this site, in "
+                            "Firefox disable resistFingerprinting, in Safari turn off "
+                            "Advanced Tracking Protection. Then reload.",
+                            style="font-size:0.8rem; opacity:0.75; max-width:34rem; line-height:1.5;",
                         )
 
                 # ---- Right panel ----

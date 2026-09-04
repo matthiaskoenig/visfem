@@ -1,6 +1,7 @@
 """Trame web application for FEM mesh visualization."""
 import asyncio
 import base64
+import contextlib
 import importlib.resources
 import math
 from pathlib import Path
@@ -30,9 +31,15 @@ _FRAME_SLEEP: float = 0.2   # seconds between frames (scalar-field timeseries)
 # GRASP phase series redraws fully per phase; slower cadence makes the contrast
 # wash-in watchable rather than a fast flicker.
 _PHASE_FRAME_SLEEP: float = 0.7
-# Hold the loading overlay this long after pushing geometry, covering the
-# client-side WebGL paint.
-_RENDER_SETTLE: float = 1.6  # seconds
+# Hold the loading overlay after pushing geometry, covering the client-side
+# WebGL paint. The server gets no completion callback for that paint (the scene
+# is published straight onto trame.vtk.delta), so the hold is a timer scaled by
+# mesh size: a 683k-cell surface needs far longer to ship and paint than a 500-
+# cell one, and the old fixed 1.6s cleared the spinner mid-transfer on the big
+# ones. Overshooting only costs a slightly long spinner.
+_RENDER_SETTLE_MIN: float = 2.0    # seconds, small meshes
+_RENDER_SETTLE_MAX: float = 7.0    # seconds, cap for the largest
+_RENDER_SETTLE_PER_MCELL: float = 1.4  # extra seconds per million cells
 
 
 class VisfemApp(TrameApp):
@@ -159,6 +166,10 @@ class VisfemApp(TrameApp):
             "fullscreen": False,
             "loading": False,
             "busy": False,
+            # Set by the client-side probe in layout.py; True when the browser
+            # gives us no usable WebGL2 context (Brave shields, Firefox RFP,
+            # Safari ATP). The 3D viewport cannot render at all in that case.
+            "webgl_blocked": False,
             "camera_resetting": False,
             "color_reversed": False,
             "exit_btn_pos": [0.0, 0.0, 0.0],
@@ -207,20 +218,21 @@ class VisfemApp(TrameApp):
         """Restore the camera to the initial pose captured at dataset load."""
         if self._initial_camera is None:
             return
-        if self.state.busy:
-            return
-        self.state.busy = True
-        self.state.camera_resetting = True
-        self.state.flush()
-        await asyncio.sleep(0.05)
-        self.plotter.camera_position = self._initial_camera
-        self.ctrl.view_push_camera()
-        self.ctrl.view_update()
-        # Fixed hold: the server has no callback for when the client finishes the
-        # WebGL re-render on the new camera pose.
-        await asyncio.sleep(0.4)
-        self.state.camera_resetting = False
-        self.state.busy = False
+        with self._claim_busy() as claimed:
+            if not claimed:
+                return
+            self.state.camera_resetting = True
+            try:
+                self.state.flush()
+                await asyncio.sleep(0.05)
+                self.plotter.camera_position = self._initial_camera
+                self.ctrl.view_push_camera()
+                self.ctrl.view_update()
+                # Fixed hold: the server has no callback for when the client
+                # finishes the WebGL re-render on the new camera pose.
+                await asyncio.sleep(0.4)
+            finally:
+                self.state.camera_resetting = False
 
     def take_screenshot(self) -> None:
         """Trigger vtk.js canvas capture and browser PNG download."""
@@ -284,6 +296,34 @@ class VisfemApp(TrameApp):
         self.state.loading = False
         self.state.busy = False
 
+    def _render_settle(self) -> float:
+        """Overlay hold for the active mesh, scaled by cell count."""
+        stats = self.state.mesh_stats or {}
+        cells = 0
+        if isinstance(stats, dict):
+            try:
+                cells = int(stats.get("n_cells") or 0)
+            except (TypeError, ValueError):
+                cells = 0
+        settle = _RENDER_SETTLE_MIN + _RENDER_SETTLE_PER_MCELL * (cells / 1_000_000)
+        return min(settle, _RENDER_SETTLE_MAX)
+
+    @contextlib.contextmanager
+    def _claim_busy(self):
+        """Claim the busy flag; yields False if another handler holds it.
+
+        Claims before any await so two fast clicks can't both pass, and releases
+        in `finally` so an exception can't leave the UI locked.
+        """
+        if self.state.busy:
+            yield False
+            return
+        self.state.busy = True
+        try:
+            yield True
+        finally:
+            self.state.busy = False
+
     def _resolve_active_path(self) -> Path | None:
         """Return the XDMF/PVD file path for the currently active dataset."""
         key: str | None = self.state.active_dataset
@@ -323,7 +363,7 @@ class VisfemApp(TrameApp):
             await asyncio.sleep(0.05)
             push_scene_full(self.plotter, self.ctrl)
             # Keep the overlay up while the client paints the new geometry.
-            await asyncio.sleep(_RENDER_SETTLE)
+            await asyncio.sleep(self._render_settle())
             with self.state:
                 self.state.loading = False
                 self.state.busy = False
@@ -455,70 +495,66 @@ class VisfemApp(TrameApp):
 
     async def select_scalar_field(self, field: str) -> None:
         """Re-render the current dataset with the given scalar field."""
-        if self.state.busy:
-            return
-        self.state.autoplay = False
-        self._cancel_warmup()
-        self.state.active_step = 0
-        self.state.clim_override = None
-        self.state.busy = True
-        self.state.flush()
-        await asyncio.sleep(0.05)
-        select_scalar_field(
-            self.plotter, self.ctrl, self.state,
-            self._project_metadata, self._xdmf_meta, field,
-        )
-        self.state.busy = False
+        with self._claim_busy() as claimed:
+            if not claimed:
+                return
+            self.state.autoplay = False
+            self._cancel_warmup()
+            self.state.active_step = 0
+            self.state.clim_override = None
+            self.state.flush()
+            await asyncio.sleep(0.05)
+            select_scalar_field(
+                self.plotter, self.ctrl, self.state,
+                self._project_metadata, self._xdmf_meta, field,
+            )
 
     async def select_step(self, step: int) -> None:
         """Navigate the current XDMF dataset to a different timestep."""
-        if self.state.busy:
-            return
-        self.state.busy = True
-        self.state.flush()
-        await asyncio.sleep(0.05)
-        select_step(
-            self.plotter, self.ctrl, self.state,
-            self._project_metadata, self._xdmf_meta, int(step),
-        )
-        self.state.busy = False
+        with self._claim_busy() as claimed:
+            if not claimed:
+                return
+            self.state.flush()
+            await asyncio.sleep(0.05)
+            select_step(
+                self.plotter, self.ctrl, self.state,
+                self._project_metadata, self._xdmf_meta, int(step),
+            )
 
     async def toggle_color_reversed(self) -> None:
         """Flip the color order of the active palette or colormap and re-render."""
         if self.state.active_dataset is None:
             return
-        if self.state.busy:
-            return
-        self.state.color_reversed = not self.state.color_reversed
-        self.state.clim_override = None
-        self.state.busy = True
-        self.state.flush()
-        await asyncio.sleep(0.05)
-        select_color_scheme(
-            self.plotter, self.ctrl, self.state,
-            self._project_metadata, self._xdmf_meta,
-        )
-        self.state.busy = False
+        with self._claim_busy() as claimed:
+            if not claimed:
+                return
+            self.state.color_reversed = not self.state.color_reversed
+            self.state.clim_override = None
+            self.state.flush()
+            await asyncio.sleep(0.05)
+            select_color_scheme(
+                self.plotter, self.ctrl, self.state,
+                self._project_metadata, self._xdmf_meta,
+            )
 
     async def select_color_scheme(self, name: str) -> None:
         """Update the active palette/colormap and re-render the current scene."""
         if self.state.active_dataset is None:
             return
-        if self.state.busy:
-            return
-        if self.state.scalar_bar is not None:
-            self.state.active_continuous_cmap = name
-        else:
-            self.state.active_categorical_palette = name
-        self.state.clim_override = None
-        self.state.busy = True
-        self.state.flush()
-        await asyncio.sleep(0.05)
-        select_color_scheme(
-            self.plotter, self.ctrl, self.state,
-            self._project_metadata, self._xdmf_meta,
-        )
-        self.state.busy = False
+        with self._claim_busy() as claimed:
+            if not claimed:
+                return
+            if self.state.scalar_bar is not None:
+                self.state.active_continuous_cmap = name
+            else:
+                self.state.active_categorical_palette = name
+            self.state.clim_override = None
+            self.state.flush()
+            await asyncio.sleep(0.05)
+            select_color_scheme(
+                self.plotter, self.ctrl, self.state,
+                self._project_metadata, self._xdmf_meta,
+            )
 
     def toggle_autoplay(self) -> None:
         """Start or stop automatic step playback."""

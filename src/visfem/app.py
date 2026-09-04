@@ -30,10 +30,9 @@ _FRAME_SLEEP: float = 0.2   # seconds between frames (scalar-field timeseries)
 # GRASP phase series redraws fully per phase; slower cadence makes the contrast
 # wash-in watchable rather than a fast flicker.
 _PHASE_FRAME_SLEEP: float = 0.7
-# Fallback timeout if `after_scene_loaded` never fires.
-_RENDER_TIMEOUT: float = 30.0  # seconds
-# Delay after `after_scene_loaded` before releasing the overlay.
-_PAINT_GRACE: float = 0.15  # seconds
+# Hold the loading overlay this long after pushing geometry, covering the
+# client-side WebGL paint.
+_RENDER_SETTLE: float = 1.6  # seconds
 
 
 class VisfemApp(TrameApp):
@@ -47,9 +46,8 @@ class VisfemApp(TrameApp):
         self._autoplay_task: asyncio.Task | None = None
         self._preload_task: asyncio.Task | None = None
         self._warmup_task: asyncio.Task | None = None
+        self._warmup_gen: int = 0
         self._opacity_task: asyncio.Task | None = None
-        # Set when vtk.js reports the pushed scene loaded.
-        self._scene_loaded = asyncio.Event()
         self._project_metadata = load_project_metadata()
         self._organ_groups = group_by_organ_system(self._project_metadata)
         self._xdmf_meta: dict[str, MeshMetadata] = {}
@@ -73,8 +71,6 @@ class VisfemApp(TrameApp):
         self._setup_plotter()
         self._setup_state()
         self.xr = XRManager(self.plotter, self.state, self.ctrl)
-        # Registered before build_ui: the view widget binds this at construction.
-        self.ctrl.on_scene_loaded = self._on_scene_loaded
         self.ui = build_ui(
             server=self.server,
             plotter=self.plotter,
@@ -281,33 +277,12 @@ class VisfemApp(TrameApp):
 
     def _cancel_warmup(self) -> None:
         """Cancel any running vtk.js warmup task and clear the loading flag."""
+        self._warmup_gen += 1
         if self._warmup_task is not None and not self._warmup_task.done():
             self._warmup_task.cancel()
         self._warmup_task = None
         self.state.loading = False
         self.state.busy = False
-
-    def _on_scene_loaded(self, *_: object, **__: object) -> None:
-        """vtk.js finished loading the pushed scene (client-side `after_scene_loaded`)."""
-        self._scene_loaded.set()
-
-    async def _await_scene_loaded(self) -> None:
-        """Wait for the scene to load, then release the loading overlay."""
-        try:
-            await asyncio.wait_for(self._scene_loaded.wait(), timeout=_RENDER_TIMEOUT)
-            # after_scene_loaded fires on ingest; give the first frame a beat to paint.
-            await asyncio.sleep(_PAINT_GRACE)
-        except TimeoutError:
-            logger.warning(
-                "after_scene_loaded not received within %.0fs; releasing the loading "
-                "overlay on timeout (the viewport may still be painting)",
-                _RENDER_TIMEOUT,
-            )
-        # Capture the reset-camera baseline after the first paint.
-        self._initial_camera = self.plotter.camera_position
-        with self.state:
-            self.state.loading = False
-            self.state.busy = False
 
     def _resolve_active_path(self) -> Path | None:
         """Return the XDMF/PVD file path for the currently active dataset."""
@@ -341,16 +316,17 @@ class VisfemApp(TrameApp):
     async def _start_vtkjs_warmup(self) -> None:
         """Force a full scene resend (push_scene_full rebuilds the client scene), then warm the step cache for a series."""
         n_steps = int(self.state.n_steps)
-        # Clear stale state before pushing the scene.
-        self._scene_loaded.clear()
         if n_steps <= 1:
             self.state.step_inc = 1
             # disable_auto_switch means the client won't repaint on its own; the
             # full resend below is the single authoritative push for this switch.
             await asyncio.sleep(0.05)
             push_scene_full(self.plotter, self.ctrl)
-            # Hold the overlay until the client confirms the scene is loaded.
-            await self._await_scene_loaded()
+            # Keep the overlay up while the client paints the new geometry.
+            await asyncio.sleep(_RENDER_SETTLE)
+            with self.state:
+                self.state.loading = False
+                self.state.busy = False
             return
         await asyncio.sleep(0.05)
         push_scene_full(self.plotter, self.ctrl)
@@ -358,15 +334,13 @@ class VisfemApp(TrameApp):
         self.state.step_inc = inc
         path = self._resolve_active_path()
         if path is None:
-            await self._await_scene_loaded()
+            with self.state:
+                self.state.loading = False
+                self.state.busy = False
             return
-        # Dismiss the overlay when the first frame is actually on screen. Cache
-        # warming continues in the background: previously the overlay stayed up
-        # for the whole warmup (server-side file I/O), which both over- and
-        # under-shot the moment the viewport became valid.
-        await self._await_scene_loaded()
+        gen = self._warmup_gen
         self._warmup_task = asyncio.ensure_future(
-            vtkjs_warmup(self.state, path, _TARGET_FRAMES)
+            vtkjs_warmup(gen, lambda: self._warmup_gen, self.state, path, _TARGET_FRAMES)
         )
 
     def _start_preload_from_state(self) -> None:
@@ -442,6 +416,7 @@ class VisfemApp(TrameApp):
             self._project_metadata, self._xdmf_meta, key,
         )
         apply_opacity(self.plotter, float(self.state.ctrl_opacity))
+        self._initial_camera = self.plotter.camera_position
         await self._start_vtkjs_warmup()
 
     async def select_xdmf(self, key: str, stem: str) -> None:
@@ -458,6 +433,7 @@ class VisfemApp(TrameApp):
             self._project_metadata, self._xdmf_meta, key, stem,
         )
         apply_opacity(self.plotter, float(self.state.ctrl_opacity))
+        self._initial_camera = self.plotter.camera_position
         await self._start_vtkjs_warmup()
 
     async def select_patient(self, dataset_key: str, patient: int) -> None:
@@ -474,6 +450,7 @@ class VisfemApp(TrameApp):
             self._project_metadata, dataset_key, patient,
         )
         apply_opacity(self.plotter, float(self.state.ctrl_opacity))
+        self._initial_camera = self.plotter.camera_position
         await self._start_vtkjs_warmup()
 
     async def select_scalar_field(self, field: str) -> None:

@@ -1,8 +1,15 @@
 name: MyPy
 on: [push]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # a newer run supersedes the running one of the same branch
+  cancel-in-progress: true
+
 jobs:
   mypy:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -16,6 +23,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
+          # the interpreter is cached with the packages instead of downloaded by every run
+          cache-python: true
       - name: Test with tox
         run:
           uvx --with tox-uv tox -e mypy

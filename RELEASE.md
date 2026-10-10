@@ -32,6 +32,7 @@ Run all tests in parallel
 ```bash
 tox run-parallel
 ```
+Continuous integration runs only `py3.14`, on linux, macos and windows, and `mypy`; the complete `envlist`, including python 3.13, runs locally with `tox run-parallel` before a pull request is opened.
 
 # Setup pre-commit
 ```bash

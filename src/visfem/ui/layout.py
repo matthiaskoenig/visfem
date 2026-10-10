@@ -8,7 +8,10 @@ from trame.ui.vuetify3 import SinglePageLayout
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 from trame.widgets.vtk import VtkRemoteLocalView, VtkWebXRHelper
-from trame_client.widgets.trame import Script
+try:  # trame 4 renamed the module of the trame widgets
+    from trame_client.widgets.client import Script
+except ImportError:  # trame 3
+    from trame_client.widgets.trame import Script
 
 from visfem.models import ProjectMetadata
 from visfem.ui.footer import FOOTER_STYLE, build_footer

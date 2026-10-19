@@ -13,7 +13,7 @@ import pyvista as pv
 from typing import Any
 from vtkmodules.vtkRenderingCore import vtkActor
 
-from visfem.engine.colors import region_colors
+from visfem.engine.colors import apply_overrides_to_state, region_colors
 from visfem.engine.palettes import CATEGORICAL_PALETTES
 from visfem.engine.scene import (
     TrameCtrl, clear_scene, field_label,
@@ -112,6 +112,25 @@ def _scalar_field_view_args(meta: ProjectMetadata, cfg: RenderConfig, state: Any
         cmap=_resolve_cmap(state),
         percentile=cfg.percentile_clamp if cfg.percentile_clamp is not None else 95,
     )
+
+
+def _apply_scalar_field_legend(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    state: Any,
+    legend: list[dict[str, Any]],
+    scalar_bar: dict[str, Any] | None,
+) -> None:
+    """Store a scalar_field fast-path result, re-pushing the LUT if overrides changed it.
+
+    update_scalar_field_view builds its own categorical LUT from the plain palette, so
+    an overridden colour has to be pushed back onto the actor afterwards.
+    """
+    colors = apply_overrides_to_state(state, legend)
+    state.scalar_bar = scalar_bar
+    original = [item.get("color") for item in legend]
+    if colors != original:
+        update_actor_palette(plotter, ctrl, colors, len(colors))
 
 
 def select_dataset(
@@ -223,8 +242,7 @@ def select_scalar_field(
                     plotter, ctrl, dataset_dir(meta), field=field,
                     **_scalar_field_view_args(meta, cfg, state),
                 )
-                state.legend_items = legend
-                state.scalar_bar = scalar_bar
+                _apply_scalar_field_legend(plotter, ctrl, state, legend, scalar_bar)
                 return
             ctx = _build_context(plotter, ctrl, state, meta, cfg, dataset_dir(meta),
                                  xdmf_meta, field=field, reset_camera=False)
@@ -334,7 +352,7 @@ def select_patient(
                 state.active_step = 0
                 state.step_times = []  # phase indices; UI shows "k / n"
         result = dispatch_render(ctx)
-        state.legend_items = result.legend_items
+        apply_overrides_to_state(state, result.legend_items)
         state.mesh_stats = result.mesh_stats
         state.active_meta = meta_to_state(meta)
     finally:
@@ -346,12 +364,32 @@ def _recolor_active_actor(plotter: pv.Plotter, ctrl: TrameCtrl, state: Any) -> b
     if get_active_actor() is None:
         return False
     n = len(state.legend_items)
-    colors = region_colors(n, _resolve_palette(state))
+    palette_colors = region_colors(n, _resolve_palette(state))
+    # Lay the palette down first, then let overrides win on the categories that have one.
+    base = [{**item, "color": palette_colors[i]} for i, item in enumerate(state.legend_items)]
+    colors = apply_overrides_to_state(state, base)
     update_actor_palette(plotter, ctrl, colors, n)
-    state.legend_items = [
-        {**item, "color": colors[i]} for i, item in enumerate(state.legend_items)
-    ]
     return True
+
+
+def recolor_categories(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    state: Any,
+    project_metadata: dict[str, ProjectMetadata],
+    xdmf_meta: dict[str, MeshMetadata],
+) -> None:
+    """Re-apply category colour overrides to the current scene.
+
+    Takes the in-place LUT swap whenever an actor is tracked; otherwise falls back to
+    select_color_scheme, which re-renders and funnels the legend through
+    apply_overrides_to_state anyway.
+    """
+    if state.active_dataset is None:
+        return
+    if state.legend_items and _recolor_active_actor(plotter, ctrl, state):
+        return
+    select_color_scheme(plotter, ctrl, state, project_metadata, xdmf_meta)
 
 
 def select_color_scheme(
@@ -382,8 +420,7 @@ def select_color_scheme(
                 plotter, ctrl, dataset_dir(meta), field=state.active_scalar_field,
                 **_scalar_field_view_args(meta, cfg, state),
             )
-            state.legend_items = legend
-            state.scalar_bar = scalar_bar
+            _apply_scalar_field_legend(plotter, ctrl, state, legend, scalar_bar)
             return
 
         # Categorical renderers: fast-path swap the LUT on the active actor.

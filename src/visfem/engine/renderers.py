@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 import pyvista as pv
 
-from visfem.engine.colors import region_colors
+from visfem.engine.colors import apply_overrides_to_state, region_colors
 from visfem.engine.discovery import discover_xdmf, grasp_phase_pvd, pvd_file_path
 from visfem.mesh import metadata_for_d3plot, metadata_for_series, vtk_series_steps
 from visfem.engine.scene import (
@@ -367,8 +367,13 @@ def _timeseries_mesh_meta(ctx: RenderContext) -> MeshMetadata | None:
 
 
 def apply_result_to_state(state: Any, result: RenderResult) -> None:
-    """Write the common render outputs (legend/stats/scalar bar) to Trame state."""
-    state.legend_items = result.legend_items
+    """Write the common render outputs (legend/stats/scalar bar) to Trame state.
+
+    The legend goes through apply_overrides_to_state so per-category colour overrides
+    survive a full re-render. The renderers themselves stay override-agnostic: they
+    always emit plain palette colours.
+    """
+    apply_overrides_to_state(state, result.legend_items)
     state.mesh_stats = result.mesh_stats
     state.scalar_bar = result.scalar_bar_info
 

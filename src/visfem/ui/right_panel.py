@@ -25,6 +25,8 @@ def build_right_panel(
     on_select_step: object,
     on_toggle_autoplay: object,
     on_apply_clim: object,
+    on_set_category_color: object,
+    on_reset_category_colors: object,
 ) -> None:
     """Right panel content: opacity, camera, field, color, playback, scalar bar."""
     with html.Div(style=f"padding:{PAD_MD} {PAD_LG}; display:flex; flex-direction:column; height:100%; overflow-y:auto; box-sizing:border-box;"):
@@ -190,20 +192,56 @@ def build_right_panel(
 
         with html.Div(v_if="legend_items && legend_items.length > 0"):
             v3.VDivider(style="margin-bottom:10px;")
-            _section_header("mdi-tag-multiple-outline", "Regions", "right_regions_open")
+
+            # Header carries a "reset all" action, shown only once something is overridden.
+            with html.Div(
+                style=f"display:flex; align-items:center; gap:{GAP_MD}; margin-bottom:6px; user-select:none;",
+            ):
+                with html.Div(
+                    style="display:flex; align-items:center; gap:6px; flex:1; cursor:pointer;",
+                    click="right_regions_open = !right_regions_open",
+                ):
+                    v3.VIcon("mdi-tag-multiple-outline", size="small", color=ACCENT)
+                    html.Span(
+                        "Regions",
+                        style=f"font-size:{FS_MD}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:{OP_SUBDUED};",
+                    )
+                with v3.VTooltip(
+                    v_if="Object.keys(category_colors_active || {}).length > 0",
+                    text="Reset all region colors",
+                    location="bottom",
+                ):
+                    with v3.Template(v_slot_activator="{ props }"):
+                        v3.VBtn(
+                            icon="mdi-backup-restore",
+                            variant="text",
+                            density="compact", size="x-small",
+                            disabled=("busy",),
+                            click=(on_reset_category_colors, "[]"),
+                            v_bind="props",
+                        )
+                with html.Div(style="cursor:pointer;", click="right_regions_open = !right_regions_open"):
+                    v3.VIcon("mdi-chevron-down", size="small", v_show="right_regions_open")
+                    v3.VIcon("mdi-chevron-right", size="small", v_show="!right_regions_open")
 
             with html.Div(v_show="right_regions_open"):
                 with html.Div(style=f"display:flex; flex-direction:column; gap:{GAP_SM}; margin-bottom:8px; padding-left:8px;"):
-                    with html.Div(v_for="item in legend_items", key="item.names[0]"):
-                        with html.Div(
-                            v_for="n in item.names",
-                            key="n",
-                            style=f"display:flex; align-items:center; gap:{GAP_MD};",
-                        ):
+                    # One row per legend item: a single picker swatch, then that item's
+                    # name(s). A legend item can carry several aliases for one colour,
+                    # so the names stack beside one shared dot.
+                    with html.Div(
+                        v_for="item in legend_items",
+                        key="item.names[0]",
+                        style=f"display:flex; align-items:flex-start; gap:{GAP_MD};",
+                    ):
+                        _category_swatch(on_set_category_color, on_reset_category_colors)
+                        with html.Div(style="display:flex; flex-direction:column;"):
                             html.Span(
-                                style=("'width:9px; height:9px; border-radius:50%; flex-shrink:0; background:' + item.color",),
+                                "{{ n }}",
+                                v_for="n in item.names",
+                                key="n",
+                                style=f"font-size:{FS_SM}; line-height:1.6;",
                             )
-                            html.Span("{{ n }}", style=f"font-size:{FS_SM}; line-height:1.6;")
 
 
         # Playback: only for multi-step datasets.
@@ -309,6 +347,69 @@ def build_right_panel(
                         ),
                         blur=on_apply_clim,
                         keydown="$event.key === 'Enter' && $event.target.blur()",
+                    )
+
+
+def _category_swatch(on_set_category_color: object, on_reset_category_colors: object) -> None:
+    """Clickable legend dot that opens a colour picker for one category.
+
+    Rendered inside the ``item in legend_items`` loop, so it reads ``item`` from that
+    scope. One swatch per legend item, regardless of how many alias names it carries.
+
+    The picker's draft colour lives in a scoped slot variable rather than Trame state,
+    so dragging around the hue pad costs nothing until Apply — each committed change
+    triggers a full scene push server-side.
+    """
+    with v3.VMenu(
+        close_on_content_click=False,
+        location="start",
+    ):
+        with v3.Template(v_slot_activator="{ props }"):
+            html.Span(
+                v_bind="props",
+                style=(
+                    "'width:9px; height:9px; border-radius:50%; flex-shrink:0; cursor:pointer; margin-top:6px; "
+                    "background:' + item.color + ';' + "
+                    "((category_colors_active || {})[item.names[0]] "
+                    "? ' box-shadow:0 0 0 2px rgba(127,127,127,0.55);' : '')",
+                ),
+            )
+        with v3.VCard(style="padding:8px;"):
+            html.Div(
+                "{{ item.names[0] }}",
+                style=f"font-size:{FS_SM}; opacity:{OP_SUBDUED}; margin-bottom:6px; max-width:230px;",
+            )
+            # draft holds the picker value; seeded from the category's current colour.
+            with html.Div(v_for="draft in [{ v: item.color }]", key="'picker'"):
+                v3.VColorPicker(
+                    v_model=("draft.v",),
+                    mode="hex",
+                    modes=("['hex']",),
+                    hide_inputs=False,
+                    show_swatches=False,
+                    width="230",
+                )
+                with html.Div(style=f"display:flex; align-items:center; gap:{GAP_SM}; margin-top:6px;"):
+                    v3.VBtn(
+                        text="Reset",
+                        variant="text",
+                        density="compact", size="small",
+                        disabled=("busy",),
+                        click=(on_reset_category_colors, "[item.names[0]]"),
+                        style="flex:1;",
+                    )
+                    v3.VBtn(
+                        text="Apply",
+                        variant="tonal",
+                        color=ACCENT,
+                        density="compact", size="small",
+                        disabled=("busy",),
+                        click=(
+                            on_set_category_color,
+                            "[item.names[0], typeof draft.v === 'string' "
+                            "? draft.v : (draft.v && draft.v.hex)]",
+                        ),
+                        style="flex:1;",
                     )
 
 

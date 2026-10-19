@@ -15,8 +15,9 @@ from visfem.engine.playback import autoplay_loop, preload_steps, vtkjs_warmup
 from visfem.engine.scene import apply_opacity, push_scene_full, update_scalar_range
 from visfem.engine.xr_manager import XRManager
 from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
+from visfem.engine.colors import clear_overrides, set_override
 from visfem.engine.selection import (
-    select_color_scheme, select_dataset, select_patient,
+    recolor_categories, select_color_scheme, select_dataset, select_patient,
     select_scalar_field, select_step, select_xdmf,
 )
 from visfem.log import get_logger
@@ -92,6 +93,8 @@ class VisfemApp(TrameApp):
                 on_select_step=self.select_step,
                 on_select_color_scheme=self.select_color_scheme,
                 on_toggle_color_reversed=self.toggle_color_reversed,
+                on_set_category_color=self.set_category_color,
+                on_reset_category_colors=self.reset_category_colors,
                 on_apply_clim=self.apply_clim_override,
                 on_toggle_autoplay=self.toggle_autoplay,
                 on_toggle_theme=self.toggle_theme,
@@ -145,6 +148,12 @@ class VisfemApp(TrameApp):
             "right_scalar_bar_open": True,
             "right_regions_open": True,
             "legend_items": [],
+            # Per-category colour overrides, "<dataset>:<patient>" -> {category: hex}.
+            # Session-scoped: sticky across palette swaps and dataset switches, not
+            # persisted to disk.
+            "category_colors": {},
+            # Overrides matching the categories on screen right now — what the UI reads.
+            "category_colors_active": {},
             "ctrl_opacity": 0.9,
             "active_meta": None,
             "mesh_stats": None,
@@ -552,6 +561,39 @@ class VisfemApp(TrameApp):
             self.state.flush()
             await asyncio.sleep(0.05)
             select_color_scheme(
+                self.plotter, self.ctrl, self.state,
+                self._project_metadata, self._xdmf_meta,
+            )
+
+    async def set_category_color(self, name: str, color: str) -> None:
+        """Override one category's colour and recolour the scene in place."""
+        if self.state.active_dataset is None or not name:
+            return
+        with self._claim_busy() as claimed:
+            if not claimed:
+                return
+            set_override(self.state, name, color)
+            self.state.flush()
+            await asyncio.sleep(0.05)
+            recolor_categories(
+                self.plotter, self.ctrl, self.state,
+                self._project_metadata, self._xdmf_meta,
+            )
+
+    async def reset_category_colors(self, name: str | None = None) -> None:
+        """Clear one category's override, or every override in scope when name is None."""
+        if self.state.active_dataset is None:
+            return
+        with self._claim_busy() as claimed:
+            if not claimed:
+                return
+            if name:
+                set_override(self.state, name, None)
+            else:
+                clear_overrides(self.state)
+            self.state.flush()
+            await asyncio.sleep(0.05)
+            recolor_categories(
                 self.plotter, self.ctrl, self.state,
                 self._project_metadata, self._xdmf_meta,
             )

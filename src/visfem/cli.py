@@ -333,6 +333,10 @@ def cmd_new_dataset(args: argparse.Namespace) -> int:
 _IRCAD_URL = "https://cloud.ircad.fr/index.php/s/JN3z7EynBiwYyjy/download"
 _IRCAD_PAGE = "https://www.ircad.fr/research/data-sets/liver-segmentation-3d-ircadb-01/"
 
+# Shared by both fetch commands.
+_USER_AGENT = "visfem-fetch"
+_HTTP_TIMEOUT = 60.0  # seconds without any data before a download is abandoned
+
 # Descriptor written next to the fetched meshes
 _IRCAD_DESCRIPTOR: dict = {
     "data_path": "ircadb",
@@ -363,7 +367,17 @@ def _resolve_data_dir(arg: str | None) -> Path:
 
 
 def _download_with_progress(url: str, dest: Path) -> None:
-    """Stream `url` to `dest` in 1 MiB chunks, showing a rich download progress bar."""
+    """Stream *url* to *dest* with a progress bar; resumable and atomic.
+
+    Bytes go to ``<dest>.part``. A leftover part file is resumed with an HTTP
+    Range request when the server honours it (status 206) and restarted when
+    it does not. The part is renamed to *dest* only once its size matches the
+    announced Content-Length, so an existing *dest* is always a complete file.
+    Raises OSError on any failure (urllib errors, socket timeouts, a short or
+    oversized body), leaving the part file for the next attempt.
+    """
+    import http.client
+    import urllib.error
     import urllib.request
 
     from rich.progress import (
@@ -376,9 +390,26 @@ def _download_with_progress(url: str, dest: Path) -> None:
         TransferSpeedColumn,
     )
 
-    req = urllib.request.Request(url, headers={"User-Agent": "visfem-fetch-ircadb"})
-    with urllib.request.urlopen(req) as resp:  # noqa: S310 - fixed, trusted IRCAD URL
-        total = int(resp.headers.get("Content-Length") or 0)
+    part = dest.with_name(dest.name + ".part")
+    offset = part.stat().st_size if part.exists() else 0
+    headers = {"User-Agent": _USER_AGENT}
+    if offset:
+        headers["Range"] = f"bytes={offset}-"
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        resp = urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT)  # noqa: S310 - fixed, trusted URLs
+    except urllib.error.HTTPError as e:
+        if e.code != 416 or not offset:
+            raise
+        # The range starts past the end: the part is stale. Start over.
+        part.unlink()
+        _download_with_progress(url, dest)
+        return
+    with resp:
+        if resp.status != 206:
+            offset = 0  # the server ignored the range: start over
+        length = resp.headers.get("Content-Length")
+        total = offset + int(length) if length else None
         columns: list[ProgressColumn] = [
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -387,11 +418,25 @@ def _download_with_progress(url: str, dest: Path) -> None:
             TimeRemainingColumn(),
         ]
         with Progress(*columns) as progress:
-            task = progress.add_task("Downloading", total=total or None)
-            with dest.open("wb") as fh:
-                while chunk := resp.read(1 << 20):  # 1 MiB
-                    fh.write(chunk)
-                    progress.update(task, advance=len(chunk))
+            task = progress.add_task("Downloading", total=total, completed=offset)
+            with part.open("ab" if offset else "wb") as fh:
+                try:
+                    while chunk := resp.read(1 << 20):  # 1 MiB
+                        fh.write(chunk)
+                        progress.update(task, advance=len(chunk))
+                except http.client.HTTPException as e:  # e.g. IncompleteRead: connection dropped
+                    raise OSError(f"connection lost while downloading {url}: {e}") from e
+    size = part.stat().st_size
+    if total is not None and size != total:
+        raise OSError(f"incomplete download of {url}: got {size} of {total} bytes (re-run to resume)")
+    part.replace(dest)
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Write *data* to *path* through a temporary sibling, so *path* never holds a partial file."""
+    tmp = path.with_name(path.name + ".part")
+    tmp.write_bytes(data)
+    tmp.replace(path)
 
 
 def _extract_ircadb(zip_path: Path, dest: Path) -> int:
@@ -439,8 +484,6 @@ def _extract_ircadb(zip_path: Path, dest: Path) -> int:
 
 def cmd_fetch_ircadb(args: argparse.Namespace) -> int:
     """Download 3D-IRCADb-01 and lay it out as a ready-to-open VisFEM dataset."""
-    import tempfile
-
     data_dir = _resolve_data_dir(args.data_dir)
     dest = data_dir / "datasets" / "ircadb"
 
@@ -453,9 +496,15 @@ def cmd_fetch_ircadb(args: argparse.Namespace) -> int:
     print(f">> IRCADb will be placed in: {dest}\n")
     dest.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory() as work:
-        zip_path = Path(work) / "3Dircadb1.zip"
-        print(">> Downloading 3D-IRCADb-01 (~3 GB) from IRCAD ...")
+    # The archive lives in the data dir rather than a temp dir, so an
+    # interrupted 3 GB download resumes and a failed extraction does not
+    # throw the download away.
+    zip_path = data_dir / "downloads" / "3Dircadb1.zip"
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    if zip_path.exists():
+        print(f">> Using the previously downloaded archive: {zip_path}")
+    else:
+        print(">> Downloading 3D-IRCADb-01 (~3 GB) from IRCAD (re-run to resume if interrupted) ...")
         try:
             _download_with_progress(_IRCAD_URL, zip_path)
         except OSError as e:
@@ -463,16 +512,21 @@ def cmd_fetch_ircadb(args: argparse.Namespace) -> int:
             print(f"       check your connection or see {_IRCAD_PAGE}", file=sys.stderr)
             return 1
 
-        print(">> Extracting per-patient meshes ...")
-        try:
-            count = _extract_ircadb(zip_path, dest)
-        except Exception as e:  # zipfile.BadZipFile and friends
-            print(f"error: could not extract the archive: {e}", file=sys.stderr)
-            print(
-                f"       the archive layout may have changed; see {_IRCAD_PAGE}",
-                file=sys.stderr,
-            )
-            return 1
+    print(">> Extracting per-patient meshes ...")
+    try:
+        count = _extract_ircadb(zip_path, dest)
+    except Exception as e:  # noqa: BLE001 - zipfile.BadZipFile and friends
+        print(f"error: could not extract the archive: {e}", file=sys.stderr)
+        print(
+            f"       the archive layout may have changed; see {_IRCAD_PAGE}\n"
+            f"       the archive was kept at {zip_path}",
+            file=sys.stderr,
+        )
+        return 1
+    if args.keep_archive:
+        print(f">> Kept the archive: {zip_path}")
+    else:
+        zip_path.unlink()
 
     if count == 0:
         print("error: no patient meshes were extracted.", file=sys.stderr)
@@ -586,11 +640,20 @@ def _oks_svn_dir(specimen: str) -> str:
 
 
 def _fetch_bytes(url: str) -> bytes:
+    """GET *url* and return the body; raises OSError on a timeout or a truncated response."""
+    import http.client
     import urllib.request
 
-    req = urllib.request.Request(url, headers={"User-Agent": "visfem-fetch-openknee"})
-    with urllib.request.urlopen(req) as resp:  # noqa: S310 - fixed, trusted SimTK URL
-        return bytes(resp.read())
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:  # noqa: S310 - fixed, trusted SimTK URL
+            data = bytes(resp.read())
+            length = resp.headers.get("Content-Length")
+    except http.client.HTTPException as e:  # e.g. IncompleteRead: connection dropped
+        raise OSError(f"connection lost while fetching {url}: {e}") from e
+    if length and len(data) != int(length):
+        raise OSError(f"truncated response from {url}: got {len(data)} of {length} bytes")
+    return data
 
 
 def parse_connectivity(xml_text: str) -> dict[str, str]:
@@ -686,15 +749,16 @@ def _fetch_openknee_specimen(specimen: str, dest: Path) -> int:
     """Download one specimen's 16 model surfaces into dest; returns the file count.
 
     Files already present are kept (the SVN server is slow), so the command can be
-    re-run to resume. Connectivity.xml is stored beside the surfaces as provenance:
-    it records which original file each part came from.
+    re-run to resume; files are written atomically, so a present file is complete.
+    Connectivity.xml is stored beside the surfaces as provenance: it records which
+    original file each part came from.
     """
     from rich.progress import BarColumn, Progress, TextColumn
 
     svn = _oks_svn_dir(specimen)
     dest.mkdir(parents=True, exist_ok=True)
     connectivity = _fetch_bytes(f"{svn}/Model/Connectivity.xml")
-    (dest / "Connectivity.xml").write_bytes(connectivity)
+    _write_atomic(dest / "Connectivity.xml", connectivity)
     files = parse_connectivity(connectivity.decode("iso-8859-1"))
     missing = [code for code, _, _ in _OKS_PARTS if code not in files]
     if missing:
@@ -705,8 +769,8 @@ def _fetch_openknee_specimen(specimen: str, dest: Path) -> int:
         task = progress.add_task(specimen, total=len(_OKS_PARTS))
         for code, stem, _ in _OKS_PARTS:
             target = dest / f"{stem}.stl"
-            if not (target.exists() and target.stat().st_size > 0):
-                target.write_bytes(_fetch_bytes(f"{svn}/Geometry/{files[code]}"))
+            if not target.exists():
+                _write_atomic(target, _fetch_bytes(f"{svn}/Geometry/{files[code]}"))
             n_done += 1
             progress.update(task, advance=1)
     return n_done
@@ -718,9 +782,9 @@ def _fetch_openknee_gen1(dest: Path) -> int:
 
     dest.mkdir(parents=True, exist_ok=True)
     feb = dest / _GEN1_FEB
-    if not (feb.exists() and feb.stat().st_size > 0):
+    if not feb.exists():
         _download_with_progress(f"{_OPENKNEE_SVN}/_gen1/src/{_GEN1_FEB}", feb)
-    (dest / "LICENSE_gen1.txt").write_bytes(_fetch_bytes(f"{_OPENKNEE_SVN}/_gen1/license.txt"))
+    _write_atomic(dest / "LICENSE_gen1.txt", _fetch_bytes(f"{_OPENKNEE_SVN}/_gen1/license.txt"))
     parts = febio_to_vtu(feb, dest / "tf_joint.vtu")
     return sum(p.n_elements for p in parts)
 
@@ -757,7 +821,7 @@ def cmd_fetch_openknee(args: argparse.Namespace) -> int:
             dest = datasets / f"openknees_{specimen}"
             print(f">> {specimen}: downloading 16 tissue surfaces from SimTK SVN ...")
             n = _fetch_openknee_specimen(specimen, dest)
-            (dest / "LICENSE.txt").write_bytes(license_text)
+            _write_atomic(dest / "LICENSE.txt", license_text)
             _write_descriptor(dest, openknee_specimen_descriptor(specimen))
             print(f"   + openknees_{specimen}: {n} surfaces")
             done.append(f"openknees_{specimen}")
@@ -765,7 +829,7 @@ def cmd_fetch_openknee(args: argparse.Namespace) -> int:
             dest = datasets / "openknees_gen1"
             print(f">> Generation 1: downloading {_GEN1_FEB} (~15 MB) and converting to VTU ...")
             n_cells = _fetch_openknee_gen1(dest)
-            (dest / "LICENSE.txt").write_bytes(license_text)
+            _write_atomic(dest / "LICENSE.txt", license_text)
             _write_descriptor(dest, openknee_gen1_descriptor())
             print(f"   + openknees_gen1: {n_cells} elements")
             done.append("openknees_gen1")
@@ -859,6 +923,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_fetch.add_argument(
         "--data-dir",
         help="target data directory (default: $DATA_DIR, else ./visfem_data)",
+    )
+    p_fetch.add_argument(
+        "--keep-archive",
+        action="store_true",
+        help="keep the downloaded archive under <data-dir>/downloads/ after extraction",
     )
 
     p_knee = sub.add_parser(

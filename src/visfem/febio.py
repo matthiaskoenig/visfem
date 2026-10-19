@@ -52,7 +52,10 @@ def read_febio(path: Path) -> tuple[pv.UnstructuredGrid, list[FebioPart]]:
     FebioPart per element block in file order. Raises ValueError for files
     without a ``<Geometry>`` section or with an unsupported element type.
     """
-    root = ET.parse(path).getroot()
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError as e:
+        raise ValueError(f"{path.name}: not a well-formed XML file ({e})") from e
     geometry = root.find("Geometry")
     if geometry is None:
         raise ValueError(f"{path.name}: no <Geometry> section (not a FEBio model?)")
@@ -86,7 +89,10 @@ def read_febio(path: Path) -> tuple[pv.UnstructuredGrid, list[FebioPart]]:
         mat_id = int(block.get("mat", 0))
         n_elems = 0
         for elem in block.iterfind("elem"):
-            conn = [index_of[int(v)] for v in (elem.text or "").split(",")]
+            try:
+                conn = [index_of[int(v)] for v in (elem.text or "").split(",")]
+            except (KeyError, ValueError) as e:
+                raise ValueError(f"{path.name}: element {elem.get('id')} references an unknown node ({e})") from e
             if len(conn) != n_nodes:
                 raise ValueError(
                     f"{path.name}: element {elem.get('id')} has {len(conn)} nodes, "

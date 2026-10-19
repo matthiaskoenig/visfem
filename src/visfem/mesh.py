@@ -295,8 +295,11 @@ def get_metadata(path: Path) -> MeshMetadata:
 
     raw["scalar_bounds"] = _compute_scalar_bounds(path, fmt, raw["fields"], raw["n_steps"])
     meta = MeshMetadata.model_validate({**raw, "schema_hash": MESH_METADATA_HASH})
-    sidecar.write_text(meta.model_dump_json(indent=2))
-    logger.debug(f"Cached metadata to '{sidecar.name}'")
+    try:
+        sidecar.write_text(meta.model_dump_json(indent=2))
+        logger.debug(f"Cached metadata to '{sidecar.name}'")
+    except OSError as e:  # e.g. a read-only data mount: recomputed next start, not fatal
+        logger.warning(f"Could not write sidecar '{sidecar.name}': {e}")
     return meta
 
 

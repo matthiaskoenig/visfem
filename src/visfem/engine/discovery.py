@@ -2,7 +2,12 @@
 import os
 from pathlib import Path
 
+from pydantic import ValidationError
+
+from visfem.log import get_logger
 from visfem.models import ProjectMetadata
+
+logger = get_logger(__name__)
 
 # ---- Paths ----
 
@@ -59,15 +64,41 @@ def xdmf_display_name(stem: str) -> str:
 # ---- Metadata ----
 
 def load_project_metadata() -> dict[str, ProjectMetadata]:
-    """Load and validate ProjectMetadata JSONs; if VISFEM_DATASETS is set, load only those keys."""
+    """Load and validate every dataset JSON under DATASETS_DIR; if VISFEM_DATASETS is set, only those keys.
+
+    Keys are the JSON file stems. A JSON that cannot be read or validated, or
+    whose key was already loaded from another JSON, is skipped with a warning
+    so that one bad descriptor cannot take the whole server down.
+    """
     result: dict[str, ProjectMetadata] = {}
+    if not DATASETS_DIR.is_dir():
+        logger.warning(f"Datasets directory not found: {DATASETS_DIR} (set DATA_DIR)")
+        return result
     for path in sorted(DATASETS_DIR.rglob("*.json")):
         if path.name.endswith(".meta.json"):
             continue
-        if ALLOWED_DATASETS is not None and path.stem not in ALLOWED_DATASETS:
+        key = path.stem
+        if ALLOWED_DATASETS is not None and key not in ALLOWED_DATASETS:
             continue
-        result[path.stem] = ProjectMetadata.model_validate_json(path.read_text(encoding="utf-8"))
+        if key in result:
+            logger.warning(f"Skipping '{path}': dataset key '{key}' was already loaded from another JSON")
+            continue
+        try:
+            result[key] = ProjectMetadata.model_validate_json(path.read_text(encoding="utf-8"))
+        except (ValidationError, ValueError, OSError) as e:
+            reason = " ".join(line.strip() for line in str(e).splitlines()[:2])
+            logger.warning(f"Skipping dataset '{path}': {reason}")
     return result
+
+
+def patient_numbers(ddir: Path) -> list[int]:
+    """Return the sorted numeric ids of the ``patient_<n>`` folders in *ddir*; other folders are ignored."""
+    numbers: list[int] = []
+    for d in ddir.glob("patient_*"):
+        suffix = d.name.removeprefix("patient_")
+        if d.is_dir() and suffix.isdigit():
+            numbers.append(int(suffix))
+    return sorted(numbers)
 
 
 def group_by_organ_system(

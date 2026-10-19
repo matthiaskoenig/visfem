@@ -11,7 +11,10 @@ from trame.app import TrameApp
 from trame.decorators import change
 
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
-from visfem.engine.discovery import dataset_dir, discover_xdmf, grasp_phase_pvd, group_by_organ_system, load_project_metadata, pvd_file_path
+from visfem.engine.discovery import (
+    dataset_dir, discover_xdmf, grasp_phase_pvd, group_by_organ_system, load_project_metadata,
+    patient_numbers, pvd_file_path,
+)
 from visfem.engine.playback import autoplay_loop, preload_steps, vtkjs_warmup
 from visfem.engine.scene import apply_opacity, push_scene, update_scalar_range
 from visfem.engine.xr_manager import XRManager
@@ -60,21 +63,19 @@ class VisfemApp(TrameApp):
         self._project_metadata = load_project_metadata()
         self._organ_groups = group_by_organ_system(self._project_metadata)
         self._xdmf_meta: dict[str, MeshMetadata] = {}
-        for meta in self._project_metadata.values():
-            for name, path in discover_xdmf(dataset_dir(meta)).items():
-                self._xdmf_meta[name] = get_metadata(path)
-        for meta in self._project_metadata.values():
-            p = pvd_file_path(meta)
-            if p and p.exists():
-                self._xdmf_meta[p.stem] = get_metadata(p)
+        for key, meta in self._project_metadata.items():
+            series = list(discover_xdmf(dataset_dir(meta)).items())
+            pvd = pvd_file_path(meta)
+            if pvd and pvd.exists():
+                series.append((pvd.stem, pvd))
+            for name, path in series:
+                try:
+                    self._xdmf_meta[name] = get_metadata(path)
+                except Exception as e:  # noqa: BLE001 - a corrupt file must not take the server down
+                    logger.warning(f"Dataset '{key}': skipping '{path.name}', its metadata cannot be read: {e}")
         self._patients_by_dataset: dict[str, list[int]] = {}
         for key, meta in self._project_metadata.items():
-            ddir = dataset_dir(meta)
-            patients = sorted(
-                int(d.name.split("_")[-1])
-                for d in ddir.glob("patient_*")
-                if d.is_dir()
-            )
+            patients = patient_numbers(dataset_dir(meta))
             if patients:
                 self._patients_by_dataset[key] = patients
         self._setup_plotter()

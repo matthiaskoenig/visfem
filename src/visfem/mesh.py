@@ -803,17 +803,50 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     return _detached_copy(mesh)
 
 
-_surface_cache: dict[Path, pv.PolyData] = {}
+# Skins: what the mapper gets instead of a volume mesh.
+#
+# trame-vtk runs a vtkDataSetSurfaceFilter over any non-PolyData mapper input on
+# *every* serialisation, i.e. on every push to the browser. For the 800k-cell
+# quadratic tibia volumes that is ~2.5 s per push, several pushes per click.
+# Skinning once (and caching it per file) makes a push cost milliseconds. Point
+# and cell arrays are carried over, so the mapper fast paths keep working.
+
+Skin = tuple[pv.PolyData, np.ndarray | None, np.ndarray | None]
+_skin_cache: dict[Path, Skin] = {}
 
 
-def load_surface(path: Path) -> pv.PolyData:
-    """Load a mesh and return its external surface as PolyData, cached (explicit polys avoid client-side faceting)."""
-    if path not in _surface_cache:
-        mesh = load_mesh(path)
-        # PolyData passes through unchanged; only UnstructuredGrids need extraction.
-        surface = mesh if isinstance(mesh, pv.PolyData) else mesh.extract_surface(algorithm="dataset_surface")
-        _surface_cache[path] = surface
-    return _surface_cache[path].copy(deep=False)
+def as_surface(mesh: pv.DataSet) -> pv.PolyData:
+    """Return *mesh* as PolyData: a surface passes through, a volume is skinned."""
+    if isinstance(mesh, pv.PolyData):
+        return mesh
+    return mesh.extract_surface(pass_pointid=False, pass_cellid=False, algorithm="dataset_surface")
+
+
+def skin_with_ids(mesh: pv.DataSet) -> Skin:
+    """Like as_surface, but also return the volume point/cell id of every skin point/cell.
+
+    Both id arrays are None when *mesh* already was a surface. Callers use the
+    ids to map per-volume arrays (a new time step, a region remap) onto the skin.
+    """
+    if isinstance(mesh, pv.PolyData):
+        return mesh, None, None
+    surface = mesh.extract_surface(pass_pointid=True, pass_cellid=True, algorithm="dataset_surface")
+    point_ids = np.asarray(surface.point_data.pop("vtkOriginalPointIds"))
+    cell_ids = np.asarray(surface.cell_data.pop("vtkOriginalCellIds"))
+    return surface, point_ids, cell_ids
+
+
+def load_skin(path: Path) -> Skin:
+    """Skin of a static mesh file with its volume ids, cached per path.
+
+    The returned PolyData is a shallow copy of the cached skin: it shares the
+    array buffers but owns its attribute lists, so callers may add arrays to it
+    without touching the cache.
+    """
+    if path not in _skin_cache:
+        _skin_cache[path] = skin_with_ids(load_mesh(path))
+    surface, point_ids, cell_ids = _skin_cache[path]
+    return surface.copy(deep=False), point_ids, cell_ids
 
 
 def preload_all_meshes(project_metadata: dict) -> None:

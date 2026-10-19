@@ -14,7 +14,7 @@ from visfem.engine.colors import (
 from visfem.engine.palettes import CATEGORICAL_PALETTES, CONTINUOUS_CMAPS
 from visfem.engine.discovery import ircadb_organ_names, format_organ_name
 from visfem.log import get_logger
-from visfem.mesh import load_mesh, parse_labels_file
+from visfem.mesh import as_surface, load_mesh, load_skin, parse_labels_file, skin_with_ids
 from visfem.models import FiberOptions, MeshMetadata, ProjectMetadata
 
 if TYPE_CHECKING:
@@ -36,6 +36,11 @@ _PERCENTILE_CLAMP: int = 95
 _active_actor: vtkActor | None = None
 _xdmf_mesh: pv.DataSet | None = None
 _xdmf_actor: vtkActor | None = None
+# Skin of _xdmf_mesh held by _xdmf_actor, plus the volume point/cell ids of each
+# skin point/cell (None when the frame was already a surface, see _skin_with_ids).
+_xdmf_surface: pv.PolyData | None = None
+_xdmf_point_ids: np.ndarray | None = None
+_xdmf_cell_ids: np.ndarray | None = None
 
 
 def get_active_actor() -> vtkActor | None:
@@ -120,9 +125,13 @@ def _set_background(plotter: pv.Plotter, dark_mode: bool) -> None:
 def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
     """Remove all actors and reset scene state (removed, not hidden, so the local-mode client drops the geometry)."""
     global _active_actor, _xdmf_mesh, _xdmf_actor
+    global _xdmf_surface, _xdmf_point_ids, _xdmf_cell_ids
     _active_actor = None
     _xdmf_mesh = None
     _xdmf_actor = None
+    _xdmf_surface = None
+    _xdmf_point_ids = None
+    _xdmf_cell_ids = None
     for actor in list(plotter.renderer.actors.values()):
         plotter.renderer.RemoveActor(actor)
     _set_background(plotter, dark_mode)
@@ -288,7 +297,7 @@ def redraw_xdmf(
     *path* is an XDMF/PVD manifest (indexed by *step*) or a single flat-series
     file. Pass *mesh_meta* for a flat series; else it is looked up by path.stem.
     """
-    global _xdmf_mesh, _xdmf_actor
+    global _xdmf_mesh, _xdmf_actor, _xdmf_surface, _xdmf_point_ids, _xdmf_cell_ids
     clear_scene(plotter, dark_mode)
     try:
         mesh = load_mesh(path, step=step)
@@ -318,8 +327,11 @@ def redraw_xdmf(
     if field and mesh_meta and field in mesh_meta.scalar_bounds:
         clim = mesh_meta.scalar_bounds[field]
 
+    # The actor holds the skin; the full frame stays in _xdmf_mesh so that
+    # update_xdmf_step can compare sizes and map the next frame onto the skin.
+    _xdmf_surface, _xdmf_point_ids, _xdmf_cell_ids = skin_with_ids(mesh)
     _xdmf_actor = plotter.add_mesh(
-        mesh,
+        _xdmf_surface,
         scalars=colour_by,
         # cmap is a colormap name; PyVista types it as a Literal of known names.
         cmap=cast("ColormapOptions", cmap),
@@ -374,8 +386,17 @@ def update_xdmf_step(
     for name in new_mesh.array_names:
         _xdmf_mesh[name] = np.array(new_mesh[name], copy=True)
     _xdmf_mesh.points = np.array(new_mesh.points, copy=True)
-
     _xdmf_mesh.Modified()
+
+    # Carry the frame onto the skin the actor shows (no-op if the frame itself
+    # was a surface: then _xdmf_surface *is* _xdmf_mesh and was updated above).
+    if _xdmf_surface is not None and _xdmf_point_ids is not None and _xdmf_cell_ids is not None:
+        for name in new_mesh.point_data.keys():
+            _xdmf_surface.point_data[name] = np.asarray(new_mesh.point_data[name])[_xdmf_point_ids]
+        for name in new_mesh.cell_data.keys():
+            _xdmf_surface.cell_data[name] = np.asarray(new_mesh.cell_data[name])[_xdmf_cell_ids]
+        _xdmf_surface.points = np.asarray(new_mesh.points)[_xdmf_point_ids]
+        _xdmf_surface.Modified()
     _xdmf_actor.GetMapper().Modified()
     push_scene_full(plotter, ctrl, reset_camera=False)
 
@@ -435,7 +456,7 @@ def redraw_ircadb(
         global _active_actor
         merged = pv.merge(parts)
         _active_actor = plotter.add_mesh(
-            merged,
+            as_surface(merged),
             scalars="region_id",
             cmap=colors,
             clim=[0, max(n - 1, 1)],
@@ -501,14 +522,18 @@ def _render_region_array_mesh(
     ids = mesh.cell_data[region_array].astype(int)
     unique_ids: list[int] = sorted(int(v) for v in np.unique(ids))
     remap = {rid: i for i, rid in enumerate(unique_ids)}
-    mesh.cell_data["region_id"] = np.array([remap[r] for r in ids], dtype=np.int32)
+    region_id = np.array([remap[r] for r in ids], dtype=np.int32)
+    mesh.cell_data["region_id"] = region_id
+    # The actor shows the cached skin; carry the dense ids over by volume cell id.
+    surface, _, cell_ids = load_skin(mesh_path)
+    surface.cell_data["region_id"] = region_id if cell_ids is None else region_id[cell_ids]
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     colors = region_colors(len(unique_ids), _palette)
 
     global _active_actor
     clear_scene(plotter, dark_mode)
     _active_actor = plotter.add_mesh(
-        mesh,
+        surface,
         scalars="region_id",
         cmap=colors,
         clim=[0, len(unique_ids) - 1],
@@ -574,7 +599,7 @@ def redraw_stl_surface(
     global _active_actor
     clear_scene(plotter, dark_mode)
     _active_actor = plotter.add_mesh(
-        mesh,
+        as_surface(mesh),
         color=color,
         opacity=opacity,
         show_edges=False,
@@ -612,13 +637,14 @@ def _render_region_mesh(
 
     global _active_actor
     clear_scene(plotter, dark_mode)
+    surface = as_surface(mesh)
 
     if not solid and "region_id" in mesh.cell_data:
         region_ids = mesh.cell_data["region_id"].astype(int)
         n = int(region_ids.max()) + 1
         colors = region_colors(n, _palette)
         _active_actor = plotter.add_mesh(
-            mesh,
+            surface,
             scalars="region_id",
             cmap=colors,
             clim=[0, max(n - 1, 1)],
@@ -633,7 +659,7 @@ def _render_region_mesh(
         legend = [{"names": [f"Region {i + 1}"], "color": colors[i]} for i in range(n)]
     else:
         _active_actor = plotter.add_mesh(
-            mesh, color=_palette[0], opacity=opacity,
+            surface, color=_palette[0], opacity=opacity,
             show_edges=False, show_scalar_bar=False, copy_mesh=True, render=False,
         )
         legend = []
@@ -703,13 +729,18 @@ def redraw_scalar_field(
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     is_categorical = field in categorical_fields
 
+    # The actor shows the cached skin (see mesh.load_skin); the volume mesh only
+    # provides the statistics and the colour limits.
+    surface, _, cell_ids = load_skin(sim_path)
+
     # Precompute _zone_id for the active categorical field so the fast-path can
     # switch to it without a full reload.
     if is_categorical:
         zones = mesh.cell_data[field].astype(int)
         zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
         zone_map = {z: i for i, z in enumerate(zone_ids)}
-        mesh.cell_data["_zone_id"] = np.array([zone_map[int(z)] for z in zones], dtype=np.int32)
+        zone_id = np.array([zone_map[int(z)] for z in zones], dtype=np.int32)
+        surface.cell_data["_zone_id"] = zone_id if cell_ids is None else zone_id[cell_ids]
 
     global _active_actor
     clear_scene(plotter, dark_mode)
@@ -719,7 +750,7 @@ def redraw_scalar_field(
         n = len(zone_ids)
         colors = region_colors(n, _palette)
         _active_actor = plotter.add_mesh(
-            mesh, scalars="_zone_id", cmap=colors, clim=[0, max(n - 1, 1)],
+            surface, scalars="_zone_id", cmap=colors, clim=[0, max(n - 1, 1)],
             n_colors=n, opacity=opacity, show_edges=False, show_scalar_bar=False,
             copy_mesh=True, interpolate_before_map=False, render=False,
         )
@@ -734,7 +765,7 @@ def redraw_scalar_field(
     data = mesh.cell_data[field]
     clim = [float(data.min()), float(np.percentile(data, percentile))]
     _active_actor = plotter.add_mesh(
-        mesh, scalars=field, cmap=cast("ColormapOptions", cmap), clim=clim, opacity=opacity,
+        surface, scalars=field, cmap=cast("ColormapOptions", cmap), clim=clim, opacity=opacity,
         show_edges=False, show_scalar_bar=False, copy_mesh=True, render=False,
     )
     apply_opacity(plotter, opacity)
@@ -828,7 +859,7 @@ def _render_labeled_parts(
         merged = merged.merge(m)
 
     _active_actor = plotter.add_mesh(
-        merged,
+        as_surface(merged),
         scalars="region_id",
         cmap=colors,
         clim=[0, n - 1],

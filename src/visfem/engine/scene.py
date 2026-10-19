@@ -43,6 +43,31 @@ _xdmf_point_ids: np.ndarray | None = None
 _xdmf_cell_ids: np.ndarray | None = None
 
 
+_MAG_SUFFIX = "__mag"
+
+
+def _set_magnitude(mesh: pv.DataSet, field: str) -> str:
+    """Store |*field*| as a scalar array beside the vector array and return its name.
+
+    Vector fields are coloured by magnitude. The array lives on the same
+    association (points or cells) as the vector, and must be recomputed whenever
+    the vector array changes (see update_xdmf_step).
+    """
+    name = f"{field}{_MAG_SUFFIX}"
+    data = mesh.point_data if field in mesh.point_data else mesh.cell_data
+    data[name] = np.linalg.norm(data[field], axis=1)
+    return name
+
+
+def _refresh_magnitudes(mesh: pv.DataSet) -> None:
+    """Recompute every ``<field>__mag`` array on *mesh* from its current vector array."""
+    for name in list(mesh.array_names):
+        if name.endswith(_MAG_SUFFIX):
+            field = name[: -len(_MAG_SUFFIX)]
+            if field in mesh.array_names:
+                _set_magnitude(mesh, field)
+
+
 def get_active_actor() -> vtkActor | None:
     """Return the currently tracked main mesh actor, or None if no dataset is loaded."""
     return _active_actor
@@ -308,8 +333,7 @@ def redraw_xdmf(
     is_vector = bool(field) and field in mesh.array_names and getattr(mesh[field], "ndim", 1) == 2 and mesh[field].shape[1] == 3
     if is_vector:
         assert field is not None  # is_vector already implies a truthy field
-        colour_by = f"{field}__mag"
-        mesh[colour_by] = np.linalg.norm(mesh[field], axis=1)
+        colour_by = _set_magnitude(mesh, field)
 
     # Use precomputed global bounds (scalar fields and vector magnitudes are both
     # keyed by field name) so the colormap scale is stable across all timesteps.
@@ -376,6 +400,9 @@ def update_xdmf_step(
     for name in new_mesh.array_names:
         _xdmf_mesh[name] = np.array(new_mesh[name], copy=True)
     _xdmf_mesh.points = np.array(new_mesh.points, copy=True)
+    # The frame carries only the raw arrays; the magnitude the mapper colours a
+    # vector field by is derived and would otherwise stay at its first-frame values.
+    _refresh_magnitudes(_xdmf_mesh)
     _xdmf_mesh.Modified()
 
     # Carry the frame onto the skin the actor shows (no-op if the frame itself
@@ -386,6 +413,7 @@ def update_xdmf_step(
         for name in new_mesh.cell_data.keys():
             _xdmf_surface.cell_data[name] = np.asarray(new_mesh.cell_data[name])[_xdmf_cell_ids]
         _xdmf_surface.points = np.asarray(new_mesh.points)[_xdmf_point_ids]
+        _refresh_magnitudes(_xdmf_surface)
         _xdmf_surface.Modified()
     _xdmf_actor.GetMapper().Modified()
     push_scene(plotter, ctrl, reset_camera=False)

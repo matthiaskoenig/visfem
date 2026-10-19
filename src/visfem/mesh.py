@@ -121,12 +121,24 @@ def _parse_xdmf_base_grid(
 
 # Format detection
 
-def _detect_format(path: Path) -> str:
-    """Return a format string for a file or directory path.
+_format_cache: dict[Path, str] = {}
 
-    Detected by suffix, except an LS-DYNA d3plot database: a directory holding a
-    ``d3plot`` master file, checked first since a dir can't collide with a suffix.
+
+def _detect_format(path: Path) -> str:
+    """Return a format string for a file or directory path, memoised per path.
+
+    Sniffing an XDMF file parses its whole XML manifest (~0.15 s for a 6.6 MB
+    time series), and load_mesh sniffs on every call including cache hits, so
+    the result is remembered for the life of the process.
     """
+    fmt = _format_cache.get(path)
+    if fmt is None:
+        fmt = _format_cache[path] = _sniff_format(path)
+    return fmt
+
+
+def _sniff_format(path: Path) -> str:
+    """Detect the format by suffix, except an LS-DYNA d3plot database: a directory holding a ``d3plot`` master file, checked first since a dir can't collide with a suffix."""
     if path.is_dir() and (path / _LSDYNA_MASTER).exists():
         return "lsdyna_d3plot"
     suffix = path.suffix.lower()
@@ -732,19 +744,45 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
     return pvmesh
 
 
+# meshio-style XDMF time series: one reader per file, kept open for the life of
+# the process like the d3plot reader above. Constructing a TimeSeriesReader
+# parses the whole XML manifest and read_points_cells re-reads the geometry, so
+# doing that per frame made warmup and playback XML-bound (~0.3 s per frame
+# against ~0.01 s for the frame's own arrays). The reader opens its HDF5 file
+# lazily and we never close it; h5py handles are not thread-safe, hence the lock.
+_XdmfEntry = tuple["meshio.xdmf.TimeSeriesReader", np.ndarray, list]
+_xdmf_readers: dict[Path, _XdmfEntry] = {}
+_xdmf_locks: dict[Path, threading.Lock] = {}
+_xdmf_registry_lock = threading.Lock()
+
+
+def _xdmf_lock(path: Path) -> threading.Lock:
+    with _xdmf_registry_lock:
+        return _xdmf_locks.setdefault(path, threading.Lock())
+
+
+def _xdmf_reader(path: Path) -> _XdmfEntry:
+    """Return the cached (reader, points, cells) for *path* (call under _xdmf_lock(path))."""
+    entry = _xdmf_readers.get(path)
+    if entry is None:
+        reader = meshio.xdmf.TimeSeriesReader(path)
+        logger.debug(f"Opening '{path.name}' ({reader.num_steps} steps)")
+        points, cells = reader.read_points_cells()
+        entry = _xdmf_readers[path] = (reader, points, _filter_to_max_dim_cells(cells))
+    return entry
+
+
 def _load_timeseries_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
     """Load one timestep from a meshio-style XDMF time series."""
-    with meshio.xdmf.TimeSeriesReader(path) as reader:
-        logger.debug(f"Loading '{path.name}' ({reader.num_steps} steps)")
-        points, cells = reader.read_points_cells()
+    with _xdmf_lock(path):
+        reader, points, cells = _xdmf_reader(path)
         _timestamp, point_data, cell_data = reader.read_data(step)
-        cells = _filter_to_max_dim_cells(cells)
-        mesh  = meshio.Mesh(
-            points=points,
-            cells=cells,
-            point_data=point_data,
-            cell_data=cell_data,
-        )
+    mesh = meshio.Mesh(
+        points=points,
+        cells=cells,
+        point_data=point_data,
+        cell_data=cell_data,
+    )
     return pv.from_meshio(mesh)
 
 

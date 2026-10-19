@@ -80,7 +80,14 @@ async def autoplay_loop(
             n = int(state.n_steps)
             inc = int(state.step_inc)
             next_step = 0 if step + inc >= n else step + inc
-            select_step(plotter, ctrl, state, project_metadata, xdmf_meta, next_step)
+            try:
+                select_step(plotter, ctrl, state, project_metadata, xdmf_meta, next_step)
+            except Exception as e:  # noqa: BLE001 - stop playback and surface the error instead of dying silently
+                logger.exception("autoplay: step %d of %s failed", next_step, state.active_dataset)
+                with state:
+                    state.error_message = f"Playback stopped at step {next_step}: {e}"
+                    state.error_open = True
+                return
             with state:  # flush the step change to the client
                 pass
             speed = float(getattr(state, "playback_speed", 1.0)) or 1.0

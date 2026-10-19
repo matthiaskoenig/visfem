@@ -4,10 +4,11 @@ import base64
 import contextlib
 import importlib.resources
 import math
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 import pyvista as pv
 from trame.app import TrameApp
+from vtkmodules.vtkRenderingCore import vtkActor
 from trame.decorators import change
 
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
@@ -179,6 +180,9 @@ class VisfemApp(TrameApp):
             "fullscreen": False,
             "loading": False,
             "busy": False,
+            # Set by _show_error; shown by the snackbar in layout.py.
+            "error_message": "",
+            "error_open": False,
             # Set by the client-side probe in layout.py; True when the browser
             # gives us no usable WebGL2 context (Brave shields, Firefox RFP,
             # Safari ATP). The 3D viewport cannot render at all in that case.
@@ -231,7 +235,7 @@ class VisfemApp(TrameApp):
         """Restore the camera to the initial pose captured at dataset load."""
         if self._initial_camera is None:
             return
-        with self._claim_busy() as claimed:
+        with self._claim_busy("reset the camera") as claimed:
             if not claimed:
                 return
             self.state.camera_resetting = True
@@ -321,12 +325,20 @@ class VisfemApp(TrameApp):
         settle = _RENDER_SETTLE_MIN + _RENDER_SETTLE_PER_MCELL * (cells / 1_000_000)
         return min(settle, _RENDER_SETTLE_MAX)
 
+    def _show_error(self, context: str, exc: Exception) -> None:
+        """Log the traceback of *exc* and show "*context*: *exc*" to the user (call from an except block)."""
+        logger.exception(context)
+        with self.state:
+            self.state.error_message = f"{context}: {exc}"
+            self.state.error_open = True
+
     @contextlib.contextmanager
-    def _claim_busy(self) -> Iterator[bool]:
+    def _claim_busy(self, what: str) -> Iterator[bool]:
         """Claim the busy flag; yields False if another handler holds it.
 
         Claims before any await so two fast clicks can't both pass, and releases
-        in `finally` so an exception can't leave the UI locked.
+        in `finally` so an exception can't leave the UI locked. An exception in
+        the block is reported to the user as "Could not *what*: ..." and swallowed.
         """
         if self.state.busy:
             yield False
@@ -334,8 +346,36 @@ class VisfemApp(TrameApp):
         self.state.busy = True
         try:
             yield True
+        except Exception as e:  # noqa: BLE001 - the UI boundary: report, never leave the view locked
+            self._show_error(f"Could not {what}", e)
         finally:
             self.state.busy = False
+
+    async def _switch(self, what: str, render: Callable[[], vtkActor | None]) -> None:
+        """Common path of the dataset, file and patient switches: overlay on, render, warm up.
+
+        *render* runs the synchronous selection and returns the fibre actor, if
+        any. An exception is logged with its traceback and shown to the user,
+        and the overlay and busy flag are cleared, so a bad dataset never leaves
+        the UI stuck on the spinner.
+        """
+        self.state.autoplay = False
+        self._cancel_warmup()
+        self._cancel_preload()
+        self.state.loading = True
+        self.state.busy = True
+        self.state.flush()
+        await asyncio.sleep(0.05)
+        try:
+            self._fiber_actor = render()
+            apply_opacity(self.plotter, float(self.state.ctrl_opacity))
+            self._initial_camera = self.plotter.camera_position
+            await self._start_vtkjs_warmup()
+        except Exception as e:  # noqa: BLE001 - the UI boundary: report, never leave the view locked
+            self._show_error(f"Could not load {what}", e)
+            with self.state:
+                self.state.loading = False
+                self.state.busy = False
 
     def _resolve_active_path(self) -> Path | None:
         """Return the XDMF/PVD file path for the currently active dataset."""
@@ -456,58 +496,29 @@ class VisfemApp(TrameApp):
 
     async def select_dataset(self, key: str) -> None:
         """Route to the correct redraw based on dataset key."""
-        self.state.autoplay = False
-        self._cancel_warmup()
-        self._cancel_preload()
-        self.state.loading = True
-        self.state.busy = True
-        self.state.flush()
-        await asyncio.sleep(0.05)
-        self._fiber_actor = select_dataset(
-            self.plotter, self.ctrl, self.state,
-            self._project_metadata, self._xdmf_meta, key,
-        )
-        apply_opacity(self.plotter, float(self.state.ctrl_opacity))
-        self._initial_camera = self.plotter.camera_position
-        await self._start_vtkjs_warmup()
+        await self._switch(f"dataset '{key}'", lambda: select_dataset(
+            self.plotter, self.ctrl, self.state, self._project_metadata, self._xdmf_meta, key,
+        ))
 
     async def select_xdmf(self, key: str, stem: str) -> None:
         """Load and render a specific XDMF file within a multi-file dataset."""
-        self.state.autoplay = False
-        self._cancel_warmup()
-        self._cancel_preload()
-        self.state.loading = True
-        self.state.busy = True
-        self.state.flush()
-        await asyncio.sleep(0.05)
-        select_xdmf(
-            self.plotter, self.ctrl, self.state,
-            self._project_metadata, self._xdmf_meta, key, stem,
-        )
-        apply_opacity(self.plotter, float(self.state.ctrl_opacity))
-        self._initial_camera = self.plotter.camera_position
-        await self._start_vtkjs_warmup()
+        def render() -> None:
+            select_xdmf(
+                self.plotter, self.ctrl, self.state, self._project_metadata, self._xdmf_meta, key, stem,
+            )
+        await self._switch(f"'{stem}' of dataset '{key}'", render)
 
     async def select_patient(self, dataset_key: str, patient: int) -> None:
         """Load and render a specific patient from a multi-patient dataset."""
-        self.state.autoplay = False
-        self._cancel_warmup()
-        self._cancel_preload()
-        self.state.loading = True
-        self.state.busy = True
-        self.state.flush()
-        await asyncio.sleep(0.05)
-        select_patient(
-            self.plotter, self.ctrl, self.state,
-            self._project_metadata, dataset_key, patient,
-        )
-        apply_opacity(self.plotter, float(self.state.ctrl_opacity))
-        self._initial_camera = self.plotter.camera_position
-        await self._start_vtkjs_warmup()
+        def render() -> None:
+            select_patient(
+                self.plotter, self.ctrl, self.state, self._project_metadata, dataset_key, patient,
+            )
+        await self._switch(f"patient {patient} of dataset '{dataset_key}'", render)
 
     async def select_scalar_field(self, field: str) -> None:
         """Re-render the current dataset with the given scalar field."""
-        with self._claim_busy() as claimed:
+        with self._claim_busy("switch the field") as claimed:
             if not claimed:
                 return
             self.state.autoplay = False
@@ -523,7 +534,7 @@ class VisfemApp(TrameApp):
 
     async def select_step(self, step: int) -> None:
         """Navigate the current XDMF dataset to a different timestep."""
-        with self._claim_busy() as claimed:
+        with self._claim_busy("change the time step") as claimed:
             if not claimed:
                 return
             self.state.flush()
@@ -537,7 +548,7 @@ class VisfemApp(TrameApp):
         """Flip the color order of the active palette or colormap and re-render."""
         if self.state.active_dataset is None:
             return
-        with self._claim_busy() as claimed:
+        with self._claim_busy("reverse the colours") as claimed:
             if not claimed:
                 return
             self.state.color_reversed = not self.state.color_reversed
@@ -553,7 +564,7 @@ class VisfemApp(TrameApp):
         """Update the active palette/colormap and re-render the current scene."""
         if self.state.active_dataset is None:
             return
-        with self._claim_busy() as claimed:
+        with self._claim_busy("change the colour scheme") as claimed:
             if not claimed:
                 return
             if self.state.scalar_bar is not None:
@@ -572,7 +583,7 @@ class VisfemApp(TrameApp):
         """Override one category's colour and recolour the scene in place."""
         if self.state.active_dataset is None or not name:
             return
-        with self._claim_busy() as claimed:
+        with self._claim_busy("change the category colour") as claimed:
             if not claimed:
                 return
             set_override(self.state, name, color)
@@ -587,7 +598,7 @@ class VisfemApp(TrameApp):
         """Clear one category's override, or every override in scope when name is None."""
         if self.state.active_dataset is None:
             return
-        with self._claim_busy() as claimed:
+        with self._claim_busy("reset the category colours") as claimed:
             if not claimed:
                 return
             if name:

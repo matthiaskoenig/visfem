@@ -163,8 +163,6 @@ def render_multi_part(ctx: RenderContext) -> RenderResult:
     cfg = ctx.cfg
     parts = [(p.stem, p.label) for p in cfg.parts]
     meshes = _load_multi_part_vtk(ctx.ddir, parts, cfg.part_extensions)
-    if meshes is None:
-        return RenderResult()
     colors = region_colors(len(parts), ctx.palette)
     labels = [label for _, label in parts]
     clear_scene(ctx.plotter, ctx.state.dark_mode)

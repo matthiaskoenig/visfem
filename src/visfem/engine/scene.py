@@ -315,11 +315,7 @@ def redraw_xdmf(
     """
     global _xdmf_mesh, _xdmf_actor, _xdmf_surface, _xdmf_point_ids, _xdmf_cell_ids
     clear_scene(plotter, dark_mode)
-    try:
-        mesh = load_mesh(path, step=step)
-    except Exception as e:
-        logger.error(f"Failed to load '{path.name}' step {step}: {e}")
-        return RenderResult()
+    mesh = load_mesh(path, step=step)
 
     _xdmf_mesh = mesh
     if mesh_meta is None:
@@ -366,7 +362,7 @@ def redraw_xdmf(
             try:
                 lo, hi = mesh.get_data_range(colour_by)
                 clim = [float(lo), float(hi)]
-            except Exception:
+            except (KeyError, ValueError):  # array absent in this frame: no bar
                 pass
         if clim is not None:
             # Bar label shows the field name (magnitude is implied by the selector).
@@ -388,11 +384,7 @@ def update_xdmf_step(
     if _xdmf_mesh is None or _xdmf_actor is None:
         return False, None, None
 
-    try:
-        new_mesh = load_mesh(path, step=step)
-    except Exception as e:
-        logger.error(f"Failed to load '{path.name}' step {step}: {e}")
-        return False, None, None
+    new_mesh = load_mesh(path, step=step)
 
     if new_mesh.n_points != _xdmf_mesh.n_points or new_mesh.n_cells != _xdmf_mesh.n_cells:
         return False, None, None
@@ -429,7 +421,7 @@ def update_xdmf_step(
             try:
                 lo, hi = new_mesh.get_data_range(field)
                 clim = [float(lo), float(hi)]
-            except Exception:
+            except (KeyError, ValueError):  # array absent in this frame: no bar
                 pass
         if clim is not None:
             scalar_bar = _scalar_bar_dict(field, clim, cmap)
@@ -463,8 +455,8 @@ def redraw_ircadb(
             mesh.cell_data["region_id"] = np.full(mesh.n_cells, len(parts), dtype=np.int32)
             parts.append(mesh)
             loaded_organs.append(organ)
-        except Exception as e:
-            logger.error(f"Failed to load '{vtk_path.name}': {e}")
+        except Exception as e:  # noqa: BLE001 - one bad organ file should not hide the patient
+            logger.warning(f"Skipping organ '{vtk_path.name}': {e}")
 
     n = len(parts)
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
@@ -522,13 +514,8 @@ def _render_region_array_mesh(
     (hidden by default, toggled via the UI) and returned as ``fiber_actor``.
     """
     if not mesh_path.exists():
-        logger.error(f"Region mesh not found: {mesh_path}")
-        return RenderResult()
-    try:
-        mesh = load_mesh(mesh_path)
-    except Exception as e:
-        logger.error(f"Failed to load region mesh {mesh_path}: {e}")
-        return RenderResult()
+        raise FileNotFoundError(f"Region mesh not found: {mesh_path}")
+    mesh = load_mesh(mesh_path)
 
     # Region names: inline region_labels win; else fall back to a labels file.
     label_map: dict[int, list[str]] = dict(region_labels) if region_labels else {}
@@ -602,14 +589,8 @@ def redraw_stl_surface(
     """Render a single named STL/OBJ surface mesh in one solid colour (a closed mesh with no scalar fields)."""
     mesh_path = dataset_dir / filename
     if not mesh_path.exists():
-        logger.error(f"Surface mesh not found: {mesh_path}")
-        return RenderResult()
-
-    try:
-        mesh = load_mesh(mesh_path)
-    except Exception as e:
-        logger.error(f"Failed to load surface mesh {mesh_path.name}: {e}")
-        return RenderResult()
+        raise FileNotFoundError(f"Surface mesh not found: {mesh_path}")
+    mesh = load_mesh(mesh_path)
 
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     color = _palette[0] if _palette else "#d62728"
@@ -704,11 +685,7 @@ def redraw_region_surface_step(
     Each phase has independent topology, so this always does a full redraw.
     *solid* defaults on to avoid colour-flicker as the region count changes.
     """
-    try:
-        mesh = load_mesh(pvd_path, step=step)
-    except Exception as e:
-        logger.error(f"Failed to load '{pvd_path.name}' step {step}: {e}")
-        return RenderResult()
+    mesh = load_mesh(pvd_path, step=step)
     return _render_region_mesh(plotter, ctrl, mesh, dark_mode, opacity, palette,
                                reset_camera, solid=solid)
 
@@ -736,13 +713,8 @@ def redraw_scalar_field(
     """
     sim_path = dataset_dir / mesh_file
     if not sim_path.exists():
-        logger.error(f"Scalar-field mesh not found: {sim_path}")
-        return RenderResult()
-    try:
-        mesh = load_mesh(sim_path)
-    except Exception as e:
-        logger.error(f"Failed to load scalar-field mesh {sim_path}: {e}")
-        return RenderResult()
+        raise FileNotFoundError(f"Scalar-field mesh not found: {sim_path}")
+    mesh = load_mesh(sim_path)
 
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     is_categorical = field in categorical_fields
@@ -796,8 +768,8 @@ def _load_multi_part_vtk(
     ddir: Path,
     parts: list[tuple[str, str]],
     extensions: list[str],
-) -> list[pv.DataSet] | None:
-    """Load meshes for each part stem, trying each extension in order; None if any part is missing."""
+) -> list[pv.DataSet]:
+    """Load the mesh of each part stem, trying each extension in order; raises FileNotFoundError for a missing part."""
     meshes: list[pv.DataSet] = []
     for stem, _ in parts:
         path: Path | None = None
@@ -807,13 +779,8 @@ def _load_multi_part_vtk(
                 path = candidate
                 break
         if path is None:
-            logger.error(f"Mesh not found for '{stem}' in {ddir}")
-            return None
-        try:
-            meshes.append(load_mesh(path).copy())
-        except Exception as e:
-            logger.error(f"Failed to load {path}: {e}")
-            return None
+            raise FileNotFoundError(f"Mesh not found for part '{stem}' in {ddir} (tried {extensions})")
+        meshes.append(load_mesh(path).copy())
     return meshes
 
 

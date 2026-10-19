@@ -67,17 +67,20 @@ class UICallbacks:
 
 
 def _make_push_scene(view: VtkRemoteLocalView) -> object:
-    """Return a callback that publishes the scene to the vtk.js client in one serialisation.
+    """Return a callback that publishes the scene to the vtk.js client: a delta, then the full state.
 
-    The published state is always full (``new_state=True``, i.e.
-    ``ignore_last_dependencies``): ``view.update()`` sends an incremental delta
-    keyed by the serializer's cached array-dependency hashes, and those can
-    collide across a dataset switch and leave the client painting old arrays.
-    ``view.update()`` also serialises the scene twice (the delta, then a full
-    reconnect snapshot), so routing a full push through it cost three
-    serialisations. Here the one full state is both published and stored as the
-    snapshot the client replays on reconnect. Falls back to ``view.update()`` if
-    an internal attr is unavailable across a trame-vtk version.
+    Both are needed. The delta (``new_state=False``) is the only message that
+    carries ``removeViewProp`` calls: the serializer derives them by comparing
+    against the dependency list of the previous push, which the full state
+    ignores, so a full state alone leaves the previous dataset's actor on the
+    client. The full state (``new_state=True``, ``ignore_last_dependencies``)
+    re-emits every array fresh: a delta is keyed by cached array-dependency
+    hashes that can collide across a dataset switch and leave the client
+    painting old arrays. ``view.update()`` would serialise twice on its own (the
+    delta and a reconnect snapshot), so routing the full push through it cost
+    three serialisations; here the full state doubles as that snapshot. Falls
+    back to ``view.update()`` if an internal attr is unavailable across a
+    trame-vtk version.
     """
     def push_scene() -> None:
         server = view.server
@@ -90,6 +93,7 @@ def _make_push_scene(view: VtkRemoteLocalView) -> object:
         except AttributeError:
             view.update()
             return
+        server.protocol.publish("trame.vtk.delta", helper.scene(vtk_view, new_state=False))
         full_state = helper.scene(vtk_view, new_state=True)
         server.protocol.publish("trame.vtk.delta", full_state)
         server.state[scene_key] = full_state
@@ -333,6 +337,16 @@ def build_ui(
                             "Loading",
                             style="font-size:0.7rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;",
                         )
+
+                    # A failed load or update: app.py logs the traceback and
+                    # sets these two keys, so the user sees why nothing changed.
+                    with v3.VSnackbar(
+                        v_model=("error_open",), timeout=10000, color="error",
+                        location="top", multi_line=True,
+                    ):
+                        html.Span("{{ error_message }}")
+                        with v3.Template(v_slot_actions=True):
+                            v3.VBtn(icon="mdi-close", variant="text", click="error_open = false")
 
                     # Shown instead of a silently empty viewport when the
                     # browser blocks WebGL. v_if: absent entirely when fine.

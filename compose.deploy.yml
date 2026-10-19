@@ -28,4 +28,4 @@ services:
       DATA_DIR: /deploy/data       # discovery.py reads /deploy/data/datasets
       TRAME_USE_HOST: "wss://app.visfem.de"   # <-- the app subdomain
       # Public deployment exposes the SPP2311 subset
-      VISFEM_DATASETS: "ia_ai4ia,avm_md,aneurysm,aneurysm_coils,heart,heart_ep,heart_iv,lobule_convergence,tibia_mesh,tibia_simulation,meniscus_regeneration,ami,liver_vessels,rectangle_one_tree,rectangle_two_trees,rectangle_quad_500,rectangle_quad_2000,rectangle_quad_3000"
+      VISFEM_DATASETS: "ia_ai4ia,avm_md,aneurysm,aneurysm_coils,heart,heart_ep,heart_iv,lobule_convergence,tibia_mesh,tibia_simulation,meniscus_regeneration,ami,liver_vessels,rectangle_one_tree,rectangle_two_trees,rectangle_quad_500,rectangle_quad_2000,rectangle_quad_3000,openknees_gen1,openknees_oks001,openknees_oks002,openknees_oks003,openknees_oks004,openknees_oks006,openknees_oks007,openknees_oks008,openknees_oks009"

@@ -58,6 +58,24 @@ visfem                                   # launch; '3D-IRCADb-01' appears in the
 
 The 3D-IRCADb-01 dataset is provided by IRCAD under its own license terms.
 
+A second open example is the knee: [Open Knee(s)](https://simtk.org/projects/openknee)
+from the Cleveland Clinic. The command below fetches the segmented tissue surfaces
+of the eight simulation-ready specimens (16 STL surfaces each) and the Generation 1
+tibiofemoral finite element model (FEBio, converted to VTU) from the project's
+public SVN repository, which needs no SimTK account:
+
+```bash
+visfem fetch-openknee                    # all eight specimens + the Generation 1 model (~220 MB)
+visfem fetch-openknee --specimens oks003 --no-gen1   # just one specimen
+visfem                                   # launch; the knees appear under 'Musculoskeletal'
+```
+
+Open Knee(s) is provided by the Open Knee(s) Development Team under Creative Commons
+terms (CC BY-SA 3.0 in the repository, CC BY 4.0 on the project page); please cite
+Chokhandre et al. (2023), [doi:10.1007/s10439-022-03074-0](https://doi.org/10.1007/s10439-022-03074-0),
+for the specimens and Erdemir (2016), [doi:10.1055/s-0035-1564600](https://doi.org/10.1055/s-0035-1564600),
+for the Generation 1 model.
+
 
 ## How to cite
 To cite the software repository

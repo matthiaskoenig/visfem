@@ -1,7 +1,7 @@
 """Scene management and mesh rendering helpers."""
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import numpy as np
 import pyvista as pv
@@ -16,6 +16,9 @@ from visfem.engine.discovery import ircadb_organ_names, format_organ_name
 from visfem.log import get_logger
 from visfem.mesh import load_mesh, parse_labels_file
 from visfem.models import FiberOptions, MeshMetadata, ProjectMetadata
+
+if TYPE_CHECKING:
+    from pyvista.plotting._typing import ColormapOptions
 
 logger = get_logger(__name__)
 
@@ -105,10 +108,13 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
 # Scene state
 
 def _set_background(plotter: pv.Plotter, dark_mode: bool) -> None:
+    # Plotter.set_background/reset_camera are functools.wraps wrappers, which
+    # typeshed doesn't bind to the instance, so mypy misreads their arguments;
+    # the targeted ignores here and below cover only that.
     if dark_mode:
-        plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
+        plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
     else:
-        plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)
+        plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)  # type: ignore[arg-type]
 
 
 def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
@@ -133,7 +139,7 @@ def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) 
     """Flush VTK pipeline and push the complete scene to vtk.js."""
     plotter.render()
     if reset_camera:
-        plotter.reset_camera()
+        plotter.reset_camera()  # type: ignore[call-arg]
         ctrl.view_push_camera()
     ctrl.view_update()
 
@@ -148,7 +154,7 @@ def push_scene_full(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = T
     """
     plotter.render()
     if reset_camera:
-        plotter.reset_camera()
+        plotter.reset_camera()  # type: ignore[call-arg]
         ctrl.view_push_camera()
     push_full = getattr(ctrl, "view_push_full", None)
     if push_full is not None:
@@ -301,6 +307,7 @@ def redraw_xdmf(
     colour_by = field
     is_vector = bool(field) and field in mesh.array_names and getattr(mesh[field], "ndim", 1) == 2 and mesh[field].shape[1] == 3
     if is_vector:
+        assert field is not None  # is_vector already implies a truthy field
         colour_by = f"{field}__mag"
         mesh[colour_by] = np.linalg.norm(mesh[field], axis=1)
 
@@ -314,7 +321,8 @@ def redraw_xdmf(
     _xdmf_actor = plotter.add_mesh(
         mesh,
         scalars=colour_by,
-        cmap=cmap,
+        # cmap is a colormap name; PyVista types it as a Literal of known names.
+        cmap=cast("ColormapOptions", cmap),
         clim=clim,
         show_edges=False,
         copy_mesh=False,
@@ -517,7 +525,9 @@ def _render_region_array_mesh(
     fiber_actor: vtkActor | None = None
     if fiber is not None and fiber.array in mesh.cell_data.keys():
         cell_idx = np.arange(0, mesh.n_cells, fiber.stride)
-        centers = mesh.extract_cells(cell_idx).cell_centers()
+        # PyVista types ind as ndarray[dtype[int]], which numpy's stubs can't express
+        # (dtype wants a numpy scalar type), so no real int array can satisfy it.
+        centers = mesh.extract_cells(cell_idx).cell_centers()  # type: ignore[arg-type]
         centers[fiber.array] = mesh.cell_data[fiber.array][cell_idx]
         glyphs = centers.glyph(orient=fiber.array, scale=False, factor=fiber.scale)
         fiber_actor = plotter.add_mesh(
@@ -724,7 +734,7 @@ def redraw_scalar_field(
     data = mesh.cell_data[field]
     clim = [float(data.min()), float(np.percentile(data, percentile))]
     _active_actor = plotter.add_mesh(
-        mesh, scalars=field, cmap=cmap, clim=clim, opacity=opacity,
+        mesh, scalars=field, cmap=cast("ColormapOptions", cmap), clim=clim, opacity=opacity,
         show_edges=False, show_scalar_bar=False, copy_mesh=True, render=False,
     )
     apply_opacity(plotter, opacity)

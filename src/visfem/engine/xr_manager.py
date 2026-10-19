@@ -116,7 +116,8 @@ class XRManager:
             logger.info("[XR] camera restored: pos=(%.1f,%.1f,%.1f)", *self._saved_cam["position"])
             self._saved_cam = None
         else:
-            self.plotter.reset_camera()
+            # functools.wraps wrapper; typeshed doesn't bind self, so mypy misreads it.
+            self.plotter.reset_camera()  # type: ignore[call-arg]
             logger.info("[XR] camera reset to fit mesh (no saved camera)")
         self.ctrl.view_push_camera()
 

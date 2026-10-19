@@ -4,6 +4,7 @@ import base64
 import contextlib
 import importlib.resources
 import math
+from collections.abc import Iterator
 from pathlib import Path
 import pyvista as pv
 from trame.app import TrameApp
@@ -50,7 +51,7 @@ class VisfemApp(TrameApp):
         """Load project metadata, build plotter and state, assemble UI."""
         super().__init__(server)
         self._fiber_actor = None
-        self._initial_camera: object = None
+        self._initial_camera: pv.CameraPosition | None = None
         self._autoplay_task: asyncio.Task | None = None
         self._preload_task: asyncio.Task | None = None
         self._warmup_task: asyncio.Task | None = None
@@ -112,8 +113,10 @@ class VisfemApp(TrameApp):
     def _setup_plotter(self) -> None:
         """Initialize an empty off-screen plotter."""
         self.plotter = pv.Plotter(off_screen=True, theme=pv.themes.DarkTheme())
-        self.plotter.enable_depth_peeling(number_of_peels=4)
-        self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
+        # Plotter methods built with functools.wraps aren't bound to the instance in
+        # typeshed, so mypy misreads these calls; the targeted ignores cover only that.
+        self.plotter.enable_depth_peeling(number_of_peels=4)  # type: ignore[call-arg]
+        self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
         # Physical scale stays default: SetPhysicalScale doesn't propagate to the vtk.js
         # client, so the JS selectstart handler multiplies XR metres by 1000 to match VTK mm.
 
@@ -218,9 +221,9 @@ class VisfemApp(TrameApp):
         """Toggle between dark and light mode."""
         self.state.dark_mode = not self.state.dark_mode
         if self.state.dark_mode:
-            self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
+            self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
         else:
-            self.plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)
+            self.plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)  # type: ignore[arg-type]
         self.ctrl.view_update()
 
     async def reset_camera(self) -> None:
@@ -318,7 +321,7 @@ class VisfemApp(TrameApp):
         return min(settle, _RENDER_SETTLE_MAX)
 
     @contextlib.contextmanager
-    def _claim_busy(self):
+    def _claim_busy(self) -> Iterator[bool]:
         """Claim the busy flag; yields False if another handler holds it.
 
         Claims before any await so two fast clicks can't both pass, and releases

@@ -10,6 +10,7 @@ help users who add their own datasets to a ``DATA_DIR`` folder:
     visfem new-dataset NAME    # scaffold a dataset folder + JSON template
     visfem validate-data      # validate every dataset JSON + check referenced files
     visfem fetch-ircadb       # download the public 3D-IRCADb-01 example dataset
+    visfem fetch-openknee     # download the Open Knee(s) knee geometries from SimTK
 
 The data-authoring commands work entirely off the data directory (DATA_DIR /
 VISFEM_DATA_DIR, else the bundled data), so a pip-installed user never edits
@@ -494,6 +495,302 @@ def cmd_fetch_ircadb(args: argparse.Namespace) -> int:
     return 0
 
 
+# fetch-openknee: download Open Knee(s) knee geometries from the SimTK SVN repository.
+#
+# The project's Downloads tab needs a SimTK account, but its Subversion repository
+# is readable anonymously over HTTPS and holds all the geometry: the per-specimen
+# segmented tissue surfaces of Generation 2 and the Generation 1 tibiofemoral
+# FEBio model. Licensing: the repository's license.txt says CC BY-SA 3.0, the
+# project page says CC BY 4.0; both files are copied next to the data.
+
+_OPENKNEE_PAGE = "https://simtk.org/projects/openknee"
+_OPENKNEE_SVN = "https://simtk.org/svn/openknee"
+_OPENKNEE_PI = "Ahmet Erdemir"
+_OPENKNEE_INSTITUTION = [
+    "Cleveland Clinic, Lerner Research Institute, Department of Biomedical Engineering"
+]
+_OPENKNEE_GEN2_REFERENCES = [
+    "https://doi.org/10.18735/b0zv-n395",
+    "https://doi.org/10.1007/s10439-022-03074-0",
+    "https://doi.org/10.1016/j.dib.2021.106824",
+    _OPENKNEE_PAGE,
+]
+_OPENKNEE_GEN1_REFERENCES = [
+    "https://doi.org/10.1055/s-0035-1564600",
+    f"{_OPENKNEE_SVN}/_gen1/",
+    _OPENKNEE_PAGE,
+]
+
+# Generation 2 specimens with a simulation-ready model (Chokhandre et al. 2023):
+# id -> (side, sex, age in years, BMI). oks005 does not exist in the cohort.
+_OKS_SPECIMENS: dict[str, tuple[str, str, int, float]] = {
+    "oks001": ("Right", "male", 71, 23.1),
+    "oks002": ("Right", "female", 67, 18.9),
+    "oks003": ("Left", "female", 25, 22.8),
+    "oks004": ("Right", "female", 46, 21.9),
+    "oks006": ("Right", "female", 71, 21.3),
+    "oks007": ("Right", "male", 71, 22.7),
+    "oks008": ("Right", "male", 40, 20.09),
+    "oks009": ("Left", "male", 34, 20.0),
+}
+# The first two specimens keep an extra dat/ folder level in the repository.
+_OKS_SVN_DAT_LEVEL = {"oks001", "oks002"}
+
+# Connectivity.xml part code -> (file stem in the dataset, display label), legend order.
+_OKS_PARTS: list[tuple[str, str, str]] = [
+    ("FMB", "femur", "Femur"),
+    ("TBB", "tibia", "Tibia"),
+    ("FBB", "fibula", "Fibula"),
+    ("PTB", "patella", "Patella"),
+    ("FMC", "femoral_cartilage", "Femoral cartilage"),
+    ("TBC-M", "tibial_cartilage_medial", "Tibial cartilage (medial)"),
+    ("TBC-L", "tibial_cartilage_lateral", "Tibial cartilage (lateral)"),
+    ("PTC", "patellar_cartilage", "Patellar cartilage"),
+    ("MNS-M", "meniscus_medial", "Meniscus (medial)"),
+    ("MNS-L", "meniscus_lateral", "Meniscus (lateral)"),
+    ("ACL", "acl", "Anterior cruciate ligament"),
+    ("PCL", "pcl", "Posterior cruciate ligament"),
+    ("MCL", "mcl", "Medial collateral ligament"),
+    ("LCL", "lcl", "Lateral collateral ligament"),
+    ("PTL", "patellar_ligament", "Patellar ligament"),
+    ("QAT", "quadriceps_tendon", "Quadriceps tendon"),
+]
+
+# Generation 1 FEBio material id -> legend names. The second name is the material
+# name used in the .feb file. Cartilage is meshed in three hex layers through its
+# thickness (material suffixes b/m/t); 16 and 17 are empty image-link rigid bodies.
+_GEN1_FEB = "tf_joint_FEBio_v2p7.feb"
+_GEN1_REGION_LABELS: dict[int, list[str]] = {
+    1: ["Femur (rigid)", "femur"],
+    2: ["Tibia (rigid)", "tibia"],
+    3: ["Femoral cartilage (layer 1 of 3)", "fcartb"],
+    4: ["Femoral cartilage (layer 2 of 3)", "fcartm"],
+    5: ["Femoral cartilage (layer 3 of 3)", "fcartt"],
+    6: ["Tibial cartilage (layer 1 of 3)", "tcartb"],
+    7: ["Tibial cartilage (layer 2 of 3)", "tcartm"],
+    8: ["Tibial cartilage (layer 3 of 3)", "tcartt"],
+    9: ["Lateral meniscus", "lat meni"],
+    10: ["Medial meniscus", "med meni"],
+    11: ["Anterior cruciate ligament", "acl"],
+    12: ["Anterior cruciate ligament (fibre region)", "aclfiber"],
+    13: ["Posterior cruciate ligament", "pcl"],
+    14: ["Medial collateral ligament", "mcl"],
+    15: ["Lateral collateral ligament", "lcl"],
+}
+
+
+def _oks_svn_dir(specimen: str) -> str:
+    """Base SVN URL of one specimen's Geometry/ and Model/ folders."""
+    base = f"{_OPENKNEE_SVN}/oks/{specimen}"
+    return f"{base}/dat" if specimen in _OKS_SVN_DAT_LEVEL else base
+
+
+def _fetch_bytes(url: str) -> bytes:
+    import urllib.request
+
+    req = urllib.request.Request(url, headers={"User-Agent": "visfem-fetch-openknee"})
+    with urllib.request.urlopen(req) as resp:  # noqa: S310 - fixed, trusted SimTK URL
+        return bytes(resp.read())
+
+
+def parse_connectivity(xml_text: str) -> dict[str, str]:
+    """Map part code -> STL filename from an Open Knee(s) Connectivity.xml.
+
+    The file is the assembly description of the specimen's FE model; its
+    ``<Assembly>`` children are the part codes (FMB, TBB, ...) and each one's
+    ``<file>`` names the segmented surface that was actually meshed.
+    """
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(xml_text)
+    files: dict[str, str] = {}
+    for part in root:
+        name = part.findtext("file")
+        if name:
+            # Some assemblies (oks006) store Windows paths; only the basename is in SVN.
+            files[part.tag] = name.strip().replace("\\", "/").rsplit("/", 1)[-1]
+    return files
+
+
+def openknee_specimen_descriptor(specimen: str) -> dict:
+    """Dataset JSON for one Generation 2 specimen (same layout as the bundled datasets)."""
+    side, sex, age, bmi = _OKS_SPECIMENS[specimen]
+    return {
+        "data_path": f"openknees_{specimen}",
+        "name": f"Open Knee(s) {specimen.upper()} ({side}, {sex}, {age}y)",
+        "pi": _OPENKNEE_PI,
+        "institution": _OPENKNEE_INSTITUTION,
+        "biological_scale": "organ",
+        "organ_system": ["musculoskeletal"],
+        "description": (
+            f"Specimen-specific knee joint geometry from the Open Knee(s) cohort "
+            f"({specimen}: {side.lower()} knee, {sex}, {age} years, BMI {bmi}). "
+            "Sixteen smooth, watertight triangulated tissue surfaces segmented from "
+            "MRI: bones, cartilage, menisci, cruciate and collateral ligaments, "
+            "patellar ligament and quadriceps tendon."
+        ),
+        "mesh_format": "STL",
+        "references": _OPENKNEE_GEN2_REFERENCES,
+        "subgroup": "Knee",
+        "sort_order": list(_OKS_SPECIMENS).index(specimen) + 1,
+        "render": {
+            "renderer": "multi_part",
+            "part_extensions": [".stl"],
+            "categorical_palette": "paired",
+            "tube": {"enabled": False},
+            "parts": [{"stem": stem, "label": label} for _, stem, label in _OKS_PARTS],
+        },
+    }
+
+
+def openknee_gen1_descriptor() -> dict:
+    """Dataset JSON for the Generation 1 tibiofemoral FEBio model (region_id renderer)."""
+    return {
+        "data_path": "openknees_gen1",
+        "name": "Open Knee(s) Generation 1 (tibiofemoral FE model)",
+        "pi": _OPENKNEE_PI,
+        "institution": _OPENKNEE_INSTITUTION,
+        "biological_scale": "organ",
+        "organ_system": ["musculoskeletal"],
+        "description": (
+            "Open Knee Generation 1: finite element model of a tibiofemoral joint "
+            "(FEBio 2.5, v1.2.0). Rigid femur and tibia surfaces with hexahedral "
+            "meshes of femoral and tibial cartilage (three layers each), both "
+            "menisci and the ACL, PCL, MCL and LCL. Converted from the original "
+            f"{_GEN1_FEB} with `visfem fetch-openknee`; materials are kept as regions."
+        ),
+        "mesh_format": "VTU",
+        "references": _OPENKNEE_GEN1_REFERENCES,
+        "subgroup": "Knee",
+        "sort_order": 0,
+        "render": {
+            "renderer": "region_id",
+            "mesh_file": "tf_joint.vtu",
+            "region_array": "Material",
+            "categorical_palette": "paired",
+            "region_labels": {str(k): v for k, v in _GEN1_REGION_LABELS.items()},
+        },
+    }
+
+
+def _write_descriptor(dest: Path, descriptor: dict) -> None:
+    path = dest / f"{descriptor['data_path']}.json"
+    if path.exists():
+        print(f"   descriptor already exists, leaving it as-is: {path.name}")
+    else:
+        path.write_text(json.dumps(descriptor, indent=2) + "\n")
+        print(f"   wrote dataset descriptor: {path.name}")
+
+
+def _fetch_openknee_specimen(specimen: str, dest: Path) -> int:
+    """Download one specimen's 16 model surfaces into dest; returns the file count.
+
+    Files already present are kept (the SVN server is slow), so the command can be
+    re-run to resume. Connectivity.xml is stored beside the surfaces as provenance:
+    it records which original file each part came from.
+    """
+    from rich.progress import BarColumn, Progress, TextColumn
+
+    svn = _oks_svn_dir(specimen)
+    dest.mkdir(parents=True, exist_ok=True)
+    connectivity = _fetch_bytes(f"{svn}/Model/Connectivity.xml")
+    (dest / "Connectivity.xml").write_bytes(connectivity)
+    files = parse_connectivity(connectivity.decode("iso-8859-1"))
+    missing = [code for code, _, _ in _OKS_PARTS if code not in files]
+    if missing:
+        raise RuntimeError(f"{specimen}: Connectivity.xml lacks parts {', '.join(missing)}")
+
+    n_done = 0
+    with Progress(TextColumn("   {task.description}"), BarColumn(), TextColumn("{task.completed}/{task.total}")) as progress:
+        task = progress.add_task(specimen, total=len(_OKS_PARTS))
+        for code, stem, _ in _OKS_PARTS:
+            target = dest / f"{stem}.stl"
+            if not (target.exists() and target.stat().st_size > 0):
+                target.write_bytes(_fetch_bytes(f"{svn}/Geometry/{files[code]}"))
+            n_done += 1
+            progress.update(task, advance=1)
+    return n_done
+
+
+def _fetch_openknee_gen1(dest: Path) -> int:
+    """Download the Generation 1 FEBio model and convert it to VTU; returns the cell count."""
+    from visfem.febio import febio_to_vtu
+
+    dest.mkdir(parents=True, exist_ok=True)
+    feb = dest / _GEN1_FEB
+    if not (feb.exists() and feb.stat().st_size > 0):
+        _download_with_progress(f"{_OPENKNEE_SVN}/_gen1/src/{_GEN1_FEB}", feb)
+    (dest / "LICENSE_gen1.txt").write_bytes(_fetch_bytes(f"{_OPENKNEE_SVN}/_gen1/license.txt"))
+    parts = febio_to_vtu(feb, dest / "tf_joint.vtu")
+    return sum(p.n_elements for p in parts)
+
+
+def cmd_fetch_openknee(args: argparse.Namespace) -> int:
+    """Download Open Knee(s) geometries and lay them out as VisFEM datasets."""
+    data_dir = _resolve_data_dir(args.data_dir)
+    datasets = data_dir / "datasets"
+    wanted = [] if args.specimens.strip().lower() == "none" else [
+        s.strip().lower() for s in args.specimens.split(",") if s.strip()
+    ]
+    unknown = [s for s in wanted if s not in _OKS_SPECIMENS]
+    if unknown:
+        print(
+            f"error: unknown specimen(s) {', '.join(unknown)}; "
+            f"choose from {', '.join(_OKS_SPECIMENS)}",
+            file=sys.stderr,
+        )
+        return 2
+
+    print(
+        "Open Knee(s) is provided by the Open Knee(s) Development Team (Cleveland Clinic)\n"
+        "under Creative Commons terms (CC BY-SA 3.0 in the repository, CC BY 4.0 on the\n"
+        "project page). By downloading you agree to attribute and cite the dataset.\n"
+        f"Source: {_OPENKNEE_PAGE}\n"
+    )
+    print(f">> Target VisFEM data dir : {data_dir}")
+    print(f">> Datasets will be placed in: {datasets}\n")
+
+    try:
+        license_text = _fetch_bytes(f"{_OPENKNEE_SVN}/license.txt")
+        done: list[str] = []
+        for specimen in wanted:
+            dest = datasets / f"openknees_{specimen}"
+            print(f">> {specimen}: downloading 16 tissue surfaces from SimTK SVN ...")
+            n = _fetch_openknee_specimen(specimen, dest)
+            (dest / "LICENSE.txt").write_bytes(license_text)
+            _write_descriptor(dest, openknee_specimen_descriptor(specimen))
+            print(f"   + openknees_{specimen}: {n} surfaces")
+            done.append(f"openknees_{specimen}")
+        if not args.no_gen1:
+            dest = datasets / "openknees_gen1"
+            print(f">> Generation 1: downloading {_GEN1_FEB} (~15 MB) and converting to VTU ...")
+            n_cells = _fetch_openknee_gen1(dest)
+            (dest / "LICENSE.txt").write_bytes(license_text)
+            _write_descriptor(dest, openknee_gen1_descriptor())
+            print(f"   + openknees_gen1: {n_cells} elements")
+            done.append("openknees_gen1")
+    except OSError as e:
+        print(f"error: download failed: {e}", file=sys.stderr)
+        print(f"       check your connection or see {_OPENKNEE_PAGE}", file=sys.stderr)
+        return 1
+    except (RuntimeError, ValueError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        print(f"       the repository layout may have changed; see {_OPENKNEE_SVN}", file=sys.stderr)
+        return 1
+
+    if not done:
+        print("nothing to do: no specimens selected and --no-gen1 given")
+        return 0
+    print(
+        f"\n>> Done. Prepared {len(done)} dataset(s) under {datasets}\n\n"
+        "   Next steps:\n"
+        f'     export DATA_DIR="{data_dir}"\n'
+        "     visfem validate-data     # optional: confirm the datasets resolve\n"
+        "     visfem                    # launch; the knee datasets appear under Musculoskeletal"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="visfem",
@@ -563,6 +860,33 @@ def build_parser() -> argparse.ArgumentParser:
         "--data-dir",
         help="target data directory (default: $DATA_DIR, else ./visfem_data)",
     )
+
+    p_knee = sub.add_parser(
+        "fetch-openknee",
+        help="download the Open Knee(s) knee geometries from SimTK",
+        description="Download Open Knee(s) geometries from the project's public SVN "
+        "repository (no SimTK account needed) and lay them out as VisFEM "
+        "datasets: the segmented tissue surfaces of the eight simulation-ready "
+        "Generation 2 specimens (~25 MB each) and the Generation 1 tibiofemoral "
+        "FEBio model (~15 MB, converted to VTU). The data is provided by the "
+        "Open Knee(s) Development Team under Creative Commons terms.",
+        epilog="Source: " + _OPENKNEE_PAGE,
+    )
+    p_knee.add_argument(
+        "--data-dir",
+        help="target data directory (default: $DATA_DIR, else ./visfem_data)",
+    )
+    p_knee.add_argument(
+        "--specimens",
+        default=",".join(_OKS_SPECIMENS),
+        help="comma-separated Generation 2 specimen ids to fetch "
+        f"(default: all of {', '.join(_OKS_SPECIMENS)}); 'none' skips them",
+    )
+    p_knee.add_argument(
+        "--no-gen1",
+        action="store_true",
+        help="skip the Generation 1 FEBio model",
+    )
     return parser
 
 
@@ -574,6 +898,7 @@ _SUBCOMMANDS = (
     "new-dataset",
     "validate-data",
     "fetch-ircadb",
+    "fetch-openknee",
 )
 
 
@@ -602,6 +927,7 @@ def main(argv: list[str] | None = None) -> int:
         "new-dataset": cmd_new_dataset,
         "validate-data": cmd_validate_data,
         "fetch-ircadb": cmd_fetch_ircadb,
+        "fetch-openknee": cmd_fetch_openknee,
     }
     handler = handlers.get(args.command)
     if handler is None:

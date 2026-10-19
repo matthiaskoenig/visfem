@@ -51,7 +51,7 @@ def get_active_actor() -> vtkActor | None:
 class TrameCtrl(Protocol):
     def view_push_camera(self) -> None: ...
     def view_update(self) -> None: ...
-    def view_push_full(self) -> None: ...
+    def view_push_scene(self) -> None: ...
 
 
 
@@ -145,29 +145,21 @@ def apply_opacity(plotter: pv.Plotter, opacity: float) -> None:
 
 
 def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) -> None:
-    """Flush VTK pipeline and push the complete scene to vtk.js."""
-    plotter.render()
-    if reset_camera:
-        plotter.reset_camera()  # type: ignore[call-arg]
-        ctrl.view_push_camera()
-    ctrl.view_update()
+    """Flush the VTK pipeline and publish the scene to the vtk.js client, once.
 
-
-def push_scene_full(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) -> None:
-    """Force a full (non-delta) scene resend to the vtk.js client.
-
-    ``view_push_full`` republishes every array fresh so the client rebuilds its
-    scene graph; a local-mode delta can reference a stale content-hash after a
-    dataset switch and paint old geometry or colors. Falls back to a plain delta
-    push when no view is bound (e.g. headless tests).
+    Every renderer and in-place update calls this exactly once at its end, and
+    nothing else pushes for the same interaction. The push is a full (non-delta)
+    state, see ``ui.layout._make_push_scene``: a local-mode delta can reference a
+    stale content-hash after a dataset switch and paint old geometry or colors.
+    Falls back to a plain delta update when no full push is bound (headless tests).
     """
     plotter.render()
     if reset_camera:
         plotter.reset_camera()  # type: ignore[call-arg]
         ctrl.view_push_camera()
-    push_full = getattr(ctrl, "view_push_full", None)
-    if push_full is not None:
-        push_full()
+    push = getattr(ctrl, "view_push_scene", None)
+    if push is not None:
+        push()
     else:
         ctrl.view_update()
 
@@ -198,8 +190,7 @@ def update_actor_palette(
     mapper.SetLookupTable(_build_categorical_lut(colors, n))
     mapper.SetScalarRange(0, max(n - 1, 1))
     mapper.Modified()
-    # Full resend so the recolored LUT reaches the client. See push_scene_full.
-    push_scene_full(plotter, ctrl, reset_camera=False)
+    push_scene(plotter, ctrl, reset_camera=False)
 
 
 def update_scalar_field_view(
@@ -237,7 +228,7 @@ def update_scalar_field_view(
         mapper.SetLookupTable(_build_categorical_lut(colors, n))
         mapper.SetScalarRange(0, max(n - 1, 1))
         mapper.Modified()
-        push_scene_full(plotter, ctrl, reset_camera=False)
+        push_scene(plotter, ctrl, reset_camera=False)
         legend = [
             {"names": zone_labels.get(z, [f"Zone {z}"]), "color": colors[i]}
             for i, z in enumerate(zone_ids)
@@ -252,7 +243,7 @@ def update_scalar_field_view(
     mapper.SetLookupTable(_build_continuous_lut(cmap, clim[0], clim[1]))
     mapper.SetScalarRange(*clim)
     mapper.Modified()
-    push_scene_full(plotter, ctrl, reset_camera=False)
+    push_scene(plotter, ctrl, reset_camera=False)
     return [], _scalar_bar_dict(field, clim, cmap)
 
 
@@ -273,7 +264,7 @@ def update_scalar_range(
         lut.SetTableRange(clim[0], clim[1])
     mapper.SetScalarRange(clim[0], clim[1])
     mapper.Modified()
-    push_scene_full(plotter, ctrl, reset_camera=False)
+    push_scene(plotter, ctrl, reset_camera=False)
     return _scalar_bar_dict(field, clim, cmap)
 
 
@@ -342,8 +333,7 @@ def redraw_xdmf(
         opacity=opacity,
         render=False,
     )
-    # Full resend so the new field/step reaches the client. See push_scene_full.
-    push_scene_full(plotter, ctrl, reset_camera=reset_camera)
+    push_scene(plotter, ctrl, reset_camera=reset_camera)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
 
     scalar_bar: dict | None = None
@@ -398,7 +388,7 @@ def update_xdmf_step(
         _xdmf_surface.points = np.asarray(new_mesh.points)[_xdmf_point_ids]
         _xdmf_surface.Modified()
     _xdmf_actor.GetMapper().Modified()
-    push_scene_full(plotter, ctrl, reset_camera=False)
+    push_scene(plotter, ctrl, reset_camera=False)
 
     stats = {"n_cells": new_mesh.n_cells, "n_points": new_mesh.n_points}
     scalar_bar: dict | None = None

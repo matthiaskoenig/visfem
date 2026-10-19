@@ -13,7 +13,7 @@ from trame.decorators import change
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
 from visfem.engine.discovery import dataset_dir, discover_xdmf, grasp_phase_pvd, group_by_organ_system, load_project_metadata, pvd_file_path
 from visfem.engine.playback import autoplay_loop, preload_steps, vtkjs_warmup
-from visfem.engine.scene import apply_opacity, push_scene_full, update_scalar_range
+from visfem.engine.scene import apply_opacity, push_scene, update_scalar_range
 from visfem.engine.xr_manager import XRManager
 from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
 from visfem.engine.colors import clear_overrides, set_override
@@ -224,7 +224,7 @@ class VisfemApp(TrameApp):
             self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
         else:
             self.plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)  # type: ignore[arg-type]
-        self.ctrl.view_update()
+        push_scene(self.plotter, self.ctrl, reset_camera=False)
 
     async def reset_camera(self) -> None:
         """Restore the camera to the initial pose captured at dataset load."""
@@ -239,7 +239,7 @@ class VisfemApp(TrameApp):
                 await asyncio.sleep(0.05)
                 self.plotter.camera_position = self._initial_camera
                 self.ctrl.view_push_camera()
-                self.ctrl.view_update()
+                push_scene(self.plotter, self.ctrl, reset_camera=False)
                 # Fixed hold: the server has no callback for when the client
                 # finishes the WebGL re-render on the new camera pose.
                 await asyncio.sleep(0.4)
@@ -366,22 +366,21 @@ class VisfemApp(TrameApp):
         return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
 
     async def _start_vtkjs_warmup(self) -> None:
-        """Force a full scene resend (push_scene_full rebuilds the client scene), then warm the step cache for a series."""
+        """Finish a dataset switch: hold the overlay while the client paints, then warm the step cache for a series.
+
+        The renderer already pushed the full scene (push_scene); with
+        disable_auto_switch the client paints nothing on its own, so that one
+        push is the authoritative one and nothing is re-sent here.
+        """
         n_steps = int(self.state.n_steps)
         if n_steps <= 1:
             self.state.step_inc = 1
-            # disable_auto_switch means the client won't repaint on its own; the
-            # full resend below is the single authoritative push for this switch.
-            await asyncio.sleep(0.05)
-            push_scene_full(self.plotter, self.ctrl)
             # Keep the overlay up while the client paints the new geometry.
             await asyncio.sleep(self._render_settle())
             with self.state:
                 self.state.loading = False
                 self.state.busy = False
             return
-        await asyncio.sleep(0.05)
-        push_scene_full(self.plotter, self.ctrl)
         inc = math.ceil(n_steps / _TARGET_FRAMES)
         self.state.step_inc = inc
         path = self._resolve_active_path()
@@ -430,7 +429,7 @@ class VisfemApp(TrameApp):
             return
         try:
             apply_opacity(self.plotter, opacity)
-            self.ctrl.view_update_geometry()
+            push_scene(self.plotter, self.ctrl, reset_camera=False)
         finally:
             self.state.opacity_adjusting = False
             self.state.flush()
@@ -452,7 +451,7 @@ class VisfemApp(TrameApp):
         if self._fiber_actor is None:
             return
         self._fiber_actor.SetVisibility(bool(show_fibers))
-        self.ctrl.view_update()
+        push_scene(self.plotter, self.ctrl, reset_camera=False)
 
     async def select_dataset(self, key: str) -> None:
         """Route to the correct redraw based on dataset key."""

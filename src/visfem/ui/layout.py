@@ -66,33 +66,35 @@ class UICallbacks:
     on_exit_xr: object
 
 
-def _make_push_full(view: VtkRemoteLocalView) -> object:
-    """Return a callback that publishes a full (non-delta) scene to the vtk.js client.
+def _make_push_scene(view: VtkRemoteLocalView) -> object:
+    """Return a callback that publishes the scene to the vtk.js client in one serialisation.
 
-    ``view.update()`` sends an incremental delta keyed by the serializer's cached
-    array-dependency hashes; those hashes can collide across a dataset switch and
-    leave the client painting old arrays. This recomputes the scene with
-    ``new_state=True`` (``ignore_last_dependencies``) so every array is emitted
-    fresh and the client replaces its whole scene graph. Falls back to
-    ``view.update()`` if an internal attr is unavailable across a trame-vtk version.
+    The published state is always full (``new_state=True``, i.e.
+    ``ignore_last_dependencies``): ``view.update()`` sends an incremental delta
+    keyed by the serializer's cached array-dependency hashes, and those can
+    collide across a dataset switch and leave the client painting old arrays.
+    ``view.update()`` also serialises the scene twice (the delta, then a full
+    reconnect snapshot), so routing a full push through it cost three
+    serialisations. Here the one full state is both published and stored as the
+    snapshot the client replays on reconnect. Falls back to ``view.update()`` if
+    an internal attr is unavailable across a trame-vtk version.
     """
-    def push_full() -> None:
+    def push_scene() -> None:
         server = view.server
         if not getattr(server, "protocol", None):
-            view.update()
-            return
+            return  # no client transport yet (headless), nothing to push
         try:
             helper = view._helper
             vtk_view = getattr(view, "_VtkRemoteLocalView__view")
-            # update() first (refreshes the reconnect snapshot + camera), then
-            # publish the full state last so it is the payload the client applies.
+            scene_key = getattr(view, "_VtkRemoteLocalView__scene_id")
+        except AttributeError:
             view.update()
-            full_state = helper.scene(vtk_view, new_state=True)
-            server.protocol.publish("trame.vtk.delta", full_state)
-        except (AttributeError, KeyError):
-            view.update()
+            return
+        full_state = helper.scene(vtk_view, new_state=True)
+        server.protocol.publish("trame.vtk.delta", full_state)
+        server.state[scene_key] = full_state
 
-    return push_full
+    return push_scene
 
 
 def build_ui(
@@ -308,7 +310,7 @@ def build_ui(
                         ctrl.view_push_camera = view.push_camera
                         ctrl.view_update = view.update
                         ctrl.view_update_geometry = view.update_geometry
-                        ctrl.view_push_full = _make_push_full(view)
+                        ctrl.view_push_scene = _make_push_scene(view)
                         ctrl.capture_screenshot = view.capture_image
                         webxr_helper = VtkWebXRHelper(
                             draw_controllers_ray=True,

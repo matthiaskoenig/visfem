@@ -17,7 +17,7 @@ from visfem.engine.colors import apply_overrides_to_state, region_colors
 from visfem.engine.palettes import CATEGORICAL_PALETTES
 from visfem.engine.scene import (
     TrameCtrl, clear_scene, field_label,
-    get_active_actor, update_actor_palette, update_scalar_field_view, update_xdmf_step,
+    get_active_actor, push_scene, update_actor_palette, update_scalar_field_view, update_xdmf_step,
 )
 from visfem.log import get_logger
 from visfem.models import MeshMetadata, ProjectMetadata, RenderConfig, RendererName
@@ -161,6 +161,7 @@ def select_dataset(
         # Patient-driven datasets clear the scene now; rendering happens on patient select.
         if is_patient_renderer(cfg):
             clear_scene(plotter, state.dark_mode)
+            push_scene(plotter, ctrl)
             state.legend_items = []
             state.mesh_stats = None
             state.scalar_bar = None

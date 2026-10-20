@@ -1,6 +1,6 @@
 """Color palette and colormap definitions for VisFEM."""
 
-from visfem.engine.colors import region_colors, scheme_to_hex  # noqa: F401 re-exported
+from visfem.engine.colors import scheme_to_hex
 
 # ---- Categorical palettes ----
 

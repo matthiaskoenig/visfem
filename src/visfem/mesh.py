@@ -86,16 +86,6 @@ _step_cache: dict[tuple[Path, int], pv.DataSet] = {}
 _step_cache_lock: threading.Lock = threading.Lock()
 
 
-def mesh_cache_info() -> dict:
-    """Return current cache state for debugging and verification."""
-    return {
-        "static_cached": [p.name for p in _static_cache],
-        "static_count": len(_static_cache),
-        "step_cached": [(p.name, s) for p, s in _step_cache],
-        "step_count": len(_step_cache),
-    }
-
-
 # Internal utilities
 
 

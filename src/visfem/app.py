@@ -31,7 +31,7 @@ from visfem.engine.discovery import (
     pvd_file_path,
 )
 from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
-from visfem.engine.playback import autoplay_loop, preload_steps, vtkjs_warmup
+from visfem.engine.playback import autoplay_loop, vtkjs_warmup
 from visfem.engine.scene import apply_opacity, push_scene, update_scalar_range
 from visfem.engine.selection import (
     recolor_categories,
@@ -75,7 +75,6 @@ class VisfemApp(TrameApp):
         self._fiber_actor = None
         self._initial_camera: pv.CameraPosition | None = None
         self._autoplay_task: asyncio.Task | None = None
-        self._preload_task: asyncio.Task | None = None
         self._warmup_task: asyncio.Task | None = None
         self._url_select_task: asyncio.Task | None = None
         self._warmup_gen: int = 0
@@ -325,12 +324,6 @@ class VisfemApp(TrameApp):
             self.state.clim_override = [lo, hi]
             self.state.scalar_bar = scalar_bar
 
-    def _cancel_preload(self) -> None:
-        """Cancel any running background step-preload task."""
-        if self._preload_task is not None and not self._preload_task.done():
-            self._preload_task.cancel()
-        self._preload_task = None
-
     def _cancel_warmup(self) -> None:
         """Cancel any running vtk.js warmup task and clear the loading flag."""
         self._warmup_gen += 1
@@ -388,7 +381,6 @@ class VisfemApp(TrameApp):
         """
         self.state.autoplay = False
         self._cancel_warmup()
-        self._cancel_preload()
         self.state.loading = True
         self.state.busy = True
         self.state.flush()
@@ -411,7 +403,7 @@ class VisfemApp(TrameApp):
             return None
         meta = self._project_metadata[key]
         # LS-DYNA d3plot: the database directory itself is the load_mesh path
-        # (step resolved by the `step` passed to load_mesh during warmup/preload).
+        # (step resolved by the `step` passed to load_mesh during warmup).
         if meta.render is not None and meta.render.database:
             return dataset_dir(meta)
         # Flat VTK series: the active path is the per-step file at active_step.
@@ -421,7 +413,7 @@ class VisfemApp(TrameApp):
                 idx = max(0, min(int(self.state.active_step), len(steps) - 1))
                 return steps[idx][1]
         # GRASP phase series: the active path is the current patient's per-patient PVD
-        # (phase resolved by the `step` passed to load_mesh during warmup/preload).
+        # (phase resolved by the `step` passed to load_mesh during warmup).
         patient = self.state.active_patient
         if patient is not None:
             pvd = grasp_phase_pvd(dataset_dir(meta) / f"patient_{int(patient):02d}")
@@ -463,23 +455,6 @@ class VisfemApp(TrameApp):
                 gen, lambda: self._warmup_gen, self.state, path, _TARGET_FRAMES
             )
         )
-
-    def _start_preload_from_state(self) -> None:
-        """Kick off background preloading for all keyframes of the currently active dataset."""
-        n_steps = int(self.state.n_steps)
-        if n_steps <= 1:
-            return
-        path = self._resolve_active_path()
-        if path is None:
-            return
-        inc = math.ceil(n_steps / _TARGET_FRAMES)
-        steps = list(
-            range(inc, n_steps, inc)
-        )  # step 0 already loaded by initial render
-        if not steps:
-            return
-        self._cancel_preload()
-        self._preload_task = asyncio.ensure_future(preload_steps(path, steps))
 
     @change("ctrl_opacity")
     def _on_opacity_change(self, ctrl_opacity: float, **_: object) -> None:

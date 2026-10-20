@@ -46,7 +46,6 @@ LS_WIDEST = "0.1em"  # section group headers
 
 # Icon sizes
 ICON_SM = "14"  # inline metadata row icons (account, bank, vector, reference)
-ICON_MD = "16"  # slightly prominent inline icon (opacity icon in View section)
 ICON_LG = "32"  # decorative / empty-state icon
 
 # Opacity levels

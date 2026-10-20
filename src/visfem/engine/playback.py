@@ -1,4 +1,4 @@
-"""Async background coroutines: vtk.js warmup, step preloading, and autoplay."""
+"""Async background coroutines: vtk.js warmup and autoplay."""
 
 import asyncio
 import math
@@ -14,20 +14,6 @@ from visfem.mesh import load_mesh
 from visfem.models import MeshMetadata, ProjectMetadata
 
 logger = get_logger(__name__)
-
-
-async def preload_steps(path: Path, steps: list[int]) -> None:
-    """Load mesh steps into the LRU cache in the background without blocking the UI."""
-    loop = asyncio.get_running_loop()
-    for step in steps:
-        try:
-            await asyncio.sleep(0)
-        except asyncio.CancelledError:
-            return
-        try:
-            await loop.run_in_executor(None, load_mesh, path, step)
-        except Exception:
-            logger.warning("preload: step %d from %s failed", step, path, exc_info=True)
 
 
 async def vtkjs_warmup(

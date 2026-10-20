@@ -1,4 +1,5 @@
 """WebXR session management and in-VR exit panel."""
+
 from __future__ import annotations
 
 import asyncio
@@ -20,11 +21,11 @@ _BORDER_PAD = 10.0
 _TEXT_HEIGHT = 26.0
 
 # Placement offsets relative to camera at VR entry (mm)
-_FORWARD = 600.0    # arm's length in front
+_FORWARD = 600.0  # arm's length in front
 _RIGHTWARD = 350.0  # offset to the right so it doesn't block the mesh
-_DOWNWARD = 80.0    # slightly below eye level
+_DOWNWARD = 80.0  # slightly below eye level
 
-PANEL_COLOR = "#00bfa5"   # app accent teal
+PANEL_COLOR = "#00bfa5"  # app accent teal
 
 
 class XRManager:
@@ -38,10 +39,13 @@ class XRManager:
         self._border_actor: vtkActor | None = None
         self._label_actor: vtkActor | None = None
         self._saved_cam: dict | None = None
+        self._refresh_task: asyncio.Task | None = None
 
     def on_enter_xr(self) -> None:
         if self.state.xr_active:
-            logger.info("[XR] on_enter_xr fired again — idempotency guard blocked (already active)")
+            logger.info(
+                "[XR] on_enter_xr fired again — idempotency guard blocked (already active)"
+            )
             return
         self._save_camera()
         logger.info("[XR] on_enter_xr — setting xr_active=True")
@@ -54,9 +58,9 @@ class XRManager:
         logger.info("[XR] on_exit_xr — restoring camera and resyncing scene")
         self.state.xr_active = False
         # self._remove_exit_panel()
-        self._restore_camera()   # undo headset-pose overwrite of vtk.js camera
+        self._restore_camera()  # undo headset-pose overwrite of vtk.js camera
         self.ctrl.view_update()
-        asyncio.ensure_future(self._post_exit_refresh())
+        self._refresh_task = asyncio.ensure_future(self._post_exit_refresh())
         logger.info("[XR] camera pushed, geometry refresh scheduled in 250ms")
 
     def toggle_xr(self) -> None:
@@ -69,7 +73,11 @@ class XRManager:
 
     def on_exit_triggered(self, triggered: bool) -> None:
         """JS ray-sphere hit detected — stop XR session."""
-        logger.info("[XR] on_exit_triggered called with triggered=%s xr_active=%s", triggered, self.state.xr_active)
+        logger.info(
+            "[XR] on_exit_triggered called with triggered=%s xr_active=%s",
+            triggered,
+            self.state.xr_active,
+        )
         if triggered and self.state.xr_active:
             self.state.xr_exit_triggered = False
             logger.info("[XR] exit panel triggered — stopping XR")
@@ -77,16 +85,22 @@ class XRManager:
 
     def on_session_ended(self, ended: bool) -> None:
         """JS session 'end' event (system button exit)."""
-        logger.info("[XR] on_session_ended called with ended=%s xr_active=%s", ended, self.state.xr_active)
+        logger.info(
+            "[XR] on_session_ended called with ended=%s xr_active=%s",
+            ended,
+            self.state.xr_active,
+        )
         if ended:
             self.state.xr_session_ended = False
             if self.state.xr_active:
                 # on_exit_xr didn't fire (unexpected) — do full cleanup here
-                logger.info("[XR] on_exit_xr did not fire before on_session_ended — cleaning up")
+                logger.info(
+                    "[XR] on_exit_xr did not fire before on_session_ended — cleaning up"
+                )
                 self.state.xr_active = False
                 self._restore_camera()
                 self.ctrl.view_update()
-            asyncio.ensure_future(self._post_session_end_refresh())
+            self._refresh_task = asyncio.ensure_future(self._post_session_end_refresh())
             logger.info("[XR] extended refresh scheduled in 500ms (system button exit)")
 
     def reset_on_reconnect(self) -> None:
@@ -95,7 +109,6 @@ class XRManager:
         self.state.xr_active = False
         # self._remove_exit_panel()
 
-
     def _save_camera(self) -> None:
         cam = self.plotter.camera
         self._saved_cam = {
@@ -103,7 +116,9 @@ class XRManager:
             "focal_point": tuple(cam.focal_point),
             "view_up": tuple(cam.up),
         }
-        logger.info("[XR] camera saved: pos=(%.1f,%.1f,%.1f)", *self._saved_cam["position"])
+        logger.info(
+            "[XR] camera saved: pos=(%.1f,%.1f,%.1f)", *self._saved_cam["position"]
+        )
 
     def _restore_camera(self) -> None:
         """Undo the headset-pose overwrite of the vtk.js camera and push to client."""
@@ -113,7 +128,10 @@ class XRManager:
             cam.focal_point = self._saved_cam["focal_point"]
             cam.up = self._saved_cam["view_up"]
             self.plotter.renderer.ResetCameraClippingRange()
-            logger.info("[XR] camera restored: pos=(%.1f,%.1f,%.1f)", *self._saved_cam["position"])
+            logger.info(
+                "[XR] camera restored: pos=(%.1f,%.1f,%.1f)",
+                *self._saved_cam["position"],
+            )
             self._saved_cam = None
         else:
             # functools.wraps wrapper; typeshed doesn't bind self, so mypy misreads it.
@@ -170,16 +188,21 @@ class XRManager:
 
         # Flat panel — normal faces back toward camera (-fwd)
         panel_mesh = pv.Plane(
-            center=center, direction=-fwd,
-            i_size=_PANEL_W, j_size=_PANEL_H,
-            i_resolution=1, j_resolution=1,
+            center=center,
+            direction=-fwd,
+            i_size=_PANEL_W,
+            j_size=_PANEL_H,
+            i_resolution=1,
+            j_resolution=1,
         )
         # Border: slightly behind the panel (2 mm further from camera)
         border_mesh = pv.Plane(
-            center=center + fwd * 2, direction=-fwd,
+            center=center + fwd * 2,
+            direction=-fwd,
             i_size=_PANEL_W + _BORDER_PAD * 2,
             j_size=_PANEL_H + _BORDER_PAD * 2,
-            i_resolution=1, j_resolution=1,
+            i_resolution=1,
+            j_resolution=1,
         )
 
         # Text: create in local XY, center it, then transform to face camera
@@ -196,21 +219,32 @@ class XRManager:
         label_mesh.transform(T, inplace=True)
 
         panel_actor = self.plotter.add_mesh(
-            panel_mesh, color=PANEL_COLOR, show_scalar_bar=False, render=False, opacity=0.93,
+            panel_mesh,
+            color=PANEL_COLOR,
+            show_scalar_bar=False,
+            render=False,
+            opacity=0.93,
         )
         assert panel_actor is not None
         panel_actor.DragableOff()
         self._panel_actor = panel_actor
 
         border_actor = self.plotter.add_mesh(
-            border_mesh, color="white", show_scalar_bar=False, render=False, opacity=0.20,
+            border_mesh,
+            color="white",
+            show_scalar_bar=False,
+            render=False,
+            opacity=0.20,
         )
         assert border_actor is not None
         border_actor.DragableOff()
         self._border_actor = border_actor
 
         label_actor = self.plotter.add_mesh(
-            label_mesh, color="white", show_scalar_bar=False, render=False,
+            label_mesh,
+            color="white",
+            show_scalar_bar=False,
+            render=False,
         )
         assert label_actor is not None
         label_actor.DragableOff()

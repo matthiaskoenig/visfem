@@ -12,4 +12,14 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/ruff-action@v3
+      # Same ruff version as uv.lock and .pre-commit-config.yaml, so local
+      # and CI formatting agree.
+      - name: Lint
+        uses: astral-sh/ruff-action@v3
+        with:
+          version: "0.16.6"
+      - name: Check formatting
+        uses: astral-sh/ruff-action@v3
+        with:
+          version: "0.16.6"
+          args: "format --check"

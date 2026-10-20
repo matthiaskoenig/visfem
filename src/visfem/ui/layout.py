@@ -8,6 +8,7 @@ from trame.ui.vuetify3 import SinglePageLayout
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 from trame.widgets.vtk import VtkRemoteLocalView, VtkWebXRHelper
+
 try:  # trame 4 renamed the module of the trame widgets
     from trame_client.widgets.client import Script
 except ImportError:  # trame 3
@@ -17,7 +18,6 @@ from visfem.models import ProjectMetadata
 from visfem.ui.footer import FOOTER_STYLE, build_footer
 from visfem.ui.left_panel import build_left_panel
 from visfem.ui.right_panel import build_right_panel
-from visfem.ui.toolbar import build_toolbar
 from visfem.ui.theme import (
     ACCENT,
     BG_DARK,
@@ -27,6 +27,7 @@ from visfem.ui.theme import (
     PAD_LG,
     RIGHT_PANEL_WIDTH,
 )
+from visfem.ui.toolbar import build_toolbar
 
 # Register the custom light theme; Vuetify merges it over its light defaults.
 _VUETIFY_CONFIG = {
@@ -82,18 +83,21 @@ def _make_push_scene(view: VtkRemoteLocalView) -> object:
     back to ``view.update()`` if an internal attr is unavailable across a
     trame-vtk version.
     """
+
     def push_scene() -> None:
         server = view.server
         if not getattr(server, "protocol", None):
             return  # no client transport yet (headless), nothing to push
         try:
             helper = view._helper
-            vtk_view = getattr(view, "_VtkRemoteLocalView__view")
-            scene_key = getattr(view, "_VtkRemoteLocalView__scene_id")
+            vtk_view = view._VtkRemoteLocalView__view
+            scene_key = view._VtkRemoteLocalView__scene_id
         except AttributeError:
             view.update()
             return
-        server.protocol.publish("trame.vtk.delta", helper.scene(vtk_view, new_state=False))
+        server.protocol.publish(
+            "trame.vtk.delta", helper.scene(vtk_view, new_state=False)
+        )
         full_state = helper.scene(vtk_view, new_state=True)
         server.protocol.publish("trame.vtk.delta", full_state)
         server.state[scene_key] = full_state
@@ -122,7 +126,13 @@ def build_ui(
             toolbar.density = "compact"
             toolbar.style = "background-color: color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%);"
             toolbar.elevation = 0
-            build_toolbar(callbacks.on_toggle_theme, callbacks.on_toggle_xr, callbacks.on_toggle_left_panel, callbacks.on_toggle_right_panel, callbacks.on_take_screenshot)
+            build_toolbar(
+                callbacks.on_toggle_theme,
+                callbacks.on_toggle_xr,
+                callbacks.on_toggle_left_panel,
+                callbacks.on_toggle_right_panel,
+                callbacks.on_take_screenshot,
+            )
             v3.VProgressLinear(
                 v_if="busy || opacity_adjusting",
                 indeterminate=True,
@@ -273,7 +283,6 @@ def build_ui(
                     "overflow:hidden;"
                 )
             ):
-
                 # ---- Left panel ----
                 with html.Div(
                     style=(
@@ -332,7 +341,9 @@ def build_ui(
                             "background:rgba(0,0,0,0.88);"
                         ),
                     ):
-                        v3.VProgressCircular(indeterminate=True, color=ACCENT, size="36", width="2")
+                        v3.VProgressCircular(
+                            indeterminate=True, color=ACCENT, size="36", width="2"
+                        )
                         html.Span(
                             "Loading",
                             style="font-size:0.7rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;",
@@ -341,12 +352,19 @@ def build_ui(
                     # A failed load or update: app.py logs the traceback and
                     # sets these two keys, so the user sees why nothing changed.
                     with v3.VSnackbar(
-                        v_model=("error_open",), timeout=10000, color="error",
-                        location="top", multi_line=True,
+                        v_model=("error_open",),
+                        timeout=10000,
+                        color="error",
+                        location="top",
+                        multi_line=True,
                     ):
                         html.Span("{{ error_message }}")
                         with v3.Template(v_slot_actions=True):
-                            v3.VBtn(icon="mdi-close", variant="text", click="error_open = false")
+                            v3.VBtn(
+                                icon="mdi-close",
+                                variant="text",
+                                click="error_open = false",
+                            )
 
                     # Shown instead of a silently empty viewport when the
                     # browser blocks WebGL. v_if: absent entirely when fine.

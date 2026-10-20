@@ -1,4 +1,5 @@
 """Async background coroutines: vtk.js warmup, step preloading, and autoplay."""
+
 import asyncio
 import math
 from collections.abc import Callable
@@ -52,7 +53,9 @@ async def vtkjs_warmup(
             try:
                 await loop.run_in_executor(None, load_mesh, path, step)
             except Exception:
-                logger.warning("warmup: step %d from %s failed", step, path, exc_info=True)
+                logger.warning(
+                    "warmup: step %d from %s failed", step, path, exc_info=True
+                )
     finally:
         if get_gen() == gen:
             with state:
@@ -81,9 +84,13 @@ async def autoplay_loop(
             inc = int(state.step_inc)
             next_step = 0 if step + inc >= n else step + inc
             try:
-                select_step(plotter, ctrl, state, project_metadata, xdmf_meta, next_step)
-            except Exception as e:  # noqa: BLE001 - stop playback and surface the error instead of dying silently
-                logger.exception("autoplay: step %d of %s failed", next_step, state.active_dataset)
+                select_step(
+                    plotter, ctrl, state, project_metadata, xdmf_meta, next_step
+                )
+            except Exception as e:
+                logger.exception(
+                    "autoplay: step %d of %s failed", next_step, state.active_dataset
+                )
                 with state:
                     state.error_message = f"Playback stopped at step {next_step}: {e}"
                     state.error_open = True

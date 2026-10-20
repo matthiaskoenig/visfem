@@ -37,11 +37,11 @@ _CELL_TYPES: dict[str, tuple[int, int]] = {
 class FebioPart:
     """One ``<Elements>`` block of a FEBio model."""
 
-    index: int            # 0-based block order in the file (the ``Part`` cell array)
-    name: str             # the block's name attribute (e.g. "Part18"), "" if absent
-    element_type: str     # FEBio type (hex8, tet4, ...)
-    material_id: int      # the block's ``mat`` attribute (the ``Material`` cell array)
-    material_name: str    # name of that material from <Material>, "" if unknown
+    index: int  # 0-based block order in the file (the ``Part`` cell array)
+    name: str  # the block's name attribute (e.g. "Part18"), "" if absent
+    element_type: str  # FEBio type (hex8, tet4, ...)
+    material_id: int  # the block's ``mat`` attribute (the ``Material`` cell array)
+    material_name: str  # name of that material from <Material>, "" if unknown
     n_elements: int
 
 
@@ -61,7 +61,8 @@ def read_febio(path: Path) -> tuple[pv.UnstructuredGrid, list[FebioPart]]:
         raise ValueError(f"{path.name}: no <Geometry> section (not a FEBio model?)")
 
     material_names = {
-        int(m.get("id", 0)): m.get("name", "") for m in root.iterfind("Material/material")
+        int(m.get("id", 0)): m.get("name", "")
+        for m in root.iterfind("Material/material")
     }
 
     # Nodes: ids are 1-based and may be split over several <Nodes> blocks.
@@ -92,7 +93,9 @@ def read_febio(path: Path) -> tuple[pv.UnstructuredGrid, list[FebioPart]]:
             try:
                 conn = [index_of[int(v)] for v in (elem.text or "").split(",")]
             except (KeyError, ValueError) as e:
-                raise ValueError(f"{path.name}: element {elem.get('id')} references an unknown node ({e})") from e
+                raise ValueError(
+                    f"{path.name}: element {elem.get('id')} references an unknown node ({e})"
+                ) from e
             if len(conn) != n_nodes:
                 raise ValueError(
                     f"{path.name}: element {elem.get('id')} has {len(conn)} nodes, "

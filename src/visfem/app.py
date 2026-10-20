@@ -1,4 +1,5 @@
 """Trame web application for FEM mesh visualization."""
+
 import asyncio
 import base64
 import contextlib
@@ -6,25 +7,42 @@ import importlib.resources
 import math
 from collections.abc import Callable, Iterator
 from pathlib import Path
+
 import pyvista as pv
 from trame.app import TrameApp
-from vtkmodules.vtkRenderingCore import vtkActor
 from trame.decorators import change
+from vtkmodules.vtkRenderingCore import vtkActor
 
-from visfem.engine.colors import BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP
-from visfem.engine.discovery import (
-    dataset_dir, discover_xdmf, grasp_phase_pvd, group_by_organ_system, load_project_metadata,
-    patient_numbers, pvd_file_path,
+from visfem.engine.colors import (
+    BG_DARK_BOTTOM,
+    BG_DARK_TOP,
+    BG_LIGHT_BOTTOM,
+    BG_LIGHT_TOP,
+    clear_overrides,
+    set_override,
 )
+from visfem.engine.discovery import (
+    dataset_dir,
+    discover_xdmf,
+    grasp_phase_pvd,
+    group_by_organ_system,
+    load_project_metadata,
+    patient_numbers,
+    pvd_file_path,
+)
+from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
 from visfem.engine.playback import autoplay_loop, preload_steps, vtkjs_warmup
 from visfem.engine.scene import apply_opacity, push_scene, update_scalar_range
-from visfem.engine.xr_manager import XRManager
-from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
-from visfem.engine.colors import clear_overrides, set_override
 from visfem.engine.selection import (
-    recolor_categories, select_color_scheme, select_dataset, select_patient,
-    select_scalar_field, select_step, select_xdmf,
+    recolor_categories,
+    select_color_scheme,
+    select_dataset,
+    select_patient,
+    select_scalar_field,
+    select_step,
+    select_xdmf,
 )
+from visfem.engine.xr_manager import XRManager
 from visfem.log import get_logger
 from visfem.mesh import get_metadata, preload_all_meshes, vtk_series_steps
 from visfem.models import MeshMetadata
@@ -32,8 +50,8 @@ from visfem.ui.layout import UICallbacks, build_ui
 
 logger = get_logger(__name__)
 
-_TARGET_FRAMES: int = 30    # max rendered frames for autoplay
-_FRAME_SLEEP: float = 0.2   # seconds between frames (scalar-field timeseries)
+_TARGET_FRAMES: int = 30  # max rendered frames for autoplay
+_FRAME_SLEEP: float = 0.2  # seconds between frames (scalar-field timeseries)
 # GRASP phase series redraws fully per phase; slower cadence makes the contrast
 # wash-in watchable rather than a fast flicker.
 _PHASE_FRAME_SLEEP: float = 0.7
@@ -43,8 +61,8 @@ _PHASE_FRAME_SLEEP: float = 0.7
 # mesh size: a 683k-cell surface needs far longer to ship and paint than a 500-
 # cell one, and the old fixed 1.6s cleared the spinner mid-transfer on the big
 # ones. Overshooting only costs a slightly long spinner.
-_RENDER_SETTLE_MIN: float = 2.0    # seconds, small meshes
-_RENDER_SETTLE_MAX: float = 7.0    # seconds, cap for the largest
+_RENDER_SETTLE_MIN: float = 2.0  # seconds, small meshes
+_RENDER_SETTLE_MAX: float = 7.0  # seconds, cap for the largest
 _RENDER_SETTLE_PER_MCELL: float = 1.4  # extra seconds per million cells
 
 
@@ -59,6 +77,7 @@ class VisfemApp(TrameApp):
         self._autoplay_task: asyncio.Task | None = None
         self._preload_task: asyncio.Task | None = None
         self._warmup_task: asyncio.Task | None = None
+        self._url_select_task: asyncio.Task | None = None
         self._warmup_gen: int = 0
         self._opacity_task: asyncio.Task | None = None
         self._project_metadata = load_project_metadata()
@@ -73,7 +92,9 @@ class VisfemApp(TrameApp):
                 try:
                     self._xdmf_meta[name] = get_metadata(path)
                 except Exception as e:  # noqa: BLE001 - a corrupt file must not take the server down
-                    logger.warning(f"Dataset '{key}': skipping '{path.name}', its metadata cannot be read: {e}")
+                    logger.warning(
+                        f"Dataset '{key}': skipping '{path.name}', its metadata cannot be read: {e}"
+                    )
         self._patients_by_dataset: dict[str, list[int]] = {}
         for key, meta in self._project_metadata.items():
             patients = patient_numbers(dataset_dir(meta))
@@ -125,77 +146,83 @@ class VisfemApp(TrameApp):
     @staticmethod
     def _favicon_data_uri() -> str:
         """Return the favicon as a base64 data URI for the browser tab."""
-        data = importlib.resources.files("visfem.assets").joinpath("favicon.png").read_bytes()
+        data = (
+            importlib.resources.files("visfem.assets")
+            .joinpath("favicon.png")
+            .read_bytes()
+        )
         return f"data:image/png;base64,{base64.b64encode(data).decode()}"
 
     def _setup_state(self) -> None:
         """Initialize all Trame state variables."""
-        self.state.update({
-            "trame__title": "VisFEM",
-            "trame__favicon": self._favicon_data_uri(),
-            "dark_mode": True,
-            "url_model": "",
-            "xr_active": False,
-            "xr_session_ended": False,
-            "active_dataset": None,
-            "active_patient": None,
-            "active_xdmf": None,
-            "left_panel_open": True,
-            "right_panel_open": True,
-            "active_organ_group_open": [],
-            "left_datasets_section_open": True,
-            "left_info_section_open": True,
-            "right_view_open": True,
-            "right_fibers_open": True,
-            "right_scalar_field_open": True,
-            "right_color_open": True,
-            "right_playback_open": True,
-            "right_scalar_bar_open": True,
-            "right_regions_open": True,
-            "legend_items": [],
-            # Per-category colour overrides, "<dataset>:<patient>" -> {category: hex}.
-            # Session-scoped: sticky across palette swaps and dataset switches, not
-            # persisted to disk.
-            "category_colors": {},
-            # Overrides matching the categories on screen right now — what the UI reads.
-            "category_colors_active": {},
-            "ctrl_opacity": 0.9,
-            "active_meta": None,
-            "mesh_stats": None,
-            "show_fibers": False,
-            "has_fibers": False,
-            "scalar_bar": None,
-            "available_scalar_fields": [],
-            "active_scalar_field": None,
-            "n_steps": 1,
-            "active_step": 0,
-            "step_inc": 1,
-            "step_times": [],
-            "autoplay": False,
-            "playback_speed": 1.0,  # multiplier on the base frame rate; cycled in the UI
-            "active_categorical_palette": "paired",
-            "active_continuous_cmap": "viridis",
-            "categorical_palette_meta": CATEGORICAL_META,
-            "continuous_cmap_meta": CONTINUOUS_META,
-            "fullscreen": False,
-            "loading": False,
-            "busy": False,
-            # Set by _show_error; shown by the snackbar in layout.py.
-            "error_message": "",
-            "error_open": False,
-            # Set by the client-side probe in layout.py; True when the browser
-            # gives us no usable WebGL2 context (Brave shields, Firefox RFP,
-            # Safari ATP). The 3D viewport cannot render at all in that case.
-            "webgl_blocked": False,
-            "camera_resetting": False,
-            "color_reversed": False,
-            "exit_btn_pos": [0.0, 0.0, 0.0],
-            "xr_exit_triggered": False,
-            "clim_input_min": "",
-            "clim_input_max": "",
-            "clim_override": None,
-            "opacity_adjusting": False,
-        })
+        self.state.update(
+            {
+                "trame__title": "VisFEM",
+                "trame__favicon": self._favicon_data_uri(),
+                "dark_mode": True,
+                "url_model": "",
+                "xr_active": False,
+                "xr_session_ended": False,
+                "active_dataset": None,
+                "active_patient": None,
+                "active_xdmf": None,
+                "left_panel_open": True,
+                "right_panel_open": True,
+                "active_organ_group_open": [],
+                "left_datasets_section_open": True,
+                "left_info_section_open": True,
+                "right_view_open": True,
+                "right_fibers_open": True,
+                "right_scalar_field_open": True,
+                "right_color_open": True,
+                "right_playback_open": True,
+                "right_scalar_bar_open": True,
+                "right_regions_open": True,
+                "legend_items": [],
+                # Per-category colour overrides, "<dataset>:<patient>" -> {category: hex}.
+                # Session-scoped: sticky across palette swaps and dataset switches, not
+                # persisted to disk.
+                "category_colors": {},
+                # Overrides matching the categories on screen right now — what the UI reads.
+                "category_colors_active": {},
+                "ctrl_opacity": 0.9,
+                "active_meta": None,
+                "mesh_stats": None,
+                "show_fibers": False,
+                "has_fibers": False,
+                "scalar_bar": None,
+                "available_scalar_fields": [],
+                "active_scalar_field": None,
+                "n_steps": 1,
+                "active_step": 0,
+                "step_inc": 1,
+                "step_times": [],
+                "autoplay": False,
+                "playback_speed": 1.0,  # multiplier on the base frame rate; cycled in the UI
+                "active_categorical_palette": "paired",
+                "active_continuous_cmap": "viridis",
+                "categorical_palette_meta": CATEGORICAL_META,
+                "continuous_cmap_meta": CONTINUOUS_META,
+                "fullscreen": False,
+                "loading": False,
+                "busy": False,
+                # Set by _show_error; shown by the snackbar in layout.py.
+                "error_message": "",
+                "error_open": False,
+                # Set by the client-side probe in layout.py; True when the browser
+                # gives us no usable WebGL2 context (Brave shields, Firefox RFP,
+                # Safari ATP). The 3D viewport cannot render at all in that case.
+                "webgl_blocked": False,
+                "camera_resetting": False,
+                "color_reversed": False,
+                "exit_btn_pos": [0.0, 0.0, 0.0],
+                "xr_exit_triggered": False,
+                "clim_input_min": "",
+                "clim_input_max": "",
+                "clim_override": None,
+                "opacity_adjusting": False,
+            }
+        )
 
     @change("url_model")
     def _on_url_model_change(self, url_model: str = "", **_: object) -> None:
@@ -212,7 +239,7 @@ class VisfemApp(TrameApp):
             return
         self.state.url_model = ""
         if key in self._project_metadata:
-            asyncio.ensure_future(self.select_dataset(key))
+            self._url_select_task = asyncio.ensure_future(self.select_dataset(key))
 
     def toggle_left_panel(self) -> None:
         """Toggle the left dataset panel open/closed."""
@@ -432,7 +459,9 @@ class VisfemApp(TrameApp):
             return
         gen = self._warmup_gen
         self._warmup_task = asyncio.ensure_future(
-            vtkjs_warmup(gen, lambda: self._warmup_gen, self.state, path, _TARGET_FRAMES)
+            vtkjs_warmup(
+                gen, lambda: self._warmup_gen, self.state, path, _TARGET_FRAMES
+            )
         )
 
     def _start_preload_from_state(self) -> None:
@@ -444,7 +473,9 @@ class VisfemApp(TrameApp):
         if path is None:
             return
         inc = math.ceil(n_steps / _TARGET_FRAMES)
-        steps = list(range(inc, n_steps, inc))  # step 0 already loaded by initial render
+        steps = list(
+            range(inc, n_steps, inc)
+        )  # step 0 already loaded by initial render
         if not steps:
             return
         self._cancel_preload()
@@ -476,7 +507,9 @@ class VisfemApp(TrameApp):
             self.state.flush()
 
     @change("active_organ_group_open")
-    def _on_organ_group_change(self, active_organ_group_open: list, **_: object) -> None:
+    def _on_organ_group_change(
+        self, active_organ_group_open: list, **_: object
+    ) -> None:
         """Accordion: keep only the most-recently-opened organ system group open."""
         top_level = set(self._organ_groups.keys())
         open_top = [v for v in active_organ_group_open if v in top_level]
@@ -496,24 +529,47 @@ class VisfemApp(TrameApp):
 
     async def select_dataset(self, key: str) -> None:
         """Route to the correct redraw based on dataset key."""
-        await self._switch(f"dataset '{key}'", lambda: select_dataset(
-            self.plotter, self.ctrl, self.state, self._project_metadata, self._xdmf_meta, key,
-        ))
+        await self._switch(
+            f"dataset '{key}'",
+            lambda: select_dataset(
+                self.plotter,
+                self.ctrl,
+                self.state,
+                self._project_metadata,
+                self._xdmf_meta,
+                key,
+            ),
+        )
 
     async def select_xdmf(self, key: str, stem: str) -> None:
         """Load and render a specific XDMF file within a multi-file dataset."""
+
         def render() -> None:
             select_xdmf(
-                self.plotter, self.ctrl, self.state, self._project_metadata, self._xdmf_meta, key, stem,
+                self.plotter,
+                self.ctrl,
+                self.state,
+                self._project_metadata,
+                self._xdmf_meta,
+                key,
+                stem,
             )
+
         await self._switch(f"'{stem}' of dataset '{key}'", render)
 
     async def select_patient(self, dataset_key: str, patient: int) -> None:
         """Load and render a specific patient from a multi-patient dataset."""
+
         def render() -> None:
             select_patient(
-                self.plotter, self.ctrl, self.state, self._project_metadata, dataset_key, patient,
+                self.plotter,
+                self.ctrl,
+                self.state,
+                self._project_metadata,
+                dataset_key,
+                patient,
             )
+
         await self._switch(f"patient {patient} of dataset '{dataset_key}'", render)
 
     async def select_scalar_field(self, field: str) -> None:
@@ -528,8 +584,12 @@ class VisfemApp(TrameApp):
             self.state.flush()
             await asyncio.sleep(0.05)
             select_scalar_field(
-                self.plotter, self.ctrl, self.state,
-                self._project_metadata, self._xdmf_meta, field,
+                self.plotter,
+                self.ctrl,
+                self.state,
+                self._project_metadata,
+                self._xdmf_meta,
+                field,
             )
 
     async def select_step(self, step: int) -> None:
@@ -540,8 +600,12 @@ class VisfemApp(TrameApp):
             self.state.flush()
             await asyncio.sleep(0.05)
             select_step(
-                self.plotter, self.ctrl, self.state,
-                self._project_metadata, self._xdmf_meta, int(step),
+                self.plotter,
+                self.ctrl,
+                self.state,
+                self._project_metadata,
+                self._xdmf_meta,
+                int(step),
             )
 
     async def toggle_color_reversed(self) -> None:
@@ -556,8 +620,11 @@ class VisfemApp(TrameApp):
             self.state.flush()
             await asyncio.sleep(0.05)
             select_color_scheme(
-                self.plotter, self.ctrl, self.state,
-                self._project_metadata, self._xdmf_meta,
+                self.plotter,
+                self.ctrl,
+                self.state,
+                self._project_metadata,
+                self._xdmf_meta,
             )
 
     async def select_color_scheme(self, name: str) -> None:
@@ -575,8 +642,11 @@ class VisfemApp(TrameApp):
             self.state.flush()
             await asyncio.sleep(0.05)
             select_color_scheme(
-                self.plotter, self.ctrl, self.state,
-                self._project_metadata, self._xdmf_meta,
+                self.plotter,
+                self.ctrl,
+                self.state,
+                self._project_metadata,
+                self._xdmf_meta,
             )
 
     async def set_category_color(self, name: str, color: str) -> None:
@@ -590,8 +660,11 @@ class VisfemApp(TrameApp):
             self.state.flush()
             await asyncio.sleep(0.05)
             recolor_categories(
-                self.plotter, self.ctrl, self.state,
-                self._project_metadata, self._xdmf_meta,
+                self.plotter,
+                self.ctrl,
+                self.state,
+                self._project_metadata,
+                self._xdmf_meta,
             )
 
     async def reset_category_colors(self, name: str | None = None) -> None:
@@ -608,8 +681,11 @@ class VisfemApp(TrameApp):
             self.state.flush()
             await asyncio.sleep(0.05)
             recolor_categories(
-                self.plotter, self.ctrl, self.state,
-                self._project_metadata, self._xdmf_meta,
+                self.plotter,
+                self.ctrl,
+                self.state,
+                self._project_metadata,
+                self._xdmf_meta,
             )
 
     def toggle_autoplay(self) -> None:
@@ -623,11 +699,18 @@ class VisfemApp(TrameApp):
                 return
             self.state.autoplay = True
             # GRASP phase series (patient-indexed) plays slower than scalar timeseries.
-            frame_sleep = _PHASE_FRAME_SLEEP if self.state.active_patient is not None else _FRAME_SLEEP
+            frame_sleep = (
+                _PHASE_FRAME_SLEEP
+                if self.state.active_patient is not None
+                else _FRAME_SLEEP
+            )
             self._autoplay_task = asyncio.ensure_future(
                 autoplay_loop(
-                    self.state, self.plotter, self.ctrl,
-                    self._project_metadata, self._xdmf_meta,
+                    self.state,
+                    self.plotter,
+                    self.ctrl,
+                    self._project_metadata,
+                    self._xdmf_meta,
                     frame_sleep,
                 )
             )
@@ -636,6 +719,7 @@ class VisfemApp(TrameApp):
 def main() -> None:
     """Entry point."""
     import os
+
     app = VisfemApp()
     # Preload every mesh up front only when explicitly requested. In the
     # per-session deployment we leave this off so the idle container stays

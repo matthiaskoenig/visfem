@@ -397,7 +397,7 @@ def _download_with_progress(url: str, dest: Path) -> None:
         headers["Range"] = f"bytes={offset}-"
     req = urllib.request.Request(url, headers=headers)
     try:
-        resp = urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT)  # noqa: S310 - fixed, trusted URLs
+        resp = urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT)
     except urllib.error.HTTPError as e:
         if e.code != 416 or not offset:
             raise
@@ -424,11 +424,17 @@ def _download_with_progress(url: str, dest: Path) -> None:
                     while chunk := resp.read(1 << 20):  # 1 MiB
                         fh.write(chunk)
                         progress.update(task, advance=len(chunk))
-                except http.client.HTTPException as e:  # e.g. IncompleteRead: connection dropped
-                    raise OSError(f"connection lost while downloading {url}: {e}") from e
+                except (
+                    http.client.HTTPException
+                ) as e:  # e.g. IncompleteRead: connection dropped
+                    raise OSError(
+                        f"connection lost while downloading {url}: {e}"
+                    ) from e
     size = part.stat().st_size
     if total is not None and size != total:
-        raise OSError(f"incomplete download of {url}: got {size} of {total} bytes (re-run to resume)")
+        raise OSError(
+            f"incomplete download of {url}: got {size} of {total} bytes (re-run to resume)"
+        )
     part.replace(dest)
 
 
@@ -504,7 +510,9 @@ def cmd_fetch_ircadb(args: argparse.Namespace) -> int:
     if zip_path.exists():
         print(f">> Using the previously downloaded archive: {zip_path}")
     else:
-        print(">> Downloading 3D-IRCADb-01 (~3 GB) from IRCAD (re-run to resume if interrupted) ...")
+        print(
+            ">> Downloading 3D-IRCADb-01 (~3 GB) from IRCAD (re-run to resume if interrupted) ..."
+        )
         try:
             _download_with_progress(_IRCAD_URL, zip_path)
         except OSError as e:
@@ -646,13 +654,15 @@ def _fetch_bytes(url: str) -> bytes:
 
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     try:
-        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:  # noqa: S310 - fixed, trusted SimTK URL
+        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
             data = bytes(resp.read())
             length = resp.headers.get("Content-Length")
     except http.client.HTTPException as e:  # e.g. IncompleteRead: connection dropped
         raise OSError(f"connection lost while fetching {url}: {e}") from e
     if length and len(data) != int(length):
-        raise OSError(f"truncated response from {url}: got {len(data)} of {length} bytes")
+        raise OSError(
+            f"truncated response from {url}: got {len(data)} of {length} bytes"
+        )
     return data
 
 
@@ -762,10 +772,16 @@ def _fetch_openknee_specimen(specimen: str, dest: Path) -> int:
     files = parse_connectivity(connectivity.decode("iso-8859-1"))
     missing = [code for code, _, _ in _OKS_PARTS if code not in files]
     if missing:
-        raise RuntimeError(f"{specimen}: Connectivity.xml lacks parts {', '.join(missing)}")
+        raise RuntimeError(
+            f"{specimen}: Connectivity.xml lacks parts {', '.join(missing)}"
+        )
 
     n_done = 0
-    with Progress(TextColumn("   {task.description}"), BarColumn(), TextColumn("{task.completed}/{task.total}")) as progress:
+    with Progress(
+        TextColumn("   {task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+    ) as progress:
         task = progress.add_task(specimen, total=len(_OKS_PARTS))
         for code, stem, _ in _OKS_PARTS:
             target = dest / f"{stem}.stl"
@@ -784,7 +800,9 @@ def _fetch_openknee_gen1(dest: Path) -> int:
     feb = dest / _GEN1_FEB
     if not feb.exists():
         _download_with_progress(f"{_OPENKNEE_SVN}/_gen1/src/{_GEN1_FEB}", feb)
-    _write_atomic(dest / "LICENSE_gen1.txt", _fetch_bytes(f"{_OPENKNEE_SVN}/_gen1/license.txt"))
+    _write_atomic(
+        dest / "LICENSE_gen1.txt", _fetch_bytes(f"{_OPENKNEE_SVN}/_gen1/license.txt")
+    )
     parts = febio_to_vtu(feb, dest / "tf_joint.vtu")
     return sum(p.n_elements for p in parts)
 
@@ -793,9 +811,11 @@ def cmd_fetch_openknee(args: argparse.Namespace) -> int:
     """Download Open Knee(s) geometries and lay them out as VisFEM datasets."""
     data_dir = _resolve_data_dir(args.data_dir)
     datasets = data_dir / "datasets"
-    wanted = [] if args.specimens.strip().lower() == "none" else [
-        s.strip().lower() for s in args.specimens.split(",") if s.strip()
-    ]
+    wanted = (
+        []
+        if args.specimens.strip().lower() == "none"
+        else [s.strip().lower() for s in args.specimens.split(",") if s.strip()]
+    )
     unknown = [s for s in wanted if s not in _OKS_SPECIMENS]
     if unknown:
         print(
@@ -827,7 +847,9 @@ def cmd_fetch_openknee(args: argparse.Namespace) -> int:
             done.append(f"openknees_{specimen}")
         if not args.no_gen1:
             dest = datasets / "openknees_gen1"
-            print(f">> Generation 1: downloading {_GEN1_FEB} (~15 MB) and converting to VTU ...")
+            print(
+                f">> Generation 1: downloading {_GEN1_FEB} (~15 MB) and converting to VTU ..."
+            )
             n_cells = _fetch_openknee_gen1(dest)
             _write_atomic(dest / "LICENSE.txt", license_text)
             _write_descriptor(dest, openknee_gen1_descriptor())
@@ -839,7 +861,10 @@ def cmd_fetch_openknee(args: argparse.Namespace) -> int:
         return 1
     except (RuntimeError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
-        print(f"       the repository layout may have changed; see {_OPENKNEE_SVN}", file=sys.stderr)
+        print(
+            f"       the repository layout may have changed; see {_OPENKNEE_SVN}",
+            file=sys.stderr,
+        )
         return 1
 
     if not done:

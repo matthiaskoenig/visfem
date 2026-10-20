@@ -7,24 +7,33 @@ unset ``renderer`` (and simple mesh paths) from ``mesh_format`` and the files on
 disk, so the simplest datasets need no ``render`` block. Renderers are thin
 adapters over ``visfem.engine.scene``.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pyvista as pv
 
 from visfem.engine.colors import apply_overrides_to_state, region_colors
 from visfem.engine.discovery import discover_xdmf, grasp_phase_pvd, pvd_file_path
-from visfem.mesh import metadata_for_d3plot, metadata_for_series, vtk_series_steps
 from visfem.engine.scene import (
-    RenderResult, TrameCtrl,
-    _load_multi_part_vtk, _render_labeled_parts, _render_region_array_mesh,
-    clear_scene, redraw_ircadb, redraw_region_surface_step,
-    redraw_scalar_field, redraw_stl_surface, redraw_xdmf,
+    RenderResult,
+    TrameCtrl,
+    _load_multi_part_vtk,
+    _render_labeled_parts,
+    _render_region_array_mesh,
+    clear_scene,
+    redraw_ircadb,
+    redraw_region_surface_step,
+    redraw_scalar_field,
+    redraw_stl_surface,
+    redraw_xdmf,
 )
 from visfem.log import get_logger
+from visfem.mesh import metadata_for_d3plot, metadata_for_series, vtk_series_steps
 from visfem.models import MeshMetadata, ProjectMetadata, RenderConfig, RendererName
 
 logger = get_logger(__name__)
@@ -33,6 +42,7 @@ _SURFACE_EXTS = (".stl", ".vtu", ".obj", ".vtp", ".vtk", ".ply")
 
 
 # ---- Render-config resolution / inference ----
+
 
 def _has_patient_dirs(ddir: Path) -> bool:
     return any(d.is_dir() for d in ddir.glob("patient_*"))
@@ -64,7 +74,8 @@ def _infer_renderer(meta: ProjectMetadata, ddir: Path) -> RendererName:
 def _infer_mesh_file(ddir: Path) -> str | None:
     """Return the single surface mesh filename in a flat dataset dir, if unambiguous."""
     candidates = [
-        p for p in sorted(ddir.iterdir())
+        p
+        for p in sorted(ddir.iterdir())
         if p.is_file() and p.suffix.lower() in _SURFACE_EXTS
     ]
     return candidates[0].name if len(candidates) == 1 else None
@@ -75,12 +86,15 @@ def resolve_render_config(
     ddir: Path,
 ) -> RenderConfig:
     """Return a RenderConfig with a concrete ``renderer``, inferring it (and an unambiguous surface mesh_file) when unset."""
-    cfg = meta.render.model_copy(deep=True) if meta.render is not None else RenderConfig()
+    cfg = (
+        meta.render.model_copy(deep=True) if meta.render is not None else RenderConfig()
+    )
     if cfg.renderer is None:
         # A declared flat VTK series or LS-DYNA database is a time series
         # regardless of mesh_format.
         cfg.renderer = (
-            RendererName.TIMESERIES if (cfg.series or cfg.database)
+            RendererName.TIMESERIES
+            if (cfg.series or cfg.database)
             else _infer_renderer(meta, ddir)
         )
     if (
@@ -105,19 +119,21 @@ def resolve_mesh_file(ddir: Path, cfg: RenderConfig) -> str | None:
 
 # ---- Renderer context + registry ----
 
+
 @dataclass
 class RenderContext:
     """Everything a renderer needs. Built once per (re)draw by the dispatch layer."""
+
     plotter: pv.Plotter
     ctrl: TrameCtrl
-    state: Any                       # Trame state (dark_mode, palette/cmap selection, ...)
-    ddir: Path                       # dataset dir (or patient dir for patient renderers)
+    state: Any  # Trame state (dark_mode, palette/cmap selection, ...)
+    ddir: Path  # dataset dir (or patient dir for patient renderers)
     meta: ProjectMetadata
-    cfg: RenderConfig                # resolved (explicit ∪ inferred) render config
+    cfg: RenderConfig  # resolved (explicit plus inferred) render config
     xdmf_meta: dict[str, MeshMetadata]
     opacity: float
-    palette: list[str]               # already resolved (see selection._resolve_palette)
-    cmap: str                        # already resolved (see selection._resolve_cmap)
+    palette: list[str]  # already resolved (see selection._resolve_palette)
+    cmap: str  # already resolved (see selection._resolve_cmap)
     field: str | None = None
     step: int = 0
     reset_camera: bool = True
@@ -128,12 +144,12 @@ Renderer = Callable[[RenderContext], RenderResult]
 
 def _common(ctx: RenderContext) -> dict:
     """Shared kwargs for renderers that take dark_mode/opacity/palette."""
-    return dict(
-        dark_mode=ctx.state.dark_mode,
-        opacity=ctx.opacity,
-        palette=ctx.palette,
-        reset_camera=ctx.reset_camera,
-    )
+    return {
+        "dark_mode": ctx.state.dark_mode,
+        "opacity": ctx.opacity,
+        "palette": ctx.palette,
+        "reset_camera": ctx.reset_camera,
+    }
 
 
 def render_surface(ctx: RenderContext) -> RenderResult:
@@ -142,7 +158,9 @@ def render_surface(ctx: RenderContext) -> RenderResult:
     if filename is None:
         logger.error(f"No surface mesh resolved in {ctx.ddir}")
         return RenderResult()
-    return redraw_stl_surface(ctx.plotter, ctx.ctrl, ctx.ddir, filename=filename, **_common(ctx))
+    return redraw_stl_surface(
+        ctx.plotter, ctx.ctrl, ctx.ddir, filename=filename, **_common(ctx)
+    )
 
 
 def render_region_id(ctx: RenderContext) -> RenderResult:
@@ -152,9 +170,15 @@ def render_region_id(ctx: RenderContext) -> RenderResult:
         logger.error("region_id renderer requires mesh_file and region_array")
         return RenderResult()
     return _render_region_array_mesh(
-        ctx.plotter, ctx.ctrl, ctx.ddir / cfg.mesh_file,
-        cfg.region_array, cfg.region_labels, **_common(ctx),
-        meta=ctx.meta, labels_mesh_key=cfg.labels_mesh_key, fiber=cfg.fiber,
+        ctx.plotter,
+        ctx.ctrl,
+        ctx.ddir / cfg.mesh_file,
+        cfg.region_array,
+        cfg.region_labels,
+        **_common(ctx),
+        meta=ctx.meta,
+        labels_mesh_key=cfg.labels_mesh_key,
+        fiber=cfg.fiber,
     )
 
 
@@ -168,7 +192,12 @@ def render_multi_part(ctx: RenderContext) -> RenderResult:
     clear_scene(ctx.plotter, ctx.state.dark_mode)
     tube = cfg.tube
     return _render_labeled_parts(
-        ctx.plotter, ctx.ctrl, meshes, labels, colors, ctx.opacity,
+        ctx.plotter,
+        ctx.ctrl,
+        meshes,
+        labels,
+        colors,
+        ctx.opacity,
         reset_camera=ctx.reset_camera,
         tubify=tube.enabled if tube else True,
         n_tube_sides=tube.n_sides if tube else 8,
@@ -183,9 +212,16 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
         # streams the frame, the dir/step cache keys it, and the in-memory
         # metadata carries the global scalar bounds.
         return redraw_xdmf(
-            ctx.plotter, ctx.ctrl, ctx.ddir, ctx.xdmf_meta,
-            dark_mode=ctx.state.dark_mode, opacity=ctx.opacity,
-            field=ctx.field, step=ctx.step, reset_camera=ctx.reset_camera, cmap=ctx.cmap,
+            ctx.plotter,
+            ctx.ctrl,
+            ctx.ddir,
+            ctx.xdmf_meta,
+            dark_mode=ctx.state.dark_mode,
+            opacity=ctx.opacity,
+            field=ctx.field,
+            step=ctx.step,
+            reset_camera=ctx.reset_camera,
+            cmap=ctx.cmap,
             mesh_meta=_d3plot_metadata(ctx.ddir),
         )
     if ctx.cfg.series:
@@ -195,9 +231,16 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
             return RenderResult()
         step = max(0, min(ctx.step, len(files) - 1))
         return redraw_xdmf(
-            ctx.plotter, ctx.ctrl, files[step], ctx.xdmf_meta,
-            dark_mode=ctx.state.dark_mode, opacity=ctx.opacity,
-            field=ctx.field, step=0, reset_camera=ctx.reset_camera, cmap=ctx.cmap,
+            ctx.plotter,
+            ctx.ctrl,
+            files[step],
+            ctx.xdmf_meta,
+            dark_mode=ctx.state.dark_mode,
+            opacity=ctx.opacity,
+            field=ctx.field,
+            step=0,
+            reset_camera=ctx.reset_camera,
+            cmap=ctx.cmap,
             mesh_meta=_series_metadata(ctx.ddir, ctx.cfg.series),
         )
     path = _timeseries_path(ctx)
@@ -205,9 +248,16 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
         logger.error(f"No timeseries file for dataset in {ctx.ddir}")
         return RenderResult()
     return redraw_xdmf(
-        ctx.plotter, ctx.ctrl, path, ctx.xdmf_meta,
-        dark_mode=ctx.state.dark_mode, opacity=ctx.opacity,
-        field=ctx.field, step=ctx.step, reset_camera=ctx.reset_camera, cmap=ctx.cmap,
+        ctx.plotter,
+        ctx.ctrl,
+        path,
+        ctx.xdmf_meta,
+        dark_mode=ctx.state.dark_mode,
+        opacity=ctx.opacity,
+        field=ctx.field,
+        step=ctx.step,
+        reset_camera=ctx.reset_camera,
+        cmap=ctx.cmap,
     )
 
 
@@ -218,9 +268,15 @@ def render_pvd_phase_series(ctx: RenderContext) -> RenderResult:
         logger.error(f"No phase-series PVD in {ctx.ddir}")
         return RenderResult()
     return redraw_region_surface_step(
-        ctx.plotter, ctx.ctrl, pvd,
-        dark_mode=ctx.state.dark_mode, opacity=ctx.opacity, step=ctx.step,
-        palette=ctx.palette, reset_camera=ctx.reset_camera, solid=ctx.cfg.solid,
+        ctx.plotter,
+        ctx.ctrl,
+        pvd,
+        dark_mode=ctx.state.dark_mode,
+        opacity=ctx.opacity,
+        step=ctx.step,
+        palette=ctx.palette,
+        reset_camera=ctx.reset_camera,
+        solid=ctx.cfg.solid,
     )
 
 
@@ -235,17 +291,26 @@ def render_scalar_field(ctx: RenderContext) -> RenderResult:
     if not cfg.mesh_file:
         logger.error("scalar_field renderer requires mesh_file")
         return RenderResult()
-    field = ctx.field or cfg.default_field or (cfg.fields[0].name if cfg.fields else None)
+    field = (
+        ctx.field or cfg.default_field or (cfg.fields[0].name if cfg.fields else None)
+    )
     if field is None:
-        logger.error("scalar_field renderer requires a field (cfg.fields / default_field)")
+        logger.error(
+            "scalar_field renderer requires a field (cfg.fields / default_field)"
+        )
         return RenderResult()
     return redraw_scalar_field(
-        ctx.plotter, ctx.ctrl, ctx.ddir,
-        dark_mode=ctx.state.dark_mode, opacity=ctx.opacity,
-        mesh_file=cfg.mesh_file, field=field,
+        ctx.plotter,
+        ctx.ctrl,
+        ctx.ddir,
+        dark_mode=ctx.state.dark_mode,
+        opacity=ctx.opacity,
+        mesh_file=cfg.mesh_file,
+        field=field,
         categorical_fields=frozenset(cfg.categorical_fields),
         zone_labels=cfg.region_labels,
-        palette=ctx.palette, cmap=ctx.cmap,
+        palette=ctx.palette,
+        cmap=ctx.cmap,
         percentile=cfg.percentile_clamp if cfg.percentile_clamp is not None else 95,
         reset_camera=ctx.reset_camera,
     )
@@ -301,26 +366,30 @@ def _d3plot_metadata(ddir: Path) -> MeshMetadata | None:
 
 
 RENDERER_REGISTRY: dict[RendererName, Renderer] = {
-    RendererName.SURFACE:          render_surface,
-    RendererName.MULTI_PART:       render_multi_part,
-    RendererName.REGION_ID:        render_region_id,
-    RendererName.SCALAR_FIELD:     render_scalar_field,
-    RendererName.TIMESERIES:       render_timeseries,
+    RendererName.SURFACE: render_surface,
+    RendererName.MULTI_PART: render_multi_part,
+    RendererName.REGION_ID: render_region_id,
+    RendererName.SCALAR_FIELD: render_scalar_field,
+    RendererName.TIMESERIES: render_timeseries,
     RendererName.PVD_PHASE_SERIES: render_pvd_phase_series,
-    RendererName.PATIENT_ORGANS:   render_patient_organs,
+    RendererName.PATIENT_ORGANS: render_patient_organs,
 }
 
 # Renderers whose datasets are selected per-patient: the top-level dataset click
 # clears the scene and the render happens on patient selection.
-PATIENT_RENDERERS: frozenset[RendererName] = frozenset({
-    RendererName.PATIENT_ORGANS,
-    RendererName.PVD_PHASE_SERIES,
-})
+PATIENT_RENDERERS: frozenset[RendererName] = frozenset(
+    {
+        RendererName.PATIENT_ORGANS,
+        RendererName.PVD_PHASE_SERIES,
+    }
+)
 
 # Renderers that expose a scalar-field / step time series.
-TIMESERIES_RENDERERS: frozenset[RendererName] = frozenset({
-    RendererName.TIMESERIES,
-})
+TIMESERIES_RENDERERS: frozenset[RendererName] = frozenset(
+    {
+        RendererName.TIMESERIES,
+    }
+)
 
 
 def dispatch_render(ctx: RenderContext) -> RenderResult:
@@ -335,11 +404,17 @@ def is_patient_renderer(cfg: RenderConfig) -> bool:
     return cfg.renderer in PATIENT_RENDERERS
 
 
-def _scalar_fields(mesh_meta: MeshMetadata | None, cfg: RenderConfig) -> list[dict[str, str]]:
+def _scalar_fields(
+    mesh_meta: MeshMetadata | None, cfg: RenderConfig
+) -> list[dict[str, str]]:
     """Selectable {name,label} fields (explicit cfg list, else discovered): scalars and vectors (by magnitude); tensors excluded."""
     from visfem.engine.scene import field_label
+
     if cfg.fields:
-        return [{"name": f.name, "label": f.label or field_label(f.name)} for f in cfg.fields]
+        return [
+            {"name": f.name, "label": f.label or field_label(f.name)}
+            for f in cfg.fields
+        ]
     if mesh_meta is None:
         return []
     deny = set(cfg.exclude_fields)

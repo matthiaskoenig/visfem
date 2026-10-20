@@ -1,6 +1,6 @@
 """Color palette and colormap definitions for VisFEM."""
 
-from visfem.engine.colors import scheme_to_hex, region_colors  # noqa: F401 re-exported
+from visfem.engine.colors import region_colors, scheme_to_hex  # noqa: F401 re-exported
 
 # ---- Categorical palettes ----
 
@@ -12,27 +12,46 @@ _PAIRED: list[str] = scheme_to_hex(60)
 
 # Tableau 10 colors
 _TABLEAU: list[str] = [
-    "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f",
-    "#edc948", "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac",
+    "#4e79a7",
+    "#f28e2b",
+    "#e15759",
+    "#76b7b2",
+    "#59a14f",
+    "#edc948",
+    "#b07aa1",
+    "#ff9da7",
+    "#9c755f",
+    "#bab0ac",
 ]
 
 # Wong (2011) - "Points of view: Color blindness", Nature Methods 8:441.
 _WONG: list[str] = [
-    "#000000", "#e69f00", "#56b4e9", "#009e73",
-    "#f0e442", "#0072b2", "#d55e00", "#cc79a7",
+    "#000000",
+    "#e69f00",
+    "#56b4e9",
+    "#009e73",
+    "#f0e442",
+    "#0072b2",
+    "#d55e00",
+    "#cc79a7",
 ]
 
 # Paul Tol's Bright scheme, optimised for all colour-vision deficiencies.
 _TOL_BRIGHT: list[str] = [
-    "#4477aa", "#ee6677", "#228833", "#ccbb44",
-    "#66ccee", "#aa3377", "#bbbbbb",
+    "#4477aa",
+    "#ee6677",
+    "#228833",
+    "#ccbb44",
+    "#66ccee",
+    "#aa3377",
+    "#bbbbbb",
 ]
 
 CATEGORICAL_PALETTES: dict[str, list[str]] = {
-    "clinical":  _CLINICAL,
-    "paired":    _PAIRED,
-    "tableau":   _TABLEAU,
-    "wong":      _WONG,
+    "clinical": _CLINICAL,
+    "paired": _PAIRED,
+    "tableau": _TABLEAU,
+    "wong": _WONG,
     "tol_bright": _TOL_BRIGHT,
 }
 
@@ -40,11 +59,15 @@ CATEGORICAL_PALETTES: dict[str, list[str]] = {
 _SWATCH_COUNT = 5  # normalized count - all palettes show same number of dots
 
 CATEGORICAL_META: list[dict] = [
-    {"name": "clinical",   "label": "Clinical",   "swatches": _CLINICAL[:_SWATCH_COUNT]},
-    {"name": "paired",     "label": "Paired",     "swatches": _PAIRED[:_SWATCH_COUNT]},
-    {"name": "tableau",    "label": "Tableau",    "swatches": _TABLEAU[:_SWATCH_COUNT]},
-    {"name": "wong",       "label": "Wong",       "swatches": _WONG[:_SWATCH_COUNT]},
-    {"name": "tol_bright", "label": "Tol Bright", "swatches": _TOL_BRIGHT[:_SWATCH_COUNT]},
+    {"name": "clinical", "label": "Clinical", "swatches": _CLINICAL[:_SWATCH_COUNT]},
+    {"name": "paired", "label": "Paired", "swatches": _PAIRED[:_SWATCH_COUNT]},
+    {"name": "tableau", "label": "Tableau", "swatches": _TABLEAU[:_SWATCH_COUNT]},
+    {"name": "wong", "label": "Wong", "swatches": _WONG[:_SWATCH_COUNT]},
+    {
+        "name": "tol_bright",
+        "label": "Tol Bright",
+        "swatches": _TOL_BRIGHT[:_SWATCH_COUNT],
+    },
 ]
 
 
@@ -78,9 +101,9 @@ CONTINUOUS_CMAPS: dict[str, str] = {
 
 # UI metadata for the colormap picker (name, display label, gradient CSS string)
 CONTINUOUS_META: list[dict] = [
-    {"name": "viridis", "label": "Viridis",  "gradient": CONTINUOUS_CMAPS["viridis"]},
-    {"name": "plasma",  "label": "Plasma",   "gradient": CONTINUOUS_CMAPS["plasma"]},
-    {"name": "cividis", "label": "Cividis",  "gradient": CONTINUOUS_CMAPS["cividis"]},
-    {"name": "inferno", "label": "Inferno",  "gradient": CONTINUOUS_CMAPS["inferno"]},
-    {"name": "turbo",   "label": "Turbo",  "gradient": CONTINUOUS_CMAPS["turbo"]},
+    {"name": "viridis", "label": "Viridis", "gradient": CONTINUOUS_CMAPS["viridis"]},
+    {"name": "plasma", "label": "Plasma", "gradient": CONTINUOUS_CMAPS["plasma"]},
+    {"name": "cividis", "label": "Cividis", "gradient": CONTINUOUS_CMAPS["cividis"]},
+    {"name": "inferno", "label": "Inferno", "gradient": CONTINUOUS_CMAPS["inferno"]},
+    {"name": "turbo", "label": "Turbo", "gradient": CONTINUOUS_CMAPS["turbo"]},
 ]

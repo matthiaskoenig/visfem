@@ -6,11 +6,13 @@ target-version = "py313"
 
 
 [lint]
-# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
-# Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
-# McCabe complexity (`C901`) by default.
-select = ["E4", "E7", "E9", "F"]
-ignore = []
+# Pyflakes and the pycodestyle errors, plus import sorting (I), modern syntax
+# (UP), bugbear (B), comprehensions (C4), simplifications (SIM), blind excepts
+# (BLE: every `except Exception` must carry a noqa with its reason) and ruff's
+# own checks (RUF).
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "C4", "SIM", "BLE", "RUF"]
+# SIM117: the Trame UI is built from nested `with` blocks on purpose.
+ignore = ["SIM117"]
 
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]

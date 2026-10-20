@@ -1,19 +1,40 @@
 """Left panel: dataset selection tree + active dataset info."""
+
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
 from visfem.engine.discovery import dataset_dir, discover_xdmf, xdmf_display_name
 from visfem.models import ProjectMetadata
 from visfem.ui.theme import (
-    ACCENT, ACCENT_DIM,
-    SPP_COLOR, SPP_DIM,
-    FS_XS, FS_SM, FS_MD, FS_LG,
-    FW_BOLD, FW_SEMI, LS_WIDE, LS_WIDER, LS_WIDEST,
+    ACCENT,
+    ACCENT_DIM,
+    FS_LG,
+    FS_MD,
+    FS_SM,
+    FS_XS,
+    FW_BOLD,
+    FW_SEMI,
+    GAP_LG,
+    GAP_MD,
+    GAP_SM,
+    ICON_LG,
+    ICON_SM,
+    LS_WIDE,
+    LS_WIDER,
+    LS_WIDEST,
+    OP_BODY,
+    OP_DIM,
+    OP_GHOST,
+    OP_MUTED,
+    OP_SUBDUED,
+    PAD_LG,
+    PAD_MD,
+    PAD_SM,
+    PAD_XL,
+    PAD_XS,
     RADIUS_MD,
-    ICON_SM, ICON_LG,
-    OP_GHOST, OP_MUTED, OP_DIM, OP_SUBDUED, OP_BODY,
-    GAP_SM, GAP_MD, GAP_LG,
-    PAD_XS, PAD_SM, PAD_MD, PAD_LG, PAD_XL,
+    SPP_COLOR,
+    SPP_DIM,
 )
 
 # Compact gap between the leading icon and the item label
@@ -29,7 +50,6 @@ def build_left_panel(
 ) -> None:
     """Left panel content: dataset tree (top) + active dataset info (bottom)."""
     with html.Div(style="display:flex; flex-direction:column; height:100%;"):
-
         with html.Div(
             style=f"padding:{PAD_MD} {PAD_LG} 4px {PAD_LG}; display:flex; align-items:center; gap:{GAP_MD}; flex-shrink:0; cursor:pointer; user-select:none;",
             click="left_datasets_section_open = !left_datasets_section_open",
@@ -39,10 +59,17 @@ def build_left_panel(
                 "Datasets",
                 style=f"font-size:{FS_MD}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:{OP_SUBDUED}; flex:1;",
             )
-            v3.VIcon("mdi-chevron-down", size="small", v_show="left_datasets_section_open")
-            v3.VIcon("mdi-chevron-right", size="small", v_show="!left_datasets_section_open")
+            v3.VIcon(
+                "mdi-chevron-down", size="small", v_show="left_datasets_section_open"
+            )
+            v3.VIcon(
+                "mdi-chevron-right", size="small", v_show="!left_datasets_section_open"
+            )
 
-        with html.Div(v_show="left_datasets_section_open", style="flex:0 1 auto; max-height:45%; overflow-y:auto;"):
+        with html.Div(
+            v_show="left_datasets_section_open",
+            style="flex:0 1 auto; max-height:45%; overflow-y:auto;",
+        ):
             with v3.VList(
                 density="compact",
                 nav=True,
@@ -71,7 +98,9 @@ def build_left_panel(
                             if m.subgroup:
                                 subgroups.setdefault(m.subgroup, []).append((k, m))
 
-                        def _render_dataset_item(key: str, meta: ProjectMetadata, indent: str) -> None:
+                        def _render_dataset_item(
+                            key: str, meta: ProjectMetadata, indent: str
+                        ) -> None:
                             ddir = dataset_dir(meta)
                             xdmf_files = discover_xdmf(ddir)
                             if key in patients_by_dataset:
@@ -82,41 +111,71 @@ def build_left_panel(
                                 ):
                                     with v3.Template(v_slot_activator="{ props }"):
                                         with v3.VListItem(
-                                            v_bind="props", density="compact",
+                                            v_bind="props",
+                                            density="compact",
                                             active=(f"active_dataset === '{key}'",),
-                                            active_color=ACCENT, rounded="lg",
+                                            active_color=ACCENT,
+                                            rounded="lg",
                                             style=f"padding-left:{indent};",
                                         ):
                                             with v3.Template(v_slot_title=""):
                                                 with html.Div(style=_ICON_GAP):
-                                                    v3.VIcon("mdi-circle-medium", size="x-small", style=f"opacity:{OP_MUTED}; flex-shrink:0;")
-                                                    html.Span(meta.name, style=f"font-size:{FS_MD};")
+                                                    v3.VIcon(
+                                                        "mdi-circle-medium",
+                                                        size="x-small",
+                                                        style=f"opacity:{OP_MUTED}; flex-shrink:0;",
+                                                    )
+                                                    html.Span(
+                                                        meta.name,
+                                                        style=f"font-size:{FS_MD};",
+                                                    )
                                     for patient in patients_by_dataset[key]:
                                         with v3.VListItem(
                                             density="compact",
-                                            active=(f"active_dataset === '{key}' && active_patient === {patient}",),
-                                            active_color=ACCENT, rounded="lg",
-                                            click=(on_select_patient, f"['{key}', {patient}]"),
+                                            active=(
+                                                f"active_dataset === '{key}' && active_patient === {patient}",
+                                            ),
+                                            active_color=ACCENT,
+                                            rounded="lg",
+                                            click=(
+                                                on_select_patient,
+                                                f"['{key}', {patient}]",
+                                            ),
                                             disabled=("loading || busy",),
                                             style="padding-left:24px;",
                                         ):
                                             with v3.Template(v_slot_title=""):
                                                 with html.Div(style=_ICON_GAP):
-                                                    v3.VIcon("mdi-account", size="x-small", style=f"opacity:{OP_MUTED}; flex-shrink:0;")
-                                                    html.Span(f"Patient {patient:02d}", style=f"font-size:{FS_MD};")
+                                                    v3.VIcon(
+                                                        "mdi-account",
+                                                        size="x-small",
+                                                        style=f"opacity:{OP_MUTED}; flex-shrink:0;",
+                                                    )
+                                                    html.Span(
+                                                        f"Patient {patient:02d}",
+                                                        style=f"font-size:{FS_MD};",
+                                                    )
                             elif len(xdmf_files) <= 1:
                                 with v3.VListItem(
                                     density="compact",
                                     active=(f"active_dataset === '{key}'",),
-                                    active_color=ACCENT, rounded="lg",
+                                    active_color=ACCENT,
+                                    rounded="lg",
                                     click=(on_select_dataset, f"['{key}']"),
                                     disabled=("loading || busy",),
                                     style=f"padding-left:{indent};",
                                 ):
                                     with v3.Template(v_slot_title=""):
                                         with html.Div(style=_ICON_GAP):
-                                            v3.VIcon("mdi-circle-medium", size="x-small", style=f"opacity:{OP_MUTED}; flex-shrink:0;")
-                                            html.Span(meta.name, style=f"font-size:{FS_MD}; white-space:normal; word-break:break-word;")
+                                            v3.VIcon(
+                                                "mdi-circle-medium",
+                                                size="x-small",
+                                                style=f"opacity:{OP_MUTED}; flex-shrink:0;",
+                                            )
+                                            html.Span(
+                                                meta.name,
+                                                style=f"font-size:{FS_MD}; white-space:normal; word-break:break-word;",
+                                            )
                             else:
                                 with v3.VListGroup(
                                     value=key,
@@ -125,44 +184,79 @@ def build_left_panel(
                                 ):
                                     with v3.Template(v_slot_activator="{ props }"):
                                         with v3.VListItem(
-                                            v_bind="props", density="compact",
+                                            v_bind="props",
+                                            density="compact",
                                             active=(f"active_dataset === '{key}'",),
-                                            active_color=ACCENT, rounded="lg",
+                                            active_color=ACCENT,
+                                            rounded="lg",
                                             style=f"padding-left:{indent};",
                                         ):
                                             with v3.Template(v_slot_title=""):
                                                 with html.Div(style=_ICON_GAP):
-                                                    v3.VIcon("mdi-circle-medium", size="x-small", style=f"opacity:{OP_MUTED}; flex-shrink:0;")
-                                                    html.Span(meta.name, style=f"font-size:{FS_MD}; white-space:normal; word-break:break-word;")
+                                                    v3.VIcon(
+                                                        "mdi-circle-medium",
+                                                        size="x-small",
+                                                        style=f"opacity:{OP_MUTED}; flex-shrink:0;",
+                                                    )
+                                                    html.Span(
+                                                        meta.name,
+                                                        style=f"font-size:{FS_MD}; white-space:normal; word-break:break-word;",
+                                                    )
                                     for stem, _ in xdmf_files.items():
                                         with v3.VListItem(
                                             density="compact",
-                                            active=(f"active_dataset === '{key}' && active_xdmf === '{stem}'",),
-                                            active_color=ACCENT, rounded="lg",
-                                            click=(on_select_xdmf, f"['{key}', '{stem}']"),
+                                            active=(
+                                                f"active_dataset === '{key}' && active_xdmf === '{stem}'",
+                                            ),
+                                            active_color=ACCENT,
+                                            rounded="lg",
+                                            click=(
+                                                on_select_xdmf,
+                                                f"['{key}', '{stem}']",
+                                            ),
                                             disabled=("loading || busy",),
                                             style="padding-left:24px;",
                                         ):
                                             with v3.Template(v_slot_title=""):
                                                 with html.Div(style=_ICON_GAP):
-                                                    v3.VIcon("mdi-circle-small", size="small", style=f"opacity:{OP_MUTED}; flex-shrink:0;")
-                                                    html.Span(xdmf_display_name(stem), style=f"font-size:{FS_MD};")
+                                                    v3.VIcon(
+                                                        "mdi-circle-small",
+                                                        size="small",
+                                                        style=f"opacity:{OP_MUTED}; flex-shrink:0;",
+                                                    )
+                                                    html.Span(
+                                                        xdmf_display_name(stem),
+                                                        style=f"font-size:{FS_MD};",
+                                                    )
 
                         for key, meta in ungrouped:
                             _render_dataset_item(key, meta, "12px")
 
-                        for subgroup_name, subgroup_datasets in sorted(subgroups.items()):
+                        for subgroup_name, subgroup_datasets in sorted(
+                            subgroups.items()
+                        ):
                             with v3.VListGroup(
                                 value=subgroup_name,
                                 expand_icon="mdi-chevron-right",
                                 collapse_icon="mdi-chevron-down",
                             ):
                                 with v3.Template(v_slot_activator="{ props }"):
-                                    with v3.VListItem(v_bind="props", density="compact", style="padding-left:12px;"):
+                                    with v3.VListItem(
+                                        v_bind="props",
+                                        density="compact",
+                                        style="padding-left:12px;",
+                                    ):
                                         with v3.Template(v_slot_title=""):
                                             with html.Div(style=_ICON_GAP):
-                                                v3.VIcon("mdi-circle-medium", size="x-small", style=f"opacity:{OP_MUTED}; flex-shrink:0;")
-                                                html.Span(subgroup_name, style=f"font-size:{FS_MD};")
+                                                v3.VIcon(
+                                                    "mdi-circle-medium",
+                                                    size="x-small",
+                                                    style=f"opacity:{OP_MUTED}; flex-shrink:0;",
+                                                )
+                                                html.Span(
+                                                    subgroup_name,
+                                                    style=f"font-size:{FS_MD};",
+                                                )
                                 for key, meta in subgroup_datasets:
                                     _render_dataset_item(key, meta, "24px")
 
@@ -178,22 +272,33 @@ def build_left_panel(
                 style=f"font-size:{FS_MD}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:{OP_SUBDUED}; flex:1;",
             )
             v3.VIcon("mdi-chevron-down", size="small", v_show="left_info_section_open")
-            v3.VIcon("mdi-chevron-right", size="small", v_show="!left_info_section_open")
+            v3.VIcon(
+                "mdi-chevron-right", size="small", v_show="!left_info_section_open"
+            )
 
-        with html.Div(v_show="left_info_section_open", style=f"flex:1; overflow-y:auto; min-height:0; padding:0 {PAD_LG} {PAD_LG} {PAD_LG};"):
-
+        with html.Div(
+            v_show="left_info_section_open",
+            style=f"flex:1; overflow-y:auto; min-height:0; padding:0 {PAD_LG} {PAD_LG} {PAD_LG};",
+        ):
             # Empty state
             with html.Div(
                 v_if="active_meta === null",
                 style=f"padding:{PAD_XL} 0; text-align:center; opacity:{OP_GHOST};",
             ):
-                v3.VIcon("mdi-cube-outline", size=ICON_LG, style="display:block; margin:0 auto 8px;")
-                html.Div("Select a dataset to view metadata", style=f"font-size:{FS_MD};")
+                v3.VIcon(
+                    "mdi-cube-outline",
+                    size=ICON_LG,
+                    style="display:block; margin:0 auto 8px;",
+                )
+                html.Div(
+                    "Select a dataset to view metadata", style=f"font-size:{FS_MD};"
+                )
 
             # Filled state
             with html.Div(v_if="active_meta !== null"):
-
-                with html.Div(style=f"display:flex; align-items:center; gap:{GAP_MD}; flex-wrap:wrap; margin-bottom:6px;"):
+                with html.Div(
+                    style=f"display:flex; align-items:center; gap:{GAP_MD}; flex-wrap:wrap; margin-bottom:6px;"
+                ):
                     html.Div(
                         "{{ active_meta.name }}",
                         style=f"font-size:{FS_LG}; font-weight:{FW_BOLD}; line-height:1.3;",
@@ -204,7 +309,9 @@ def build_left_panel(
                         style=f"font-size:{FS_XS}; padding:3px 8px; border-radius:{RADIUS_MD}; background:{SPP_DIM}; color:{SPP_COLOR}; font-weight:{FW_BOLD}; letter-spacing:{LS_WIDER}; border:1px solid {SPP_COLOR}; flex-shrink:0; line-height:1.6;",
                     )
 
-                with html.Div(style=f"display:flex; flex-wrap:wrap; gap:{GAP_SM}; margin-bottom:10px;"):
+                with html.Div(
+                    style=f"display:flex; flex-wrap:wrap; gap:{GAP_SM}; margin-bottom:10px;"
+                ):
                     with html.Div(v_for="sys in active_meta.organ_system", key="sys"):
                         html.Span(
                             "{{ sys }}",
@@ -222,13 +329,26 @@ def build_left_panel(
                     v_if="active_meta && active_meta.spp_project",
                     style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;",
                 ):
-                    v3.VIcon("mdi-certificate-outline", size=ICON_SM, style=f"color:{SPP_COLOR}; opacity:0.7; margin-top:2px; flex-shrink:0;")
+                    v3.VIcon(
+                        "mdi-certificate-outline",
+                        size=ICON_SM,
+                        style=f"color:{SPP_COLOR}; opacity:0.7; margin-top:2px; flex-shrink:0;",
+                    )
                     with html.Div():
                         _label("SPP2311 Project")
-                        html.Div("{{ active_meta.spp_project }}", style=f"font-size:{FS_MD}; line-height:1.4; opacity:{OP_BODY};")
+                        html.Div(
+                            "{{ active_meta.spp_project }}",
+                            style=f"font-size:{FS_MD}; line-height:1.4; opacity:{OP_BODY};",
+                        )
 
-                with html.Div(style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;"):
-                    v3.VIcon("mdi-account-outline", size=ICON_SM, style=f"opacity:{OP_DIM}; margin-top:2px; flex-shrink:0;")
+                with html.Div(
+                    style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;"
+                ):
+                    v3.VIcon(
+                        "mdi-account-outline",
+                        size=ICON_SM,
+                        style=f"opacity:{OP_DIM}; margin-top:2px; flex-shrink:0;",
+                    )
                     with html.Div():
                         html.Div(
                             "PI(s)",
@@ -236,14 +356,29 @@ def build_left_panel(
                         )
                         html.Div("{{ active_meta.pi }}", style=f"font-size:{FS_MD};")
 
-                with html.Div(style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;"):
-                    v3.VIcon("mdi-bank-outline", size=ICON_SM, style=f"opacity:{OP_DIM}; margin-top:2px; flex-shrink:0;")
+                with html.Div(
+                    style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;"
+                ):
+                    v3.VIcon(
+                        "mdi-bank-outline",
+                        size=ICON_SM,
+                        style=f"opacity:{OP_DIM}; margin-top:2px; flex-shrink:0;",
+                    )
                     with html.Div():
                         _label("Institution")
-                        with html.Div(v_for="inst in active_meta.institution", key="inst"):
-                            html.Div("{{ inst }}", style=f"font-size:{FS_MD}; line-height:1.5;")
+                        with html.Div(
+                            v_for="inst in active_meta.institution", key="inst"
+                        ):
+                            html.Div(
+                                "{{ inst }}",
+                                style=f"font-size:{FS_MD}; line-height:1.5;",
+                            )
 
-                _row("mdi-magnify", "Biological scale", "{{ active_meta.biological_scale }}")
+                _row(
+                    "mdi-magnify",
+                    "Biological scale",
+                    "{{ active_meta.biological_scale }}",
+                )
 
                 _row("mdi-cube-scan", "Mesh format", "{{ active_meta.mesh_format }}")
 
@@ -251,7 +386,11 @@ def build_left_panel(
                     v_if="mesh_stats !== null",
                     style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;",
                 ):
-                    v3.VIcon("mdi-vector-triangle", size=ICON_SM, style=f"opacity:{OP_DIM}; margin-top:2px; flex-shrink:0;")
+                    v3.VIcon(
+                        "mdi-vector-triangle",
+                        size=ICON_SM,
+                        style=f"opacity:{OP_DIM}; margin-top:2px; flex-shrink:0;",
+                    )
                     with html.Div():
                         _label("Mesh")
                         html.Div(
@@ -291,8 +430,9 @@ def build_left_panel(
                         key="ref",
                         style="margin-top:4px;",
                     ):
-                        html.Div("{{ ref }}", style=f"font-size:{FS_SM}; opacity:{OP_BODY};")
-
+                        html.Div(
+                            "{{ ref }}", style=f"font-size:{FS_SM}; opacity:{OP_BODY};"
+                        )
 
 
 def _label(text: str) -> None:
@@ -305,8 +445,14 @@ def _label(text: str) -> None:
 
 def _row(icon: str, label: str, value_template: str) -> None:
     """Render an icon + label + value row."""
-    with html.Div(style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;"):
-        v3.VIcon(icon, size=ICON_SM, style=f"opacity:{OP_DIM}; margin-top:2px; flex-shrink:0;")
+    with html.Div(
+        style=f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;"
+    ):
+        v3.VIcon(
+            icon,
+            size=ICON_SM,
+            style=f"opacity:{OP_DIM}; margin-top:2px; flex-shrink:0;",
+        )
         with html.Div():
             _label(label)
             html.Div(value_template, style=f"font-size:{FS_MD};")

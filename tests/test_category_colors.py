@@ -1,4 +1,5 @@
 """Per-category color override behaviour (visfem.engine.colors)."""
+
 from typing import Any
 
 import pytest
@@ -43,17 +44,21 @@ def state() -> FakeState:
 
 # ---- hex validation ----
 
+
 @pytest.mark.parametrize("value", ["#abc123", "#ABC123", "#000000"])
 def test_valid_hex(value: str) -> None:
     assert is_valid_hex(value)
 
 
-@pytest.mark.parametrize("value", ["#abc", "#ff00", "red", "abc123", "", None, 123, "#gggggg"])
+@pytest.mark.parametrize(
+    "value", ["#abc", "#ff00", "red", "abc123", "", None, 123, "#gggggg"]
+)
 def test_invalid_hex(value: Any) -> None:
     assert not is_valid_hex(value)
 
 
 # ---- category_key ----
+
 
 def test_category_key_uses_first_name() -> None:
     assert category_key({"names": ["A", "B"]}) == "A"
@@ -66,8 +71,11 @@ def test_category_key_missing_names(item: dict[str, Any]) -> None:
 
 # ---- apply_color_overrides ----
 
+
 def test_override_hit_and_miss(legend: list[dict[str, Any]]) -> None:
-    items, colors = apply_color_overrides(legend, {"Aorta": "#ff0000", "Absent": "#00ff00"})
+    items, colors = apply_color_overrides(
+        legend, {"Aorta": "#ff0000", "Absent": "#00ff00"}
+    )
     assert colors == ["#111111", "#222222", "#ff0000"]
     assert items[2]["color"] == "#ff0000"
 
@@ -84,7 +92,9 @@ def test_override_keyed_on_first_name_only(legend: list[dict[str, Any]]) -> None
 
 
 @pytest.mark.parametrize("bad", ["red", "#ff00", "", None])
-def test_invalid_override_falls_back_to_palette(legend: list[dict[str, Any]], bad: Any) -> None:
+def test_invalid_override_falls_back_to_palette(
+    legend: list[dict[str, Any]], bad: Any
+) -> None:
     _, colors = apply_color_overrides(legend, {"Aorta": bad})
     assert colors[2] == "#333333"
 
@@ -95,11 +105,14 @@ def test_empty_legend() -> None:
 
 def test_unnamed_item_is_not_overridable() -> None:
     """An item with no names has no key, so an "" override must not reach it."""
-    _, colors = apply_color_overrides([{"names": [], "color": "#abcdef"}], {"": "#ff0000"})
+    _, colors = apply_color_overrides(
+        [{"names": [], "color": "#abcdef"}], {"": "#ff0000"}
+    )
     assert colors == ["#abcdef"]
 
 
 # ---- scoping ----
+
 
 def test_scope_separates_patients(state: FakeState) -> None:
     set_override(state, "Aorta", "#ff0000")
@@ -133,6 +146,7 @@ def test_color_scope_includes_dataset_and_patient(state: FakeState) -> None:
 
 # ---- store mutation ----
 
+
 def test_invalid_hex_never_enters_store(state: FakeState) -> None:
     set_override(state, "Aorta", "#ff0000")
     set_override(state, "Aorta", "nonsense")
@@ -161,6 +175,7 @@ def test_set_override_reassigns_for_trame_sync(state: FakeState) -> None:
 
 
 # ---- apply_overrides_to_state ----
+
 
 def test_apply_to_state_writes_legend_and_returns_lut(
     state: FakeState, legend: list[dict[str, Any]]

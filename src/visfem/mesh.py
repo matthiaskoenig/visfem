@@ -4,6 +4,7 @@ load_mesh(path, step)  -> pv.DataSet
 get_metadata(path)     -> MeshMetadata
 """
 
+import contextlib
 import re
 import threading
 import warnings
@@ -23,7 +24,6 @@ import pyvista as pv
 from visfem.log import get_logger
 from visfem.models import MESH_METADATA_HASH, MeshMetadata
 
-
 logger = get_logger(__name__)
 
 
@@ -40,13 +40,27 @@ _XDMF_EXTENSIONS: frozenset[str] = frozenset({".xdmf", ".xmf"})
 # Geometric dimension per meshio cell type; used to drop boundary marker cells
 _CELL_DIM: dict[str, int] = {
     "vertex": 0,
-    "line": 1, "line3": 1, "line4": 1,
-    "triangle": 2, "triangle6": 2, "triangle10": 2,
-    "quad": 2, "quad8": 2, "quad9": 2,
-    "tetra": 3, "tetra10": 3, "tetra20": 3,
-    "hexahedron": 3, "hexahedron20": 3, "hexahedron27": 3,
-    "wedge": 3, "wedge15": 3, "wedge18": 3,
-    "pyramid": 3, "pyramid13": 3, "pyramid14": 3,
+    "line": 1,
+    "line3": 1,
+    "line4": 1,
+    "triangle": 2,
+    "triangle6": 2,
+    "triangle10": 2,
+    "quad": 2,
+    "quad8": 2,
+    "quad9": 2,
+    "tetra": 3,
+    "tetra10": 3,
+    "tetra20": 3,
+    "hexahedron": 3,
+    "hexahedron20": 3,
+    "hexahedron27": 3,
+    "wedge": 3,
+    "wedge15": 3,
+    "wedge18": 3,
+    "pyramid": 3,
+    "pyramid13": 3,
+    "pyramid14": 3,
 }
 
 # XDMF TopologyType names -> meshio cell type names
@@ -84,6 +98,7 @@ def mesh_cache_info() -> dict:
 
 # Internal utilities
 
+
 def _require(element: ET.Element | None, tag: str, context: str) -> ET.Element:
     """Return element or raise ValueError if None."""
     if element is None:
@@ -108,13 +123,14 @@ def _parse_xdmf_base_grid(
 ) -> tuple[ET.Element, ET.Element, ET.Element, ET.Element]:
     """Parse geometry and topology elements from the base Uniform grid of an XDMF file."""
     tree = ET.parse(path)
-    domain        = _require(tree.getroot().find("Domain"), "Domain", path.name)
-    uniform       = next(g for g in domain.findall("Grid") if g.get("GridType") == "Uniform")
+    domain = _require(tree.getroot().find("Domain"), "Domain", path.name)
+    uniform = next(g for g in domain.findall("Grid") if g.get("GridType") == "Uniform")
     topology_elem = _require(uniform.find("Topology"), "Topology", path.name)
-    topo_item     = _require(topology_elem.find("DataItem"), "DataItem", path.name)
-    geo_item      = _require(
+    topo_item = _require(topology_elem.find("DataItem"), "DataItem", path.name)
+    geo_item = _require(
         _require(uniform.find("Geometry"), "Geometry", path.name).find("DataItem"),
-        "DataItem", path.name,
+        "DataItem",
+        path.name,
     )
     return domain, topology_elem, topo_item, geo_item
 
@@ -158,7 +174,8 @@ def _detect_xdmf_subtype(path: Path) -> str:
     if domain is None:
         raise ValueError(f"No Domain element found in {path.name}")
     temporal_collections = [
-        grid for grid in domain.findall("Grid")
+        grid
+        for grid in domain.findall("Grid")
         if grid.get("CollectionType") == "Temporal"
     ]
     if len(temporal_collections) > 1:
@@ -170,6 +187,7 @@ def _detect_xdmf_subtype(path: Path) -> str:
 
 
 # PVD helpers
+
 
 def _parse_pvd(path: Path) -> list[tuple[float, Path]]:
     """Parse a PVD file and return (timestep, abs_vtu_path) pairs sorted by time."""
@@ -191,6 +209,7 @@ def pvd_steps(path: Path) -> list[tuple[float, Path]]:
 
 
 # Flat VTK series helpers
+
 
 def _natural_key(name: str) -> list:
     """Sort key that orders embedded numbers numerically (stimulus_2 < stimulus_10)."""
@@ -233,8 +252,11 @@ def _lsdyna_reader(ddir: Path) -> "vtkLSDynaReader":
     """Return a cached vtkLSDynaReader for *ddir* (call under _lsdyna_lock(ddir))."""
     reader = _lsdyna_readers.get(ddir)
     if reader is None:
-        from vtkmodules.vtkCommonExecutionModel import vtkStreamingDemandDrivenPipeline as _SDDP
+        from vtkmodules.vtkCommonExecutionModel import (
+            vtkStreamingDemandDrivenPipeline as _SDDP,
+        )
         from vtkmodules.vtkIOLSDyna import vtkLSDynaReader
+
         reader = vtkLSDynaReader()
         reader.SetDatabaseDirectory(str(ddir))
         reader.UpdateInformation()
@@ -248,13 +270,16 @@ def _lsdyna_reader(ddir: Path) -> "vtkLSDynaReader":
 def lsdyna_steps(ddir: Path) -> list[float]:
     """Return the timestep values of a d3plot database (single source of truth)."""
     with _lsdyna_lock(ddir):
-        _lsdyna_reader(ddir)              # ensures times are memoised
+        _lsdyna_reader(ddir)  # ensures times are memoised
         return list(_lsdyna_times[ddir])
 
 
 def _load_d3plot_frame(ddir: Path, step: int = 0) -> pv.DataSet:
     """Read one timestep of a d3plot database as a combined UnstructuredGrid."""
-    from vtkmodules.vtkCommonExecutionModel import vtkStreamingDemandDrivenPipeline as _SDDP
+    from vtkmodules.vtkCommonExecutionModel import (
+        vtkStreamingDemandDrivenPipeline as _SDDP,
+    )
+
     with _lsdyna_lock(ddir):
         reader = _lsdyna_reader(ddir)
         times = _lsdyna_times[ddir]
@@ -268,13 +293,16 @@ def _load_d3plot_frame(ddir: Path, step: int = 0) -> pv.DataSet:
 
 # Metadata extraction
 
+
 def get_metadata(path: Path) -> MeshMetadata:
     """Return metadata for any supported mesh, cached as a .meta.json sidecar (regenerated on schema_hash change)."""
     sidecar = path.with_suffix(".meta.json")
 
     if sidecar.exists():
         try:
-            cached = MeshMetadata.model_validate_json(sidecar.read_text(encoding="utf-8"))
+            cached = MeshMetadata.model_validate_json(
+                sidecar.read_text(encoding="utf-8")
+            )
             if cached.schema_hash == MESH_METADATA_HASH:
                 logger.debug(f"Cache hit: '{sidecar.name}'")
                 return cached
@@ -293,12 +321,16 @@ def get_metadata(path: Path) -> MeshMetadata:
     else:
         raw = _metadata_static(path, fmt)
 
-    raw["scalar_bounds"] = _compute_scalar_bounds(path, fmt, raw["fields"], raw["n_steps"])
+    raw["scalar_bounds"] = _compute_scalar_bounds(
+        path, fmt, raw["fields"], raw["n_steps"]
+    )
     meta = MeshMetadata.model_validate({**raw, "schema_hash": MESH_METADATA_HASH})
     try:
         sidecar.write_text(meta.model_dump_json(indent=2))
         logger.debug(f"Cached metadata to '{sidecar.name}'")
-    except OSError as e:  # e.g. a read-only data mount: recomputed next start, not fatal
+    except (
+        OSError
+    ) as e:  # e.g. a read-only data mount: recomputed next start, not fatal
         logger.warning(f"Could not write sidecar '{sidecar.name}': {e}")
     return meta
 
@@ -316,9 +348,15 @@ def _metadata_timeseries_xdmf(path: Path, fmt: str) -> dict:
             # Collect field shapes from the first step only
             if not fields:
                 for name, arr in point_data.items():
-                    fields[name] = {"center": "point", "shape": list(arr.shape[1:] or [1])}
+                    fields[name] = {
+                        "center": "point",
+                        "shape": list(arr.shape[1:] or [1]),
+                    }
                 for name, blocks in cell_data.items():
-                    fields[name] = {"center": "cell", "shape": list(blocks[0].shape[1:] or [1])}
+                    fields[name] = {
+                        "center": "cell",
+                        "shape": list(blocks[0].shape[1:] or [1]),
+                    }
     return {
         "format": fmt,
         "n_steps": num_steps,
@@ -334,7 +372,11 @@ def _metadata_pvd(path: Path, fmt: str) -> dict:
     """Extract PVD metadata: timesteps from the PVD XML, field shapes from the step-0 VTU."""
     entries = _parse_pvd(path)
     times = [t for t, _ in entries]
-    mesh = cast(pv.DataSet, pv.read(str(entries[0][1]))) if entries else pv.UnstructuredGrid()
+    mesh = (
+        cast(pv.DataSet, pv.read(str(entries[0][1])))
+        if entries
+        else pv.UnstructuredGrid()
+    )
 
     def _field_shape(arr: np.ndarray) -> list[int]:
         return list(arr.shape[1:]) if arr.ndim > 1 else [1]
@@ -347,10 +389,14 @@ def _metadata_pvd(path: Path, fmt: str) -> dict:
         "n_cells": mesh.n_cells,
         "cell_types": [str(ct.name).lower() for ct in mesh.distinct_cell_types],
         "fields": {
-            **{name: {"center": "point", "shape": _field_shape(arr)}
-               for name, arr in mesh.point_data.items()},
-            **{name: {"center": "cell", "shape": _field_shape(arr)}
-               for name, arr in mesh.cell_data.items()},
+            **{
+                name: {"center": "point", "shape": _field_shape(arr)}
+                for name, arr in mesh.point_data.items()
+            },
+            **{
+                name: {"center": "cell", "shape": _field_shape(arr)}
+                for name, arr in mesh.cell_data.items()
+            },
         },
     }
 
@@ -360,13 +406,15 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> dict:
     domain, topology_elem, topo_item, geo_item = _parse_xdmf_base_grid(path)
 
     # Dimensions attribute is "n_rows n_cols"; first token is the count
-    n_points  = int((geo_item.get("Dimensions") or "").split()[0])
-    n_cells   = int((topo_item.get("Dimensions") or "").split()[0])
+    n_points = int((geo_item.get("Dimensions") or "").split()[0])
+    n_cells = int((topo_item.get("Dimensions") or "").split()[0])
     cell_type = topology_elem.get("TopologyType", "unknown").lower()
 
     fields: dict[str, dict] = {}
     times: list[float] = []
-    temporal_grids = [g for g in domain.findall("Grid") if g.get("CollectionType") == "Temporal"]
+    temporal_grids = [
+        g for g in domain.findall("Grid") if g.get("CollectionType") == "Temporal"
+    ]
 
     with h5py.File(str(path.parent / path.stem) + ".h5", "r") as hdf5:
         for collection in temporal_grids:
@@ -428,10 +476,14 @@ def _metadata_static(path: Path, fmt: str) -> dict:
         "n_cells": mesh.n_cells,
         "cell_types": [str(ct.name).lower() for ct in mesh.distinct_cell_types],
         "fields": {
-            **{name: {"center": "point", "shape": _field_shape(arr)}
-               for name, arr in mesh.point_data.items()},
-            **{name: {"center": "cell", "shape": _field_shape(arr)}
-               for name, arr in mesh.cell_data.items()},
+            **{
+                name: {"center": "point", "shape": _field_shape(arr)}
+                for name, arr in mesh.point_data.items()
+            },
+            **{
+                name: {"center": "cell", "shape": _field_shape(arr)}
+                for name, arr in mesh.cell_data.items()
+            },
         },
     }
 
@@ -439,6 +491,7 @@ def _metadata_static(path: Path, fmt: str) -> dict:
 # Bounds are tracked for scalar fields (shape [1]) AND vector fields (shape [3]),
 # the latter by their magnitude |v|, so the colour ramp is stable while scrubbing
 # whether a scalar or a vector-magnitude field is shown.
+
 
 def _boundable_fields(fields: dict) -> list[str]:
     """Field names worth scanning for global bounds: scalars and vectors."""
@@ -471,8 +524,12 @@ def metadata_for_series(paths: list[Path]) -> MeshMetadata:
 
     fields = _boundable_fields(base["fields"])
     if fields:
-        logger.info(f"Computing global field bounds for VTK series ({len(paths)} frames)…")
-        bounds: dict[str, list[float]] = {n: [float("inf"), float("-inf")] for n in fields}
+        logger.info(
+            f"Computing global field bounds for VTK series ({len(paths)} frames)…"
+        )
+        bounds: dict[str, list[float]] = {
+            n: [float("inf"), float("-inf")] for n in fields
+        }
         for p in paths:
             mesh = cast(pv.DataSet, pv.read(str(p)))
             for name in fields:
@@ -490,10 +547,15 @@ def metadata_for_series(paths: list[Path]) -> MeshMetadata:
 
 def _frame_field_shapes(mesh: pv.DataSet) -> dict[str, dict]:
     """{name: {center, shape}} for all point + cell arrays of a frame."""
+
     def shape(arr: np.ndarray) -> list[int]:
         return list(arr.shape[1:]) if arr.ndim > 1 else [1]
+
     return {
-        **{n: {"center": "point", "shape": shape(a)} for n, a in mesh.point_data.items()},
+        **{
+            n: {"center": "point", "shape": shape(a)}
+            for n, a in mesh.point_data.items()
+        },
         **{n: {"center": "cell", "shape": shape(a)} for n, a in mesh.cell_data.items()},
     }
 
@@ -511,7 +573,9 @@ def metadata_for_d3plot(ddir: Path) -> MeshMetadata:
     sidecar = ddir / "d3plot.meta.json"
     if sidecar.exists():
         try:
-            cached = MeshMetadata.model_validate_json(sidecar.read_text(encoding="utf-8"))
+            cached = MeshMetadata.model_validate_json(
+                sidecar.read_text(encoding="utf-8")
+            )
             if cached.schema_hash == MESH_METADATA_HASH:
                 logger.debug(f"Cache hit: '{sidecar.name}'")
                 return cached
@@ -533,7 +597,9 @@ def metadata_for_d3plot(ddir: Path) -> MeshMetadata:
     fields = _boundable_fields(base["fields"])
     if fields:
         logger.info(f"Computing global field bounds for d3plot ({len(times)} frames)…")
-        bounds: dict[str, list[float]] = {n: [float("inf"), float("-inf")] for n in fields}
+        bounds: dict[str, list[float]] = {
+            n: [float("inf"), float("-inf")] for n in fields
+        }
         for k in range(len(times)):
             mesh = _load_d3plot_frame(ddir, k)
             for name in fields:
@@ -545,7 +611,8 @@ def metadata_for_d3plot(ddir: Path) -> MeshMetadata:
                     bounds[name][0] = min(bounds[name][0], lo)
                     bounds[name][1] = max(bounds[name][1], hi)
         base["scalar_bounds"] = {
-            n: b for n, b in bounds.items()
+            n: b
+            for n, b in bounds.items()
             if b[0] != float("inf") and b[1] != float("-inf")
         }
 
@@ -559,6 +626,7 @@ def metadata_for_d3plot(ddir: Path) -> MeshMetadata:
 
 
 # Global scalar bounds
+
 
 def _mesh_array(mesh: pv.DataSet, name: str) -> "np.ndarray | None":
     """Fetch a field array by name from point or cell data."""
@@ -600,7 +668,7 @@ def _compute_scalar_bounds(
             for step in range(n_steps):
                 try:
                     _, point_data, cell_data = reader.read_data(step)
-                except Exception:
+                except Exception:  # noqa: BLE001 - one unreadable step must not abort the bounds scan
                     continue
                 for name in boundable:
                     data = point_data.get(name)
@@ -613,8 +681,7 @@ def _compute_scalar_bounds(
     elif fmt == "fenics_xdmf":
         domain, _, _, _ = _parse_xdmf_base_grid(path)
         temporal_grids = [
-            g for g in domain.findall("Grid")
-            if g.get("CollectionType") == "Temporal"
+            g for g in domain.findall("Grid") if g.get("CollectionType") == "Temporal"
         ]
         h5_file = path.parent / (path.stem + ".h5")
         with h5py.File(str(h5_file), "r") as hdf5:
@@ -630,10 +697,8 @@ def _compute_scalar_bounds(
                     if data_item is None:
                         continue
                     hdf5_key = (data_item.text or "").strip().split(":/", 1)[-1]
-                    try:
+                    with contextlib.suppress(KeyError):  # field absent at this step
                         _update(field_name, hdf5[hdf5_key][:])
-                    except KeyError:
-                        pass
 
     elif fmt == "pvd_timeseries":
         for _, vtu_path in _parse_pvd(path):
@@ -643,7 +708,7 @@ def _compute_scalar_bounds(
                     arr = _mesh_array(mesh, name)
                     if arr is not None:
                         _update(name, arr)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - one unreadable file must not abort the bounds scan
                 logger.warning(f"Skipping '{vtu_path.name}' during bounds scan: {e}")
 
     else:
@@ -654,17 +719,19 @@ def _compute_scalar_bounds(
                 arr = _mesh_array(mesh, name)
                 if arr is not None:
                     _update(name, arr)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - bounds are optional; the mesh may still render
             logger.warning(f"Failed to load '{path.name}' for bounds scan: {e}")
 
     # Drop any field whose bounds could not be determined
     return {
-        name: b for name, b in bounds.items()
+        name: b
+        for name, b in bounds.items()
         if b[0] != float("inf") and b[1] != float("-inf")
     }
 
 
 # Mesh loaders
+
 
 def _load_pvd(path: Path, step: int = 0) -> pv.DataSet:
     """Load one VTU from a PVD timeseries by step index."""
@@ -684,12 +751,12 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
     domain, topology_elem, topo_item, geo_item = _parse_xdmf_base_grid(path)
 
     topo_type_raw = topology_elem.get("TopologyType", "").lower()
-    topo_type     = _XDMF_TO_MESHIO_CELLTYPE.get(topo_type_raw, topo_type_raw)
-    h5_file       = path.parent / (path.stem + ".h5")
+    topo_type = _XDMF_TO_MESHIO_CELLTYPE.get(topo_type_raw, topo_type_raw)
+    h5_file = path.parent / (path.stem + ".h5")
 
     with h5py.File(str(h5_file), "r") as hdf5:
         # DataItem text is "filename.h5:/path/to/dataset"; take the dataset path
-        points_2d    = hdf5[(geo_item.text  or "").strip().split(":/")[1]][:]
+        points_2d = hdf5[(geo_item.text or "").strip().split(":/")[1]][:]
         connectivity = hdf5[(topo_item.text or "").strip().split(":/")[1]][:]
 
         # FEniCS 2D meshes have no z column; pad with zeros for PyVista
@@ -699,13 +766,12 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
             points = points_2d
 
         # Build the base mesh (geometry only, no fields yet)
-        cells  = _filter_to_max_dim_cells([meshio.CellBlock(topo_type, connectivity)])
+        cells = _filter_to_max_dim_cells([meshio.CellBlock(topo_type, connectivity)])
         pvmesh = pv.from_meshio(meshio.Mesh(points=points, cells=cells))
 
         # Each Temporal Collection is one field; attach all fields at the requested step
         temporal_grids = [
-            g for g in domain.findall("Grid")
-            if g.get("CollectionType") == "Temporal"
+            g for g in domain.findall("Grid") if g.get("CollectionType") == "Temporal"
         ]
         for collection in temporal_grids:
             field_name = collection.get("Name")
@@ -724,7 +790,7 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
             data_item = attr.find("DataItem")
             if data_item is None:
                 continue
-            center   = attr.get("Center", "Node").lower()
+            center = attr.get("Center", "Node").lower()
             hdf5_key = (data_item.text or "").strip().split(":/", 1)[-1]
             try:
                 field_array = hdf5[hdf5_key][:]
@@ -737,7 +803,9 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
                 else:
                     pvmesh.cell_data[field_name] = field_array
             except KeyError:
-                logger.warning(f"HDF5 key '{hdf5_key}' not found, skipping field '{field_name}'.")
+                logger.warning(
+                    f"HDF5 key '{hdf5_key}' not found, skipping field '{field_name}'."
+                )
 
     logger.debug(
         f"Loaded '{path.name}' step {step}: "
@@ -800,7 +868,8 @@ def _load_static(path: Path) -> pv.DataSet:
     # one benign RuntimeWarning so it doesn't pollute the logs.
     with warnings.catch_warnings():
         warnings.filterwarnings(
-            "ignore", message="overflow encountered in scalar multiply",
+            "ignore",
+            message="overflow encountered in scalar multiply",
             category=RuntimeWarning,
         )
         return pv.from_meshio(meshio.read(str(path)))
@@ -827,7 +896,9 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     key = (path, step)
     with _step_cache_lock:
         if key in _step_cache:
-            logger.info(f"[mesh cache hit] '{path.name}' step {step} served from memory")
+            logger.info(
+                f"[mesh cache hit] '{path.name}' step {step} served from memory"
+            )
             return _detached_copy(_step_cache[key])
 
     logger.info(f"[mesh cache miss] loading '{path.name}' step {step} from disk")
@@ -860,7 +931,9 @@ def as_surface(mesh: pv.DataSet) -> pv.PolyData:
     """Return *mesh* as PolyData: a surface passes through, a volume is skinned."""
     if isinstance(mesh, pv.PolyData):
         return mesh
-    return mesh.extract_surface(pass_pointid=False, pass_cellid=False, algorithm="dataset_surface")
+    return mesh.extract_surface(
+        pass_pointid=False, pass_cellid=False, algorithm="dataset_surface"
+    )
 
 
 def skin_with_ids(mesh: pv.DataSet) -> Skin:
@@ -871,7 +944,9 @@ def skin_with_ids(mesh: pv.DataSet) -> Skin:
     """
     if isinstance(mesh, pv.PolyData):
         return mesh, None, None
-    surface = mesh.extract_surface(pass_pointid=True, pass_cellid=True, algorithm="dataset_surface")
+    surface = mesh.extract_surface(
+        pass_pointid=True, pass_cellid=True, algorithm="dataset_surface"
+    )
     point_ids = np.asarray(surface.point_data.pop("vtkOriginalPointIds"))
     cell_ids = np.asarray(surface.cell_data.pop("vtkOriginalCellIds"))
     return surface, point_ids, cell_ids
@@ -908,15 +983,17 @@ def preload_all_meshes(project_metadata: dict) -> None:
                 try:
                     load_mesh(path, 0)
                     logger.warning(f"  cached {path.name}")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - preload is best effort
                     logger.warning(f"  failed {path.name}: {e}")
 
         # Per-patient PVD phase series (GRASP MRI): preload step 0 of each.
         for phase_pvd in sorted(ddir.rglob("*.pvd")):
             try:
                 load_mesh(phase_pvd, 0)
-                logger.warning(f"  cached {phase_pvd.parent.name}/{phase_pvd.name} step 0")
-            except Exception as e:
+                logger.warning(
+                    f"  cached {phase_pvd.parent.name}/{phase_pvd.name} step 0"
+                )
+            except Exception as e:  # noqa: BLE001 - preload is best effort
                 logger.warning(f"  failed {phase_pvd.name}: {e}")
 
         # XDMF time-series: step 0 only
@@ -924,7 +1001,7 @@ def preload_all_meshes(project_metadata: dict) -> None:
             try:
                 load_mesh(path, 0)
                 logger.warning(f"  cached {stem} step 0")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - preload is best effort
                 logger.warning(f"  failed {stem}: {e}")
 
         # PVD time-series: step 0 only
@@ -933,7 +1010,7 @@ def preload_all_meshes(project_metadata: dict) -> None:
             try:
                 load_mesh(pvd, 0)
                 logger.warning(f"  cached {pvd.stem} step 0")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - preload is best effort
                 logger.warning(f"  failed {pvd.stem}: {e}")
 
     logger.warning("Preload complete.")
@@ -971,7 +1048,4 @@ def parse_labels_file(path: Path) -> dict[str, dict[int, list[str]]]:
                 if name not in raw[current_mesh][mid]:
                     raw[current_mesh][mid].append(name)
 
-    return {
-        mesh: dict(ids)
-        for mesh, ids in raw.items()
-    }
+    return {mesh: dict(ids) for mesh, ids in raw.items()}

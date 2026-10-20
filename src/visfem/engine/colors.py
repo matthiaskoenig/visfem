@@ -1,4 +1,5 @@
 """Color utilities and background constants for VisFEM."""
+
 import re
 from typing import Any
 
@@ -6,20 +7,21 @@ import pyvista.plotting.colors as pvc
 
 # ---- Background gradients ----
 
-BG_DARK_BOTTOM  = (0.08, 0.10, 0.10)
-BG_DARK_TOP     = (0.13, 0.16, 0.16)
-BG_LIGHT_BOTTOM = (1.0, 1.0, 1.0)   # white viewport in light mode
-BG_LIGHT_TOP    = (1.0, 1.0, 1.0)
+BG_DARK_BOTTOM = (0.08, 0.10, 0.10)
+BG_DARK_TOP = (0.13, 0.16, 0.16)
+BG_LIGHT_BOTTOM = (1.0, 1.0, 1.0)  # white viewport in light mode
+BG_LIGHT_TOP = (1.0, 1.0, 1.0)
 
 
 # ---- Color palettes ----
+
 
 def scheme_to_hex(scheme_id: int) -> list[str]:
     """Convert a PyVista color scheme to a list of hex color strings."""
     colors = []
     for item in pvc.color_scheme_to_cycler(scheme_id):
         c = item["color"]
-        colors.append("#{:02x}{:02x}{:02x}".format(c[0], c[1], c[2]))
+        colors.append(f"#{c[0]:02x}{c[1]:02x}{c[2]:02x}")
     return colors
 
 
@@ -117,7 +119,9 @@ def clear_overrides(state: Any) -> None:
     state.category_colors = store
 
 
-def apply_overrides_to_state(state: Any, legend_items: list[dict[str, Any]]) -> list[str]:
+def apply_overrides_to_state(
+    state: Any, legend_items: list[dict[str, Any]]
+) -> list[str]:
     """Write *legend_items* to state with overrides applied; return the LUT colors.
 
     Single funnel for every path that produces a legend, so an override survives a

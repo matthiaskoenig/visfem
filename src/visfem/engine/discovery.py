@@ -1,4 +1,5 @@
 """Dataset discovery and project metadata helpers."""
+
 import os
 from pathlib import Path
 
@@ -15,18 +16,24 @@ logger = get_logger(__name__)
 # is installed non-editable into a venv (so the relative path above no longer
 # resolves to the repo), and DATA_DIR points at the mounted data directory.
 _DATA_ENV = os.environ.get("DATA_DIR") or os.environ.get("VISFEM_DATA_DIR")
-DATASETS_DIR = (Path(_DATA_ENV) / "datasets") if _DATA_ENV else (Path(__file__).parents[3] / "data" / "datasets")
+DATASETS_DIR = (
+    (Path(_DATA_ENV) / "datasets")
+    if _DATA_ENV
+    else (Path(__file__).parents[3] / "data" / "datasets")
+)
 
 # Comma-separated allowlist of dataset keys to expose. Unset/empty = all
 # datasets (local dev). Deployment sets this to the SPP2311 subset.
 _DATASETS_ENV = os.environ.get("VISFEM_DATASETS", "").strip()
 ALLOWED_DATASETS: set[str] | None = (
     {k.strip() for k in _DATASETS_ENV.split(",") if k.strip()}
-    if _DATASETS_ENV else None
+    if _DATASETS_ENV
+    else None
 )
 
 
 # ---- Discovery ----
+
 
 def discover_xdmf(directory: Path) -> dict[str, Path]:
     """Return stem->path for all .xdmf files with a matching .h5 in directory."""
@@ -44,24 +51,35 @@ def ircadb_organ_names(patient_dir: Path) -> list[str]:
 
 def format_organ_name(name: str) -> str:
     """Insert space before known prefix words in organ names."""
-    _prefixes = ("left", "right", "small", "large", "portal", "surrenal", "vena", "venous", "biliary")
+    _prefixes = (
+        "left",
+        "right",
+        "small",
+        "large",
+        "portal",
+        "surrenal",
+        "vena",
+        "venous",
+        "biliary",
+    )
     lower = name.lower()
     for prefix in _prefixes:
         if lower.startswith(prefix) and len(name) > len(prefix):
-            return name[:len(prefix)] + " " + name[len(prefix):]
+            return name[: len(prefix)] + " " + name[len(prefix) :]
     return name
 
 
 def xdmf_display_name(stem: str) -> str:
     """Convert an XDMF stem to a readable display name."""
     if stem.startswith("lobule_sixth_"):
-        suffix = stem[len("lobule_sixth_"):]
+        suffix = stem[len("lobule_sixth_") :]
         if suffix:
             return suffix
     return stem.replace("_", " ").title()
 
 
 # ---- Metadata ----
+
 
 def load_project_metadata() -> dict[str, ProjectMetadata]:
     """Load and validate every dataset JSON under DATASETS_DIR; if VISFEM_DATASETS is set, only those keys.
@@ -81,10 +99,14 @@ def load_project_metadata() -> dict[str, ProjectMetadata]:
         if ALLOWED_DATASETS is not None and key not in ALLOWED_DATASETS:
             continue
         if key in result:
-            logger.warning(f"Skipping '{path}': dataset key '{key}' was already loaded from another JSON")
+            logger.warning(
+                f"Skipping '{path}': dataset key '{key}' was already loaded from another JSON"
+            )
             continue
         try:
-            result[key] = ProjectMetadata.model_validate_json(path.read_text(encoding="utf-8"))
+            result[key] = ProjectMetadata.model_validate_json(
+                path.read_text(encoding="utf-8")
+            )
         except (ValidationError, ValueError, OSError) as e:
             reason = " ".join(line.strip() for line in str(e).splitlines()[:2])
             logger.warning(f"Skipping dataset '{path}': {reason}")
@@ -110,10 +132,14 @@ def group_by_organ_system(
         system = meta.organ_system[0].value
         groups.setdefault(system, [])
         groups[system].append((key, meta))
+
     def _sort_key(t: tuple[str, ProjectMetadata]) -> tuple[int, str]:
         meta = t[1]
         return (meta.sort_order if meta.sort_order is not None else 999, meta.name)
-    return {system: sorted(items, key=_sort_key) for system, items in sorted(groups.items())}
+
+    return {
+        system: sorted(items, key=_sort_key) for system, items in sorted(groups.items())
+    }
 
 
 def dataset_dir(meta: ProjectMetadata) -> Path:
@@ -137,7 +163,9 @@ def grasp_phase_pvd(patient_dir: Path) -> Path | None:
 def grasp_phase_count(pvd_path: Path) -> int:
     """Return the number of contrast phases in a GRASP per-patient PVD."""
     from visfem.mesh import pvd_steps
+
     return len(pvd_steps(pvd_path))
+
 
 def meta_to_state(meta: ProjectMetadata) -> dict[str, object]:
     """Serialize a ProjectMetadata instance to a plain dict for Trame state."""

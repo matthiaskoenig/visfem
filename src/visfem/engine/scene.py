@@ -1,4 +1,5 @@
 """Scene management and mesh rendering helpers."""
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -8,13 +9,22 @@ import pyvista as pv
 from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.engine.colors import (
-    BG_DARK_BOTTOM, BG_DARK_TOP, BG_LIGHT_BOTTOM, BG_LIGHT_TOP,
+    BG_DARK_BOTTOM,
+    BG_DARK_TOP,
+    BG_LIGHT_BOTTOM,
+    BG_LIGHT_TOP,
     region_colors,
 )
+from visfem.engine.discovery import format_organ_name, ircadb_organ_names
 from visfem.engine.palettes import CATEGORICAL_PALETTES, CONTINUOUS_CMAPS
-from visfem.engine.discovery import ircadb_organ_names, format_organ_name
 from visfem.log import get_logger
-from visfem.mesh import as_surface, load_mesh, load_skin, parse_labels_file, skin_with_ids
+from visfem.mesh import (
+    as_surface,
+    load_mesh,
+    load_skin,
+    parse_labels_file,
+    skin_with_ids,
+)
 from visfem.models import FiberOptions, MeshMetadata, ProjectMetadata
 
 if TYPE_CHECKING:
@@ -79,7 +89,6 @@ class TrameCtrl(Protocol):
     def view_push_scene(self) -> None: ...
 
 
-
 # Human-readable labels for known field names
 _FIELD_LABELS: dict[str, str] = {
     "vonMises_stress": "von Mises stress",
@@ -90,8 +99,8 @@ _FIELD_LABELS: dict[str, str] = {
     "Claes_window": "healing window (Claes)",
     "pressure": "pressure",
     "strain": "strain",
-    "Potential":    "transmembrane potential (mV)",
-    "Calcium":      "intracellular calcium [Ca\u00b2\u207a]",
+    "Potential": "transmembrane potential (mV)",
+    "Calcium": "intracellular calcium [Ca\u00b2\u207a]",
     "ActiveStress": "active stress (Pa)",
 }
 
@@ -136,6 +145,7 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
 
 
 # Scene state
+
 
 def _set_background(plotter: pv.Plotter, dark_mode: bool) -> None:
     # Plotter.set_background/reset_camera are functools.wraps wrappers, which
@@ -190,6 +200,7 @@ def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) 
 
 
 # Mapper fast-path helpers — update color/field without rebuilding the scene
+
 
 def _build_categorical_lut(colors: list[str], n: int) -> pv.LookupTable:
     """Build a fixed discrete LUT from n hex color strings."""
@@ -295,6 +306,7 @@ def update_scalar_range(
 
 # Renderers
 
+
 def redraw_xdmf(
     plotter: pv.Plotter,
     ctrl: TrameCtrl,
@@ -326,7 +338,12 @@ def redraw_xdmf(
     # Vector fields are coloured by magnitude: compute |v| into a temp scalar on
     # the (already-detached) frame and colour by that.
     colour_by = field
-    is_vector = bool(field) and field in mesh.array_names and getattr(mesh[field], "ndim", 1) == 2 and mesh[field].shape[1] == 3
+    is_vector = (
+        bool(field)
+        and field in mesh.array_names
+        and getattr(mesh[field], "ndim", 1) == 2
+        and mesh[field].shape[1] == 3
+    )
     if is_vector:
         assert field is not None  # is_vector already implies a truthy field
         colour_by = _set_magnitude(mesh, field)
@@ -386,7 +403,10 @@ def update_xdmf_step(
 
     new_mesh = load_mesh(path, step=step)
 
-    if new_mesh.n_points != _xdmf_mesh.n_points or new_mesh.n_cells != _xdmf_mesh.n_cells:
+    if (
+        new_mesh.n_points != _xdmf_mesh.n_points
+        or new_mesh.n_cells != _xdmf_mesh.n_cells
+    ):
         return False, None, None
 
     for name in new_mesh.array_names:
@@ -399,11 +419,19 @@ def update_xdmf_step(
 
     # Carry the frame onto the skin the actor shows (no-op if the frame itself
     # was a surface: then _xdmf_surface *is* _xdmf_mesh and was updated above).
-    if _xdmf_surface is not None and _xdmf_point_ids is not None and _xdmf_cell_ids is not None:
-        for name in new_mesh.point_data.keys():
-            _xdmf_surface.point_data[name] = np.asarray(new_mesh.point_data[name])[_xdmf_point_ids]
-        for name in new_mesh.cell_data.keys():
-            _xdmf_surface.cell_data[name] = np.asarray(new_mesh.cell_data[name])[_xdmf_cell_ids]
+    if (
+        _xdmf_surface is not None
+        and _xdmf_point_ids is not None
+        and _xdmf_cell_ids is not None
+    ):
+        for name in new_mesh.point_data:
+            _xdmf_surface.point_data[name] = np.asarray(new_mesh.point_data[name])[
+                _xdmf_point_ids
+            ]
+        for name in new_mesh.cell_data:
+            _xdmf_surface.cell_data[name] = np.asarray(new_mesh.cell_data[name])[
+                _xdmf_cell_ids
+            ]
         _xdmf_surface.points = np.asarray(new_mesh.points)[_xdmf_point_ids]
         _refresh_magnitudes(_xdmf_surface)
         _xdmf_surface.Modified()
@@ -452,7 +480,9 @@ def redraw_ircadb(
         try:
             mesh = load_mesh(vtk_path).triangulate()
             mesh.clear_data()
-            mesh.cell_data["region_id"] = np.full(mesh.n_cells, len(parts), dtype=np.int32)
+            mesh.cell_data["region_id"] = np.full(
+                mesh.n_cells, len(parts), dtype=np.int32
+            )
             parts.append(mesh)
             loaded_organs.append(organ)
         except Exception as e:  # noqa: BLE001 - one bad organ file should not hide the patient
@@ -522,7 +552,9 @@ def _render_region_array_mesh(
     if not label_map and meta is not None and meta.labels_file:
         labels_path = mesh_path.parent / meta.labels_file
         if labels_path.exists():
-            label_map = parse_labels_file(labels_path).get(labels_mesh_key or mesh_path.name, {})
+            label_map = parse_labels_file(labels_path).get(
+                labels_mesh_key or mesh_path.name, {}
+            )
 
     ids = mesh.cell_data[region_array].astype(int)
     unique_ids: list[int] = sorted(int(v) for v in np.unique(ids))
@@ -531,7 +563,9 @@ def _render_region_array_mesh(
     mesh.cell_data["region_id"] = region_id
     # The actor shows the cached skin; carry the dense ids over by volume cell id.
     surface, _, cell_ids = load_skin(mesh_path)
-    surface.cell_data["region_id"] = region_id if cell_ids is None else region_id[cell_ids]
+    surface.cell_data["region_id"] = (
+        region_id if cell_ids is None else region_id[cell_ids]
+    )
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     colors = region_colors(len(unique_ids), _palette)
 
@@ -553,7 +587,7 @@ def _render_region_array_mesh(
 
     # Optional fibre glyph overlay; hidden by default, toggled via show_fibers.
     fiber_actor: vtkActor | None = None
-    if fiber is not None and fiber.array in mesh.cell_data.keys():
+    if fiber is not None and fiber.array in mesh.cell_data:
         cell_idx = np.arange(0, mesh.n_cells, fiber.stride)
         # PyVista types ind as ndarray[dtype[int]], which numpy's stubs can't express
         # (dtype wants a numpy scalar type), so no real int array can satisfy it.
@@ -561,7 +595,11 @@ def _render_region_array_mesh(
         centers[fiber.array] = mesh.cell_data[fiber.array][cell_idx]
         glyphs = centers.glyph(orient=fiber.array, scale=False, factor=fiber.scale)
         fiber_actor = plotter.add_mesh(
-            glyphs, color="black", show_scalar_bar=False, copy_mesh=True, render=False,
+            glyphs,
+            color="black",
+            show_scalar_bar=False,
+            copy_mesh=True,
+            render=False,
         )
         fiber_actor.SetVisibility(False)
 
@@ -658,8 +696,13 @@ def _render_region_mesh(
         legend = [{"names": [f"Region {i + 1}"], "color": colors[i]} for i in range(n)]
     else:
         _active_actor = plotter.add_mesh(
-            surface, color=_palette[0], opacity=opacity,
-            show_edges=False, show_scalar_bar=False, copy_mesh=True, render=False,
+            surface,
+            color=_palette[0],
+            opacity=opacity,
+            show_edges=False,
+            show_scalar_bar=False,
+            copy_mesh=True,
+            render=False,
         )
         legend = []
 
@@ -686,8 +729,9 @@ def redraw_region_surface_step(
     *solid* defaults on to avoid colour-flicker as the region count changes.
     """
     mesh = load_mesh(pvd_path, step=step)
-    return _render_region_mesh(plotter, ctrl, mesh, dark_mode, opacity, palette,
-                               reset_camera, solid=solid)
+    return _render_region_mesh(
+        plotter, ctrl, mesh, dark_mode, opacity, palette, reset_camera, solid=solid
+    )
 
 
 def redraw_scalar_field(
@@ -730,7 +774,9 @@ def redraw_scalar_field(
         zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
         zone_map = {z: i for i, z in enumerate(zone_ids)}
         zone_id = np.array([zone_map[int(z)] for z in zones], dtype=np.int32)
-        surface.cell_data["_zone_id"] = zone_id if cell_ids is None else zone_id[cell_ids]
+        surface.cell_data["_zone_id"] = (
+            zone_id if cell_ids is None else zone_id[cell_ids]
+        )
 
     global _active_actor
     clear_scene(plotter, dark_mode)
@@ -740,9 +786,17 @@ def redraw_scalar_field(
         n = len(zone_ids)
         colors = region_colors(n, _palette)
         _active_actor = plotter.add_mesh(
-            surface, scalars="_zone_id", cmap=colors, clim=[0, max(n - 1, 1)],
-            n_colors=n, opacity=opacity, show_edges=False, show_scalar_bar=False,
-            copy_mesh=True, interpolate_before_map=False, render=False,
+            surface,
+            scalars="_zone_id",
+            cmap=colors,
+            clim=[0, max(n - 1, 1)],
+            n_colors=n,
+            opacity=opacity,
+            show_edges=False,
+            show_scalar_bar=False,
+            copy_mesh=True,
+            interpolate_before_map=False,
+            render=False,
         )
         apply_opacity(plotter, opacity)
         push_scene(plotter, ctrl, reset_camera=reset_camera)
@@ -755,12 +809,21 @@ def redraw_scalar_field(
     data = mesh.cell_data[field]
     clim = [float(data.min()), float(np.percentile(data, percentile))]
     _active_actor = plotter.add_mesh(
-        surface, scalars=field, cmap=cast("ColormapOptions", cmap), clim=clim, opacity=opacity,
-        show_edges=False, show_scalar_bar=False, copy_mesh=True, render=False,
+        surface,
+        scalars=field,
+        cmap=cast("ColormapOptions", cmap),
+        clim=clim,
+        opacity=opacity,
+        show_edges=False,
+        show_scalar_bar=False,
+        copy_mesh=True,
+        render=False,
     )
     apply_opacity(plotter, opacity)
     push_scene(plotter, ctrl, reset_camera=reset_camera)
-    return RenderResult(mesh_stats=stats, scalar_bar_info=_scalar_bar_dict(field, clim, cmap))
+    return RenderResult(
+        mesh_stats=stats, scalar_bar_info=_scalar_bar_dict(field, clim, cmap)
+    )
 
 
 # Vessel-tree dataset definitions
@@ -779,7 +842,9 @@ def _load_multi_part_vtk(
                 path = candidate
                 break
         if path is None:
-            raise FileNotFoundError(f"Mesh not found for part '{stem}' in {ddir} (tried {extensions})")
+            raise FileNotFoundError(
+                f"Mesh not found for part '{stem}' in {ddir} (tried {extensions})"
+            )
         meshes.append(load_mesh(path).copy())
     return meshes
 
@@ -794,7 +859,7 @@ def _subsample_lines(mesh: pv.PolyData, stride: int) -> pv.PolyData:
     """
     if stride <= 1 or mesh.n_lines == 0:
         return mesh
-    lines = mesh.lines.reshape(-1, 3)[::stride]          # rows of [2, i0, i1]
+    lines = mesh.lines.reshape(-1, 3)[::stride]  # rows of [2, i0, i1]
     sub = pv.PolyData(mesh.points, lines=lines.ravel())
     if "radius" in mesh.point_data:
         sub.point_data["radius"] = mesh.point_data["radius"]
@@ -831,7 +896,9 @@ def _render_labeled_parts(
             # unzips the whole strip into spikes across the viewport (only fixable
             # by F5). Triangulate to plain polys, which the vtk.js client syncs
             # reliably — same geometry, one isolated bad triangle at worst.
-            mesh = mesh.tube(scalars="radius", absolute=True, n_sides=n_tube_sides).triangulate()
+            mesh = mesh.tube(
+                scalars="radius", absolute=True, n_sides=n_tube_sides
+            ).triangulate()
         mesh.cell_data["region_id"] = np.full(mesh.n_cells, i, dtype=np.int32)
         total_cells += mesh.n_cells
         total_points += mesh.n_points
@@ -862,5 +929,3 @@ def _render_labeled_parts(
     legend = [{"names": [label], "color": colors[i]} for i, label in enumerate(labels)]
     stats = {"n_cells": total_cells, "n_points": total_points}
     return RenderResult(legend_items=legend, mesh_stats=stats)
-
-

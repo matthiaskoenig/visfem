@@ -19,7 +19,7 @@ def build_toolbar(
     toggle_right_panel: object,
     take_screenshot: object,
 ) -> None:
-    """Render toolbar: [left-toggle] | VisFEM ··· [theme][fullscreen][screenshot] | [VR] | [right-toggle]."""
+    """Build the toolbar; every parameter is a button click handler, toggle_xr for the commented-out VR button; returns None."""
     html.Div(style="width:15px;")
 
     icon_button(
@@ -71,7 +71,7 @@ def build_toolbar(
 
     html.Span(style=_SEP_STYLE)
 
-    # VR/XR button disabled; uncomment to re-enable.
+    # VR/XR button.
     # with v3.VTooltip(text=("xr_active ? 'Exit VR' : 'Enter VR'",), location="bottom"):
     #     with v3.Template(v_slot_activator="{ props }"):
     #         v3.VBtn(

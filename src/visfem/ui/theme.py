@@ -1,4 +1,4 @@
-"""Centralized design and style helpers for the VisFEM UI."""
+"""Design tokens and CSS fragments for the VisFEM UI."""
 
 from visfem.engine.colors import BG_DARK_BOTTOM, BG_LIGHT_BOTTOM, css_rgb
 
@@ -7,7 +7,7 @@ from visfem.engine.colors import BG_DARK_BOTTOM, BG_LIGHT_BOTTOM, css_rgb
 ACCENT = "#00897b"
 ACCENT_DIM = "rgba(0,137,123,0.15)"  # organ-system tag background in info panel
 
-SPP_COLOR = "#c49a00"  # SPP2311 badge text/border (amber)
+SPP_COLOR = "#c49a00"  # SPP2311 badge text and border
 SPP_DIM = "rgba(196,154,0,0.15)"  # SPP2311 badge background
 
 TRACK_DARK = "rgba(255,255,255,0.15)"  # inactive slider track (dark mode)
@@ -20,7 +20,7 @@ SEP_NORMAL = "rgba(128,128,128,0.30)"  # view-section inline separator
 BG_DARK = css_rgb(BG_DARK_BOTTOM)
 BG_LIGHT = css_rgb(BG_LIGHT_BOTTOM)
 
-# Custom Vuetify light theme (dark keeps Vuetify's stock theme).
+# Vuetify light theme; dark mode uses Vuetify's stock theme.
 LIGHT_THEME_COLORS = {
     "primary": ACCENT,  # active items, toggles, progress bars
     "surface": "#EDF1F1",  # panels, toolbar, footer
@@ -49,7 +49,7 @@ LS_WIDEST = "0.1em"  # section group headers
 
 # Icon sizes
 ICON_SM = "14"  # inline metadata row icons (account, bank, vector, reference)
-ICON_LG = "32"  # decorative / empty-state icon
+ICON_LG = "32"  # decorative and empty-state icons
 
 # Opacity levels
 OP_GHOST = "0.35"  # panel-closed toggles, empty-state container
@@ -69,7 +69,7 @@ PAD_XS = "2px"  # tag pill vertical padding
 PAD_SM = "7px"  # tag pill horizontal padding
 PAD_MD = "10px"  # section header top padding
 PAD_LG = "14px"  # panel horizontal padding
-PAD_XL = "24px"  # empty-state / section inner padding
+PAD_XL = "24px"  # empty-state and section inner padding
 
 # Geometry
 
@@ -80,15 +80,15 @@ RADIUS_FULL = "50%"  # circular swatches
 LEFT_PANEL_WIDTH = "300px"
 RIGHT_PANEL_WIDTH = "300px"
 
-# Reusable CSS fragment strings
+# CSS fragments
 
 SWATCH_STYLE = (
     f"display:inline-block; width:10px; height:10px; "
     f"border-radius:{RADIUS_FULL}; flex-shrink:0;"
 )
 
-# Toolbar and footer background: the surface colour darkened by a fixed mix.
+# Toolbar and footer background.
 BAR_BG = "color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%)"
 
-# Hairline border in Vuetify's theme border colour.
+# Border in Vuetify's theme border colour.
 BORDER_THEME = "1px solid rgba(var(--v-border-color), var(--v-border-opacity))"

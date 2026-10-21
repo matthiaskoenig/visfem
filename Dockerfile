@@ -7,10 +7,9 @@ RUN apt-get update \
     libxrender1 libosmesa6 libgl1 libglx-mesa0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy your app and setup files
 COPY --chown=trame-user:trame-user . /deploy
 
-# Build: initialize.sh runs first (exports requirements.txt), then installs it
+# entrypoint build runs setup/initialize.sh, then installs setup/requirements.txt
 RUN /opt/trame/entrypoint.sh build
 
 EXPOSE 80

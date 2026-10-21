@@ -13,11 +13,11 @@ FOOTER_STYLE = (
 
 _LINK_STYLE = f"color:{ACCENT}; text-decoration:none; font-size:{FS_XS};"
 _TEXT_STYLE = f"font-size:{FS_XS}; opacity:{OP_DIM};"
-_SEP = "\u2002\u00b7\u2002"  # en-space · en-space
+_SEP = "\u2002\u00b7\u2002"  # en space, middle dot, en space
 
 
 def build_footer() -> None:
-    """Populate the footer with team info and lab link."""
+    """Populate the footer with the copyright line and the lab link."""
     html.Span(
         "\u00a9 2026\u2002Michelle Elias\u2002&\u2002Matthias K\u00f6nig",
         style=_TEXT_STYLE,

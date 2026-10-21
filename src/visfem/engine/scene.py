@@ -35,19 +35,20 @@ logger = get_logger(__name__)
 
 @dataclass
 class RenderResult:
+    """Result of one render pass."""
+
     legend_items: list[dict[str, Any]] = field(default_factory=list)
     mesh_stats: dict[str, Any] | None = None
     scalar_bar_info: dict[str, Any] | None = None
     fiber_actor: vtkActor | None = None
 
 
-_PERCENTILE_CLAMP: int = 95
+_PERCENTILE_CLAMP: int = 95  # upper colour limit percentile for continuous fields
 
 _active_actor: vtkActor | None = None
 _xdmf_mesh: pv.DataSet | None = None
 _xdmf_actor: vtkActor | None = None
-# Skin of _xdmf_mesh held by _xdmf_actor, plus the volume point/cell ids of each
-# skin point/cell (None when the frame was already a surface, see _skin_with_ids).
+# Skin shown by _xdmf_actor and its volume point/cell ids (None for a surface frame).
 _xdmf_surface: pv.PolyData | None = None
 _xdmf_point_ids: np.ndarray | None = None
 _xdmf_cell_ids: np.ndarray | None = None
@@ -57,12 +58,7 @@ _MAG_SUFFIX = "__mag"
 
 
 def _set_magnitude(mesh: pv.DataSet, field: str) -> str:
-    """Store |*field*| as a scalar array beside the vector array and return its name.
-
-    Vector fields are coloured by magnitude. The array lives on the same
-    association (points or cells) as the vector, and must be recomputed whenever
-    the vector array changes (see update_xdmf_step).
-    """
+    """Store |*field*| as a scalar array on the vector's association and return its name."""
     name = f"{field}{_MAG_SUFFIX}"
     data = mesh.point_data if field in mesh.point_data else mesh.cell_data
     data[name] = np.linalg.norm(data[field], axis=1)
@@ -70,7 +66,7 @@ def _set_magnitude(mesh: pv.DataSet, field: str) -> str:
 
 
 def _refresh_magnitudes(mesh: pv.DataSet) -> None:
-    """Recompute every ``<field>__mag`` array on *mesh* from its current vector array."""
+    """Recompute every ``<field>__mag`` array on *mesh* from its vector array."""
     for name in list(mesh.array_names):
         if name.endswith(_MAG_SUFFIX):
             field = name[: -len(_MAG_SUFFIX)]
@@ -79,17 +75,27 @@ def _refresh_magnitudes(mesh: pv.DataSet) -> None:
 
 
 def get_active_actor() -> vtkActor | None:
-    """Return the currently tracked main mesh actor, or None if no dataset is loaded."""
+    """Return the tracked main mesh actor, or None before a dataset loads."""
     return _active_actor
 
 
 class TrameCtrl(Protocol):
-    def view_push_camera(self) -> None: ...
-    def view_update(self) -> None: ...
-    def view_push_scene(self) -> None: ...
+    """Trame controller hooks the scene pushes through."""
+
+    def view_push_camera(self) -> None:
+        """Push the server camera to the client."""
+        ...
+
+    def view_update(self) -> None:
+        """Send a delta view update to the client."""
+        ...
+
+    def view_push_scene(self) -> None:
+        """Send the full scene state to the client."""
+        ...
 
 
-# Human-readable labels for known field names
+# Display labels for known field names
 _FIELD_LABELS: dict[str, str] = {
     "vonMises_stress": "von Mises stress",
     "vonMises_equivalent_strain": "von Mises eq. strain",
@@ -106,12 +112,12 @@ _FIELD_LABELS: dict[str, str] = {
 
 
 def field_label(name: str) -> str:
-    """Return a human-readable label for a scalar field name."""
+    """Return the display label for the scalar field *name*."""
     return _FIELD_LABELS.get(name, name.replace("_", " "))
 
 
 def _fmt_value(v: float) -> str:
-    """Format a scalar value compactly for the scalar bar."""
+    """Format the scalar bar value *v* compactly."""
     a = abs(v)
     if a == 0.0:
         return "0"
@@ -128,7 +134,7 @@ def _fmt_value(v: float) -> str:
 
 
 def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
-    """Build the scalar_bar state dict for a continuous field."""
+    """Build the scalar_bar state dict for *field* with limits *clim* and colormap *cmap*."""
     reversed_cmap = cmap.endswith("_r")
     base_cmap = cmap[:-2] if reversed_cmap else cmap
     gradient = CONTINUOUS_CMAPS.get(base_cmap, "linear-gradient(to right, #222, #fff)")
@@ -148,9 +154,8 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
 
 
 def _set_background(plotter: pv.Plotter, dark_mode: bool) -> None:
-    # Plotter.set_background/reset_camera are functools.wraps wrappers, which
-    # typeshed doesn't bind to the instance, so mypy misreads their arguments;
-    # the targeted ignores here and below cover only that.
+    """Set the gradient background of *plotter* for *dark_mode*."""
+    # typeshed leaves these functools.wraps wrappers unbound; the ignores here and in push_scene cover that.
     if dark_mode:
         plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
     else:
@@ -158,7 +163,7 @@ def _set_background(plotter: pv.Plotter, dark_mode: bool) -> None:
 
 
 def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
-    """Remove all actors and reset scene state (removed, not hidden, so the local-mode client drops the geometry)."""
+    """Remove every actor from *plotter*, reset the scene state and set the background for *dark_mode*."""
     global _active_actor, _xdmf_mesh, _xdmf_actor
     global _xdmf_surface, _xdmf_point_ids, _xdmf_cell_ids
     _active_actor = None
@@ -167,50 +172,46 @@ def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
     _xdmf_surface = None
     _xdmf_point_ids = None
     _xdmf_cell_ids = None
+    # Removing an actor makes the local-mode client drop its geometry.
     for actor in list(plotter.renderer.actors.values()):
         plotter.renderer.RemoveActor(actor)
     _set_background(plotter, dark_mode)
 
 
 def apply_opacity(plotter: pv.Plotter, opacity: float) -> None:
-    """Push opacity value to every vtkActor in the renderer."""
+    """Set *opacity* on every vtkActor in the renderer."""
     for actor in plotter.renderer.actors.values():
         if isinstance(actor, vtkActor):
             actor.GetProperty().SetOpacity(opacity)
 
 
 def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) -> None:
-    """Flush the VTK pipeline and publish the scene to the vtk.js client, once.
-
-    Every renderer and in-place update calls this exactly once at its end, and
-    nothing else pushes for the same interaction. The push is a full (non-delta)
-    state, see ``ui.layout._make_push_scene``: a local-mode delta can reference a
-    stale content-hash after a dataset switch and paint old geometry or colors.
-    Falls back to a plain delta update when no full push is bound (headless tests).
-    """
+    """Render *plotter*, reset the camera when *reset_camera* and push the scene to the client."""
+    # Each renderer and in-place update calls this once, at its end.
     plotter.render()
     if reset_camera:
         plotter.reset_camera()  # type: ignore[call-arg]
         ctrl.view_push_camera()
+    # Full push (ui.layout._make_push_scene): after a dataset switch a local-mode delta can hit a stale content-hash.
     push = getattr(ctrl, "view_push_scene", None)
     if push is not None:
         push()
     else:
-        ctrl.view_update()
+        ctrl.view_update()  # delta update when no full push is bound (headless tests)
 
 
-# Mapper fast-path helpers — update color/field without rebuilding the scene
+# Mapper fast-path helpers
 
 
 def _build_categorical_lut(colors: list[str], n: int) -> pv.LookupTable:
-    """Build a fixed discrete LUT from n hex color strings."""
+    """Build a discrete LUT from the first *n* of *colors*."""
     lut = pv.LookupTable(cmap=colors[:n], n_values=n)
     lut.scalar_range = (0, max(n - 1, 1))
     return lut
 
 
 def _build_continuous_lut(cmap: str, lo: float, hi: float) -> pv.LookupTable:
-    """Build a 256-entry continuous LUT from a named colormap."""
+    """Build a continuous LUT from the named colormap *cmap* over *lo* to *hi*."""
     lut = pv.LookupTable(cmap=cmap, n_values=256)
     lut.scalar_range = (lo, hi)
     return lut
@@ -219,7 +220,7 @@ def _build_continuous_lut(cmap: str, lo: float, hi: float) -> pv.LookupTable:
 def update_actor_palette(
     plotter: pv.Plotter, ctrl: TrameCtrl, colors: list[str], n: int
 ) -> None:
-    """Swap the categorical LUT on the active actor in place (no-op if none tracked; caller updates legend colors)."""
+    """Swap the active actor's categorical LUT to the first *n* of *colors* in place and push the scene."""
     if _active_actor is None:
         return
     mapper = _active_actor.GetMapper()
@@ -241,23 +242,19 @@ def update_scalar_field_view(
     cmap: str,
     percentile: int = _PERCENTILE_CLAMP,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """In-place field/colour update for a scalar_field dataset.
-
-    Switches the active actor's mapper to *field* without rebuilding the scene.
-    Categorical fields reuse the ``_zone_id`` array frozen on the actor at first
-    render; continuous fields clamp to the *percentile*-th value.
-    """
+    """Switch the active actor's mapper to *field* in place and return (legend, scalar bar)."""
     if _active_actor is None:
         return [], None
 
     mapper = _active_actor.GetMapper()
-    mesh = load_mesh(ddir / mesh_file)  # instant from cache
+    mesh = load_mesh(ddir / mesh_file)  # served from the load_mesh cache
 
     if field in categorical_fields:
         zones = mesh.cell_data[field].astype(int)
         zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
         n = len(zone_ids)
         colors = region_colors(n, palette)
+        # _zone_id is the dense zone index redraw_scalar_field freezes on the skin.
         mapper.SelectColorArray("_zone_id")
         mapper.SetScalarModeToUseCellFieldData()
         mapper.SetInterpolateScalarsBeforeMapping(False)
@@ -272,6 +269,7 @@ def update_scalar_field_view(
         return legend, None
 
     data = mesh.cell_data[field]
+    # The upper limit at the percentile keeps outliers from washing out the ramp.
     clim = [float(data.min()), float(np.percentile(data, percentile))]
     mapper.SelectColorArray(field)
     mapper.SetScalarModeToUseCellFieldData()
@@ -290,7 +288,7 @@ def update_scalar_range(
     clim: list[float],
     cmap: str,
 ) -> "dict | None":
-    """Update active actor's scalar range without rebuilding the scene."""
+    """Set the active actor's scalar range to *clim* in place and return the scalar bar dict."""
     actor = _xdmf_actor if _xdmf_actor is not None else _active_actor
     if actor is None:
         return None
@@ -320,23 +318,19 @@ def redraw_xdmf(
     cmap: str = "viridis",
     mesh_meta: "MeshMetadata | None" = None,
 ) -> RenderResult:
-    """Load and render one step of a time-series mesh.
-
-    *path* is an XDMF/PVD manifest (indexed by *step*) or a single flat-series
-    file. Pass *mesh_meta* for a flat series; else it is looked up by path.stem.
-    """
+    """Render step *step* of the time series at *path* and return the RenderResult."""
     global _xdmf_mesh, _xdmf_actor, _xdmf_surface, _xdmf_point_ids, _xdmf_cell_ids
     clear_scene(plotter, dark_mode)
     mesh = load_mesh(path, step=step)
 
     _xdmf_mesh = mesh
+    # A flat-series file passes mesh_meta; an XDMF/PVD manifest is keyed by stem.
     if mesh_meta is None:
         mesh_meta = xdmf_meta.get(path.stem)
     if field is None:
         field = next(iter(mesh_meta.fields), None) if mesh_meta else None
 
-    # Vector fields are coloured by magnitude: compute |v| into a temp scalar on
-    # the (already-detached) frame and colour by that.
+    # Vector fields colour by magnitude, stored as a scalar on the detached frame.
     colour_by = field
     is_vector = (
         bool(field)
@@ -345,18 +339,15 @@ def redraw_xdmf(
         and mesh[field].shape[1] == 3
     )
     if is_vector:
-        assert field is not None  # is_vector already implies a truthy field
+        assert field is not None  # narrows field for mypy
         colour_by = _set_magnitude(mesh, field)
 
-    # Use precomputed global bounds (scalar fields and vector magnitudes are both
-    # keyed by field name) so the colormap scale is stable across all timesteps.
-    # Fall back to the current step's range if bounds were not cached yet.
+    # Global bounds, keyed by field name for scalars and magnitudes alike, keep the colour scale stable across timesteps.
     clim: list[float] | None = None
     if field and mesh_meta and field in mesh_meta.scalar_bounds:
         clim = mesh_meta.scalar_bounds[field]
 
-    # The actor holds the skin; the full frame stays in _xdmf_mesh so that
-    # update_xdmf_step can compare sizes and map the next frame onto the skin.
+    # The actor shows the skin; _xdmf_mesh keeps the full frame that update_xdmf_step size-checks each next frame against.
     _xdmf_surface, _xdmf_point_ids, _xdmf_cell_ids = skin_with_ids(mesh)
     _xdmf_actor = plotter.add_mesh(
         _xdmf_surface,
@@ -375,14 +366,14 @@ def redraw_xdmf(
 
     scalar_bar: dict | None = None
     if field:
-        if clim is None:
+        if clim is None:  # current step's range when no bounds are cached
             try:
                 lo, hi = mesh.get_data_range(colour_by)
                 clim = [float(lo), float(hi)]
-            except (KeyError, ValueError):  # array absent in this frame: no bar
+            except (KeyError, ValueError):  # array absent in this frame: bar hidden
                 pass
         if clim is not None:
-            # Bar label shows the field name (magnitude is implied by the selector).
+            # The bar label is the plain field name; the vector selector conveys the magnitude.
             scalar_bar = _scalar_bar_dict(field, clim, cmap)
 
     return RenderResult(mesh_stats=stats, scalar_bar_info=scalar_bar)
@@ -397,7 +388,7 @@ def update_xdmf_step(
     field: str | None,
     cmap: str,
 ) -> tuple[bool, dict[str, Any] | None, dict[str, Any] | None]:
-    """In-place step update: swap scalars without recreating the actor."""
+    """Copy step *step* onto the live frame and its skin in place and return (updated, stats, scalar bar)."""
     if _xdmf_mesh is None or _xdmf_actor is None:
         return False, None, None
 
@@ -412,13 +403,11 @@ def update_xdmf_step(
     for name in new_mesh.array_names:
         _xdmf_mesh[name] = np.array(new_mesh[name], copy=True)
     _xdmf_mesh.points = np.array(new_mesh.points, copy=True)
-    # The frame carries only the raw arrays; the magnitude the mapper colours a
-    # vector field by is derived and would otherwise stay at its first-frame values.
+    # The copied arrays are raw; the mapper colours vector fields by the derived magnitude.
     _refresh_magnitudes(_xdmf_mesh)
     _xdmf_mesh.Modified()
 
-    # Carry the frame onto the skin the actor shows (no-op if the frame itself
-    # was a surface: then _xdmf_surface *is* _xdmf_mesh and was updated above).
+    # Map the frame onto the shown skin; a surface frame is its own skin with ids None.
     if (
         _xdmf_surface is not None
         and _xdmf_point_ids is not None
@@ -449,7 +438,7 @@ def update_xdmf_step(
             try:
                 lo, hi = new_mesh.get_data_range(field)
                 clim = [float(lo), float(hi)]
-            except (KeyError, ValueError):  # array absent in this frame: no bar
+            except (KeyError, ValueError):  # array absent in this frame: bar hidden
                 pass
         if clim is not None:
             scalar_bar = _scalar_bar_dict(field, clim, cmap)
@@ -466,7 +455,7 @@ def redraw_ircadb(
     palette: list[str] | None = None,
     reset_camera: bool = True,
 ) -> RenderResult:
-    """Load all organ meshes for a patient and render as one merged actor."""
+    """Render every organ mesh in *patient_dir* as one merged actor and return the RenderResult."""
     organs = ircadb_organ_names(patient_dir)
     clear_scene(plotter, dark_mode)
 
@@ -475,7 +464,7 @@ def redraw_ircadb(
     for organ in organs:
         vtk_path = patient_dir / f"{organ}.vtk"
         if not vtk_path.exists():
-            logger.warning(f"Organ file not found: {vtk_path}, skipping.")
+            logger.warning(f"Skipping missing organ file {vtk_path}.")
             continue
         try:
             mesh = load_mesh(vtk_path).triangulate()
@@ -485,7 +474,7 @@ def redraw_ircadb(
             )
             parts.append(mesh)
             loaded_organs.append(organ)
-        except Exception as e:  # noqa: BLE001 - one bad organ file should not hide the patient
+        except Exception as e:  # noqa: BLE001 - a bad organ file skips that organ
             logger.warning(f"Skipping organ '{vtk_path.name}': {e}")
 
     n = len(parts)
@@ -533,21 +522,12 @@ def _render_region_array_mesh(
     labels_mesh_key: str | None = None,
     fiber: FiberOptions | None = None,
 ) -> RenderResult:
-    """Render one mesh colored by an integer cell array, with a per-region legend.
-
-    The integer ids in *region_array* are remapped to a dense 0..N-1
-    ``region_id`` cell array, categorically colored, and labelled from
-    *region_labels* (id -> name(s)). When *region_labels* is empty and the
-    dataset declares a ``labels_file``, region names fall back to that file
-    (keyed by *labels_mesh_key*, else the mesh filename). When *fiber* is set and
-    the mesh carries that vector cell array, an oriented glyph overlay is built
-    (hidden by default, toggled via the UI) and returned as ``fiber_actor``.
-    """
+    """Render *mesh_path* coloured by the cell array *region_array*, labelled from *region_labels* or *meta*, with an optional *fiber* overlay, and return the RenderResult."""
     if not mesh_path.exists():
-        raise FileNotFoundError(f"Region mesh not found: {mesh_path}")
+        raise FileNotFoundError(f"Missing region mesh: {mesh_path}")
     mesh = load_mesh(mesh_path)
 
-    # Region names: inline region_labels win; else fall back to a labels file.
+    # region_labels wins; else the labels file, keyed by labels_mesh_key or the mesh filename.
     label_map: dict[int, list[str]] = dict(region_labels) if region_labels else {}
     if not label_map and meta is not None and meta.labels_file:
         labels_path = mesh_path.parent / meta.labels_file
@@ -585,12 +565,11 @@ def _render_region_array_mesh(
         render=False,
     )
 
-    # Optional fibre glyph overlay; hidden by default, toggled via show_fibers.
+    # Fibre glyph overlay, hidden until show_fibers toggles it.
     fiber_actor: vtkActor | None = None
     if fiber is not None and fiber.array in mesh.cell_data:
         cell_idx = np.arange(0, mesh.n_cells, fiber.stride)
-        # PyVista types ind as ndarray[dtype[int]], which numpy's stubs can't express
-        # (dtype wants a numpy scalar type), so no real int array can satisfy it.
+        # PyVista's ind type ndarray[dtype[int]] matches no real numpy int array.
         centers = mesh.extract_cells(cell_idx).cell_centers()  # type: ignore[arg-type]
         centers[fiber.array] = mesh.cell_data[fiber.array][cell_idx]
         glyphs = centers.glyph(orient=fiber.array, scale=False, factor=fiber.scale)
@@ -624,10 +603,10 @@ def redraw_stl_surface(
     palette: list[str] | None = None,
     reset_camera: bool = True,
 ) -> RenderResult:
-    """Render a single named STL/OBJ surface mesh in one solid colour (a closed mesh with no scalar fields)."""
+    """Render the closed, geometry-only STL/OBJ surface *filename* in one solid colour and return the RenderResult."""
     mesh_path = dataset_dir / filename
     if not mesh_path.exists():
-        raise FileNotFoundError(f"Surface mesh not found: {mesh_path}")
+        raise FileNotFoundError(f"Missing surface mesh: {mesh_path}")
     mesh = load_mesh(mesh_path)
 
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
@@ -661,21 +640,14 @@ def _render_region_mesh(
     reset_camera: bool,
     solid: bool = False,
 ) -> RenderResult:
-    """Clear the scene and render *mesh* coloured by its per-cell ``region_id``.
-
-    Each connected body gets a distinct categorical colour; falls back to a single
-    solid colour if the array is absent. Sets the global ``_active_actor``.
-
-    With *solid* True the whole surface is one colour regardless of region_id — used
-    for the GRASP phase animation, where per-phase connected-component counts differ
-    so categorical colours would flicker distractingly between frames.
-    """
+    """Clear the scene, render *mesh* coloured per ``region_id`` body, or in one colour when *solid* or the array is absent, and return the RenderResult."""
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
 
     global _active_actor
     clear_scene(plotter, dark_mode)
     surface = as_surface(mesh)
 
+    # solid keeps the GRASP phase animation one colour; the body count differs per phase.
     if not solid and "region_id" in mesh.cell_data:
         region_ids = mesh.cell_data["region_id"].astype(int)
         n = int(region_ids.max()) + 1
@@ -723,11 +695,8 @@ def redraw_region_surface_step(
     reset_camera: bool = True,
     solid: bool = True,
 ) -> RenderResult:
-    """Render one phase of a region-coloured PVD surface series (GRASP MRI).
-
-    Each phase has independent topology, so this always does a full redraw.
-    *solid* defaults on to avoid colour-flicker as the region count changes.
-    """
+    """Render phase *step* of the region-coloured PVD surface series at *pvd_path* (GRASP MRI) and return the RenderResult."""
+    # Phases differ in topology, so each is a full redraw; solid defaults on against colour flicker.
     mesh = load_mesh(pvd_path, step=step)
     return _render_region_mesh(
         plotter, ctrl, mesh, dark_mode, opacity, palette, reset_camera, solid=solid
@@ -749,26 +718,19 @@ def redraw_scalar_field(
     percentile: int = _PERCENTILE_CLAMP,
     reset_camera: bool = True,
 ) -> RenderResult:
-    """Render a static mesh coloured by *field*.
-
-    *categorical_fields* are drawn as discrete zones (a dense ``_zone_id`` array +
-    legend); others use a ramp clamped to *percentile* against outlier washout.
-    ``_zone_id`` is precomputed so update_scalar_field_view can switch in place.
-    """
+    """Render *mesh_file* coloured by *field*, as zones with a legend when categorical or a ramp clamped at *percentile*, and return the RenderResult."""
     sim_path = dataset_dir / mesh_file
     if not sim_path.exists():
-        raise FileNotFoundError(f"Scalar-field mesh not found: {sim_path}")
+        raise FileNotFoundError(f"Missing scalar-field mesh: {sim_path}")
     mesh = load_mesh(sim_path)
 
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     is_categorical = field in categorical_fields
 
-    # The actor shows the cached skin (see mesh.load_skin); the volume mesh only
-    # provides the statistics and the colour limits.
+    # The actor shows the cached skin; the volume mesh gives the stats and colour limits.
     surface, _, cell_ids = load_skin(sim_path)
 
-    # Precompute _zone_id for the active categorical field so the fast-path can
-    # switch to it without a full reload.
+    # _zone_id is the dense zone index update_scalar_field_view switches to in place.
     if is_categorical:
         zones = mesh.cell_data[field].astype(int)
         zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
@@ -807,6 +769,7 @@ def redraw_scalar_field(
         return RenderResult(legend_items=legend, mesh_stats=stats)
 
     data = mesh.cell_data[field]
+    # The upper limit at the percentile keeps outliers from washing out the ramp.
     clim = [float(data.min()), float(np.percentile(data, percentile))]
     _active_actor = plotter.add_mesh(
         surface,
@@ -826,13 +789,15 @@ def redraw_scalar_field(
     )
 
 
-# Vessel-tree dataset definitions
+# Vessel-tree helpers
+
+
 def _load_multi_part_vtk(
     ddir: Path,
     parts: list[tuple[str, str]],
     extensions: list[str],
 ) -> list[pv.DataSet]:
-    """Load the mesh of each part stem, trying each extension in order; raises FileNotFoundError for a missing part."""
+    """Load one mesh per part stem in *ddir* by the first matching extension and return them."""
     meshes: list[pv.DataSet] = []
     for stem, _ in parts:
         path: Path | None = None
@@ -843,23 +808,18 @@ def _load_multi_part_vtk(
                 break
         if path is None:
             raise FileNotFoundError(
-                f"Mesh not found for part '{stem}' in {ddir} (tried {extensions})"
+                f"Missing mesh for part '{stem}' in {ddir} (tried {extensions})"
             )
         meshes.append(load_mesh(path).copy())
     return meshes
 
 
 def _subsample_lines(mesh: pv.PolyData, stride: int) -> pv.PolyData:
-    """Keep every *stride*-th line cell, returning a lighter PolyData of lines.
-
-    The liver vessel trees are ~200k disjoint 2-point segments per tree; tubing
-    them all yields tens of millions of points (browser-breaking). Slicing the
-    line connectivity directly preserves PolyData (so .tube still works) and the
-    radius array, unlike extract_cells which would return an UnstructuredGrid.
-    """
+    """Return a PolyData with every *stride*-th line cell of *mesh* and its radius array."""
     if stride <= 1 or mesh.n_lines == 0:
         return mesh
     lines = mesh.lines.reshape(-1, 3)[::stride]  # rows of [2, i0, i1]
+    # Slicing the connectivity keeps a PolyData, so .tube still applies.
     sub = pv.PolyData(mesh.points, lines=lines.ravel())
     if "radius" in mesh.point_data:
         sub.point_data["radius"] = mesh.point_data["radius"]
@@ -878,24 +838,17 @@ def _render_labeled_parts(
     tubify: bool = True,
     tube_stride: int = 1,
 ) -> RenderResult:
-    """Merge labeled parts into one actor and push to scene.
-
-    Meshes with a 'radius' array are tubed when tubify=True; tube_stride > 1
-    subsamples dense line meshes first to keep the geometry browser-safe.
-    """
+    """Merge *meshes* into one actor coloured per part, tubing radius meshes when *tubify* after subsampling by *tube_stride*, and return the RenderResult."""
     global _active_actor
     total_cells = 0
     total_points = 0
     processed: list[pv.DataSet] = []
     for i, mesh in enumerate(meshes):
         if tubify and "radius" in mesh.point_data:
+            # A full liver vessel tree (~200k segments) tubes to tens of millions of points, beyond what the browser renders.
             if tube_stride > 1 and isinstance(mesh, pv.PolyData):
                 mesh = _subsample_lines(mesh, tube_stride)
-            # pv.tube() emits triangle *strips*. In trame local mode a strip's
-            # connectivity is order-dependent, so a single stale index in a delta
-            # unzips the whole strip into spikes across the viewport (only fixable
-            # by F5). Triangulate to plain polys, which the vtk.js client syncs
-            # reliably — same geometry, one isolated bad triangle at worst.
+            # Triangulate the tube strips: a stale strip index in a local-mode delta unzips the whole strip; a poly loses one triangle.
             mesh = mesh.tube(
                 scalars="radius", absolute=True, n_sides=n_tube_sides
             ).triangulate()

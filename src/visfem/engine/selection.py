@@ -1,12 +1,4 @@
-"""Dataset selection handlers for VisFEM.
-
-Every handler resolves the active dataset's render config
-(``visfem.engine.renderers.resolve_render_config``) and dispatches through the
-renderer registry — there is no per-dataset-name branching. In-place fast-paths
-(``update_xdmf_step``, ``update_scalar_field_view``, ``update_actor_palette``) are
-kept for latency on step/field/palette changes, falling back to a registry
-re-render.
-"""
+"""Dataset selection handlers that dispatch through the renderer registry."""
 
 import contextlib
 from collections.abc import Iterator
@@ -52,9 +44,8 @@ from visfem.models import MeshMetadata, ProjectMetadata, RenderConfig, RendererN
 
 logger = get_logger(__name__)
 
-# Renderers whose active actor carries a categorical LUT, so a palette change can
-# be applied as a fast in-place recolor instead of a full re-render. (scalar_field
-# is excluded: it has its own dedicated fast-path, update_scalar_field_view.)
+# Renderers whose active actor carries a categorical LUT for in-place palette swaps;
+# scalar_field recolors through update_scalar_field_view.
 _RECOLORABLE: frozenset[RendererName] = frozenset(
     {
         RendererName.REGION_ID,
@@ -79,7 +70,7 @@ def resolve_cmap(state: Any) -> str:
 
 @contextlib.contextmanager
 def _trame_busy(state: Any) -> Iterator[None]:
-    """Set ``trame__busy`` on *state* for the block and clear it on exit; yields None."""
+    """Set ``trame__busy`` on *state* for the block and clear it on exit."""
     state.trame__busy = True
     try:
         yield
@@ -96,7 +87,7 @@ def _reset_selection_state(state: Any) -> None:
     state.active_step = 0
     state.step_times = []
     state.clim_override = None
-    state.has_fibers = False  # set True after render when a fibre actor is produced
+    state.has_fibers = False
 
 
 def _build_context(
@@ -112,7 +103,7 @@ def _build_context(
     step: int = 0,
     reset_camera: bool = True,
 ) -> RenderContext:
-    """Assemble a RenderContext with palette/cmap resolved from current state."""
+    """Return a RenderContext with palette and cmap resolved from *state*."""
     return RenderContext(
         plotter=plotter,
         ctrl=ctrl,
@@ -133,7 +124,7 @@ def _build_context(
 def _scalar_field_view_args(
     meta: ProjectMetadata, cfg: RenderConfig, state: Any
 ) -> dict:
-    """Shared kwargs for the scalar_field in-place fast-path (update_scalar_field_view)."""
+    """Return the update_scalar_field_view kwargs for *cfg* and *state*."""
     return {
         "mesh_file": cfg.mesh_file,
         "categorical_fields": frozenset(cfg.categorical_fields),
@@ -151,14 +142,11 @@ def _apply_scalar_field_legend(
     legend: list[dict[str, Any]],
     scalar_bar: dict[str, Any] | None,
 ) -> None:
-    """Store a scalar_field fast-path result, re-pushing the LUT if overrides changed it.
-
-    update_scalar_field_view builds its own categorical LUT from the plain palette, so
-    an overridden colour has to be pushed back onto the actor afterwards.
-    """
+    """Store legend and scalar bar on state; re-push the LUT when overrides differ."""
     colors = apply_overrides_to_state(state, legend)
     state.scalar_bar = scalar_bar
     original = [item.get("color") for item in legend]
+    # update_scalar_field_view builds its LUT from the plain palette.
     if colors != original:
         update_actor_palette(plotter, ctrl, colors, len(colors))
 
@@ -170,7 +158,7 @@ def _try_scalar_field_fast_path(
     meta: ProjectMetadata,
     cfg: RenderConfig,
 ) -> bool:
-    """Swap the active scalar array and LUT in place on the scalar_field actor of *plotter* and *ctrl* from *state*, *meta* and *cfg*, and return True on success or False when the renderer is a different one or no actor exists (caller does a full redraw)."""
+    """Swap field and LUT in place on a scalar_field actor; True when one exists."""
     if cfg.renderer != RendererName.SCALAR_FIELD or get_active_actor() is None:
         return False
     legend, scalar_bar = update_scalar_field_view(
@@ -196,7 +184,7 @@ def _redraw(
     field: str | None = None,
     step: int = 0,
 ) -> RenderResult:
-    """Render the scene of *meta* and *cfg* from *ddir* on *plotter* and *ctrl* through the registry with *state* and *xdmf_meta* at *field* and *step*, camera kept, and return the RenderResult for the caller to apply."""
+    """Return a RenderResult from the registry at *field* and *step*, camera kept."""
     ctx = _build_context(
         plotter,
         ctrl,
@@ -220,7 +208,7 @@ def select_dataset(
     xdmf_meta: dict[str, MeshMetadata],
     key: str,
 ) -> vtkActor | None:
-    """Render a dataset via its resolved render config (JSON-driven dispatch)."""
+    """Render dataset *key* via its render config; return the fibre actor or None."""
     state.active_dataset = key
     state.active_patient = None
     state.show_fibers = False
@@ -236,7 +224,7 @@ def select_dataset(
 
     fiber_actor: vtkActor | None = None
     with _trame_busy(state):
-        # Patient-driven datasets clear the scene now; rendering happens on patient select.
+        # Patient renderers clear the scene; select_patient renders.
         if is_patient_renderer(cfg):
             clear_scene(plotter, state.dark_mode)
             push_scene(plotter, ctrl)
@@ -248,12 +236,11 @@ def select_dataset(
 
         ctx = _build_context(plotter, ctrl, state, meta, cfg, ddir, xdmf_meta)
 
-        # Timeseries datasets populate the field/step UI and render the default field.
+        # Timeseries datasets populate the field/step UI and pick the default field.
         if cfg.renderer in TIMESERIES_RENDERERS:
             ctx.field = populate_timeseries_state(state, ctx)
-        elif (
-            cfg.renderer == RendererName.SCALAR_FIELD
-        ):  # static mesh + explicit field list
+        # A static mesh takes its field list from the render config.
+        elif cfg.renderer == RendererName.SCALAR_FIELD:
             state.available_scalar_fields = [
                 {"name": f.name, "label": f.label or field_label(f.name)}
                 for f in cfg.fields
@@ -316,7 +303,7 @@ def select_scalar_field(
         cfg = resolve_render_config(meta, dataset_dir(meta))
         if _try_scalar_field_fast_path(plotter, ctrl, state, meta, cfg):
             return
-        # A static scalar_field mesh redraws at step 0; a time series at the current step.
+        # A static mesh redraws at step 0; a time series at the current step.
         step = (
             0 if cfg.renderer == RendererName.SCALAR_FIELD else int(state.active_step)
         )
@@ -349,8 +336,7 @@ def select_step(
         ddir = dataset_dir(meta)
         cfg = resolve_render_config(meta, ddir)
 
-        # GRASP phase series: each patient's phases are region-coloured PVD steps with
-        # independent topology — full redraw via the patient dir, no scalar field.
+        # GRASP phase steps have independent topology; redraw from the patient dir.
         if cfg.renderer == RendererName.PVD_PHASE_SERIES:
             if state.active_patient is None:
                 return
@@ -363,8 +349,7 @@ def select_step(
 
         field: str | None = state.active_scalar_field
 
-        # Flat VTK series or LS-DYNA d3plot: each step is a distinct whole mesh —
-        # render it via the registry (no manifest path / in-place fast-path).
+        # VTK series and d3plot steps are distinct meshes; render via the registry.
         if cfg.series or cfg.database:
             result = _redraw(
                 plotter, ctrl, state, meta, cfg, ddir, xdmf_meta, field=field, step=step
@@ -374,7 +359,7 @@ def select_step(
                 state.scalar_bar = result.scalar_bar_info
             return
 
-        # XDMF / PVD scalar series: try the in-place step fast-path, else full redraw.
+        # XDMF / PVD scalar series swap the step in place; a failed swap redraws.
         path = active_timeseries_path(meta, state, ddir)
         if path is None:
             logger.error(
@@ -420,8 +405,7 @@ def select_patient(
         patient_dir = patient_subdir(dataset_dir(meta), patient)
         cfg = resolve_render_config(meta, dataset_dir(meta))
 
-        # All patient renderers (organs, phase series, single surface) render from
-        # the patient dir via the registry. ddir is overridden to the patient dir.
+        # Patient renderers render from the patient dir via the registry.
         ctx = _build_context(
             plotter, ctrl, state, meta, cfg, patient_dir, {}, step=0, reset_camera=True
         )
@@ -430,7 +414,7 @@ def select_patient(
             if pvd is not None:
                 state.n_steps = grasp_phase_count(pvd)
                 state.active_step = 0
-                state.step_times = []  # phase indices; UI shows "k / n"
+                state.step_times = []  # the UI shows phases as "k / n"
         result = dispatch_render(ctx)
         apply_overrides_to_state(state, result.legend_items)
         state.mesh_stats = result.mesh_stats
@@ -438,12 +422,12 @@ def select_patient(
 
 
 def _recolor_active_actor(plotter: pv.Plotter, ctrl: TrameCtrl, state: Any) -> bool:
-    """Fast-path recolor of the active actor's categorical LUT + legend; False if no actor (caller does a full redraw)."""
+    """Recolor the active actor's LUT and legend in place; True when one exists."""
     if get_active_actor() is None:
         return False
     n = len(state.legend_items)
     palette_colors = region_colors(n, _resolve_palette(state))
-    # Lay the palette down first, then let overrides win on the categories that have one.
+    # Overrides win over the palette colours.
     base = [
         {**item, "color": palette_colors[i]}
         for i, item in enumerate(state.legend_items)
@@ -460,12 +444,7 @@ def recolor_categories(
     project_metadata: dict[str, ProjectMetadata],
     xdmf_meta: dict[str, MeshMetadata],
 ) -> None:
-    """Re-apply category colour overrides to the current scene.
-
-    Takes the in-place LUT swap whenever an actor is tracked; otherwise falls back to
-    select_color_scheme, which re-renders and funnels the legend through
-    apply_overrides_to_state anyway.
-    """
+    """Re-apply category colour overrides in place, or via select_color_scheme."""
     if state.active_dataset is None:
         return
     if state.legend_items and _recolor_active_actor(plotter, ctrl, state):
@@ -487,8 +466,7 @@ def select_color_scheme(
 
     meta = project_metadata[key]
     cfg = resolve_render_config(meta, dataset_dir(meta))
-    # Patient renderers re-render from the patient dir; everything else from the
-    # dataset dir. Timeseries keep the active field/step.
+    # Patient renderers re-render from the patient dir.
     ddir = dataset_dir(meta)
     if state.active_patient is not None:
         ddir = patient_subdir(ddir, state.active_patient)
@@ -497,11 +475,11 @@ def select_color_scheme(
         if _try_scalar_field_fast_path(plotter, ctrl, state, meta, cfg):
             return
 
-        # Categorical renderers: fast-path swap the LUT on the active actor.
+        # Categorical renderers swap the LUT on the active actor in place.
         if cfg.renderer in _RECOLORABLE and _recolor_active_actor(plotter, ctrl, state):
             return
 
-        # Otherwise full re-render at the current field/step, keeping the camera.
+        # Full re-render at the current field/step, keeping the camera.
         result = _redraw(
             plotter,
             ctrl,

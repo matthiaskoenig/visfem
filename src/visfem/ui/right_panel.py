@@ -1,4 +1,4 @@
-"""Right panel: view controls (opacity, field, color, playback, scalar bar)."""
+"""Right panel: view, fibers, scalar field, color, regions, playback and scalar bar sections."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -40,7 +40,7 @@ _SLIDER_KW: dict[str, object] = {
     "style": "flex:1; margin:0; padding:0;",
 }
 
-# Underlined text field for one colour limit of the scalar bar.
+# Style of the underlined text field for one scalar bar colour limit.
 _CLIM_INPUT_STYLE = (
     f"width:52px; flex-shrink:0; font-size:{FS_SM}; font-variant-numeric:tabular-nums; "
     "background:transparent; border:none; "
@@ -60,14 +60,14 @@ def build_right_panel(
     on_set_category_color: object,
     on_reset_category_colors: object,
 ) -> None:
-    """Right panel content: opacity, camera, field, color, playback, scalar bar."""
+    """Build the right panel sections, each control wired to its on_* callback."""
     with html.Div(
         style=f"padding:{PAD_MD} {PAD_LG}; display:flex; flex-direction:column; height:100%; overflow-y:auto; box-sizing:border-box;"
     ):
         section_header("mdi-eye-outline", "View", "right_view_open")
 
         with html.Div(v_show="right_view_open"):
-            # Single row: [camera reset] | [opacity icon] [opacity slider]
+            # One row: camera reset, separator, opacity icon and opacity slider.
             with html.Div(
                 style=f"display:flex; align-items:center; gap:{GAP_MD}; margin-bottom:12px; padding-right:26px;"
             ):
@@ -155,7 +155,7 @@ def build_right_panel(
         )
 
         with html.Div(v_show="right_color_open"):
-            # Categorical palettes (no continuous field active)
+            # Categorical palettes, for a categorical active field.
             with html.Div(
                 v_if="scalar_bar === null || scalar_bar === undefined",
                 style="margin-bottom:8px;",
@@ -186,7 +186,7 @@ def build_right_panel(
                                     )
                                 )
 
-            # Continuous colormaps (continuous field active)
+            # Continuous colormaps, for a continuous active field.
             with html.Div(
                 v_if="scalar_bar !== null && scalar_bar !== undefined",
                 style="margin-bottom:8px;",
@@ -214,7 +214,7 @@ def build_right_panel(
         with html.Div(v_if="legend_items && legend_items.length > 0"):
             v3.VDivider(style="margin-bottom:10px;")
 
-            # Header carries a "reset all" action, shown only once something is overridden.
+            # The header carries a "reset all" action, shown once a region colour is overridden.
             section_header(
                 "mdi-tag-multiple-outline",
                 "Regions",
@@ -234,9 +234,7 @@ def build_right_panel(
                 with html.Div(
                     style=f"display:flex; flex-direction:column; gap:{GAP_SM}; margin-bottom:8px; padding-left:8px;"
                 ):
-                    # One row per legend item: a single picker swatch, then that item's
-                    # name(s). A legend item can carry several aliases for one colour,
-                    # so the names stack beside one shared dot.
+                    # One row per legend item: one picker swatch, then every alias name the item carries.
                     with html.Div(
                         v_for="item in legend_items",
                         key="item.names[0]",
@@ -341,15 +339,7 @@ def build_right_panel(
 def _category_swatch(
     on_set_category_color: object, on_reset_category_colors: object
 ) -> None:
-    """Clickable legend dot that opens a colour picker for one category.
-
-    Rendered inside the ``item in legend_items`` loop, so it reads ``item`` from that
-    scope. One swatch per legend item, regardless of how many alias names it carries.
-
-    The picker's draft colour lives in a scoped slot variable rather than Trame state,
-    so dragging around the hue pad costs nothing until Apply — each committed change
-    triggers a full scene push server-side.
-    """
+    """Legend dot that opens a colour picker for one category; takes the set and reset callbacks and reads ``item`` from the enclosing ``legend_items`` loop."""
     with v3.VMenu(
         close_on_content_click=False,
         location="start",
@@ -369,7 +359,7 @@ def _category_swatch(
                 "{{ item.names[0] }}",
                 style=f"font-size:{FS_SM}; opacity:{OP_SUBDUED}; margin-bottom:6px; max-width:230px;",
             )
-            # draft holds the picker value; seeded from the category's current colour.
+            # draft keeps the picker colour in a loop-scoped variable until Apply; each applied colour costs a full scene push.
             with html.Div(v_for="draft in [{ v: item.color }]", key="'picker'"):
                 v3.VColorPicker(
                     v_model=("draft.v",),
@@ -408,7 +398,7 @@ def _category_swatch(
 
 
 def _busy_spinner() -> None:
-    """Render the small accent spinner that replaces a control while its action runs, as the v-else of the preceding v-if element; returns None."""
+    """Render the accent spinner that replaces the preceding v-if control while its action runs."""
     v3.VProgressCircular(
         v_else=True,
         indeterminate=True,
@@ -420,7 +410,7 @@ def _busy_spinner() -> None:
 
 
 def _clim_input(state_key: str, on_apply_clim: object) -> None:
-    """Render one colour limit text field bound to state_key, applying on blur or Enter via on_apply_clim; returns None."""
+    """Render one colour limit text field bound to state_key; blur or Enter calls on_apply_clim."""
     html.Input(
         type="text",
         v_model=(state_key, ""),
@@ -434,7 +424,7 @@ def _clim_input(state_key: str, on_apply_clim: object) -> None:
 def _choice_list(
     loop: str, active_var: str, on_select: object, *, style: str = "padding:0;"
 ) -> Iterator[None]:
-    """Open a compact single-choice VList over the v-for expression loop, marking the item whose name equals active_var and calling on_select with that name on click; yields inside the item title slot; style is the list CSS."""
+    """Open a single-choice VList over the v-for expression loop with CSS style; the item whose name equals active_var is active, a click calls on_select with the name, and the body yields inside the item title slot."""
     var = loop.split(" in ")[0]
     with v3.VList(density="compact", nav=True, bg_color="transparent", style=style):
         with html.Div(v_for=loop, key=f"{var}.name"):

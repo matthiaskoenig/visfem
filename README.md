@@ -7,28 +7,28 @@
 [![MIT License](https://img.shields.io/pypi/l/visfem.svg)](https://opensource.org/licenses/MIT)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19220183.svg)](https://doi.org/10.5281/zenodo.19220183)
 
-VisFEM is an interactive web-based tool for visualization of Finite Element Method (FEM) simulation
-results, with a focus on biomedical applications. Source code is available from
+VisFEM is an interactive web app for visualizing Finite Element Method (FEM) simulation
+results, with a focus on biomedical applications. The source code lives at
 [https://github.com/matthiaskoenig/visfem](https://github.com/matthiaskoenig/visfem).
 
 
 ## Installation
-`visfem` is available from [PyPI](https://pypi.python.org/pypi/visfem) and can be installed via
+Install `visfem` from [PyPI](https://pypi.python.org/pypi/visfem):
 
 ```bash
 pip install visfem
 ```
 
-## Run app
-After installing, launch the app with:
+## Usage
+Launch the app with:
 ```bash
 visfem
 ```
 
-## Adding your own dataset
+## Custom datasets
 
 A dataset is a folder of mesh files plus a JSON descriptor. VisFEM discovers
-datasets from a data directory; point `DATA_DIR` at your own folder:
+datasets from a data directory; point `DATA_DIR` at your own folder.
 
 The CLI walks you through it:
 
@@ -44,11 +44,11 @@ visfem validate-data                     # check the JSON and that the files res
 visfem                                   # launch; my_model now appears
 ```
 
-### Try it with example data
+### Example data
 
-To explore VisFEM with real, openly available data, download the public
+Download the public
 [3D-IRCADb-01](https://www.ircad.fr/research/data-sets/liver-segmentation-3d-ircadb-01/)
-dataset: CT-segmented organ surface meshes from 20 patients
+dataset, CT-segmented organ surface meshes from 20 patients:
 
 ```bash
 export DATA_DIR=/path/to/your/data
@@ -56,13 +56,13 @@ visfem fetch-ircadb                      # download (~3 GB) and lay out the data
 visfem                                   # launch; '3D-IRCADb-01' appears in the sidebar
 ```
 
-The 3D-IRCADb-01 dataset is provided by IRCAD under its own license terms.
+IRCAD provides the 3D-IRCADb-01 dataset under its own license terms.
 
-A second open example is the knee: [Open Knee(s)](https://simtk.org/projects/openknee)
-from the Cleveland Clinic. The command below fetches the segmented tissue surfaces
-of the eight simulation-ready specimens (16 STL surfaces each) and the Generation 1
-tibiofemoral finite element model (FEBio, converted to VTU) from the project's
-public SVN repository, which needs no SimTK account:
+[Open Knee(s)](https://simtk.org/projects/openknee) from the Cleveland Clinic is a second
+open example. The command below fetches the segmented tissue surfaces of the eight
+simulation-ready specimens (16 STL surfaces each) and the Generation 1 tibiofemoral
+finite element model (FEBio, converted to VTU) from the project's public SVN repository,
+which serves anonymous checkouts:
 
 ```bash
 visfem fetch-openknee                    # all eight specimens + the Generation 1 model (~220 MB)
@@ -70,15 +70,15 @@ visfem fetch-openknee --specimens oks003 --no-gen1   # just one specimen
 visfem                                   # launch; the knees appear under 'Musculoskeletal'
 ```
 
-Open Knee(s) is provided by the Open Knee(s) Development Team under Creative Commons
-terms (CC BY-SA 3.0 in the repository, CC BY 4.0 on the project page); please cite
+The Open Knee(s) Development Team provides Open Knee(s) under Creative Commons
+terms (CC BY-SA 3.0 in the repository, CC BY 4.0 on the project page). Cite
 Chokhandre et al. (2023), [doi:10.1007/s10439-022-03074-0](https://doi.org/10.1007/s10439-022-03074-0),
 for the specimens and Erdemir (2016), [doi:10.1055/s-0035-1564600](https://doi.org/10.1055/s-0035-1564600),
 for the Generation 1 model.
 
 
-## How to cite
-To cite the software repository
+## Citation
+Cite the software repository as:
 
 > Elias, M. & König, M. (2026).
 > *VisFEM: Web visualization of FEM models.*
@@ -91,20 +91,19 @@ To cite the software repository
 * Documentation: [CC BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)
 * Models: [CC BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY
-WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
-PARTICULAR PURPOSE.
+The software ships as is; the MIT license in `LICENSE` disclaims all warranties,
+including merchantability and fitness for a particular purpose.
 
 ## Funding
-Matthias König is supported by the German Research Foundation (DFG) within the Research Unit Programme FOR 5151
+The German Research Foundation (DFG) supports Matthias König within the Research Unit Programme FOR 5151
 "QuaLiPerF (Quantifying Liver Perfusion-Function Relationship in Complex Resection -
 A Systems Medicine Approach)" by grant number 436883643 and by grant number
 465194077 (Priority Programme SPP2311, Subproject SimLivA).
 
-Matthias König was supported by the Federal Ministry of Education and Research (BMBF, Germany)
+The Federal Ministry of Education and Research (BMBF, Germany) supported Matthias König
 within the research network Systems Medicine of the Liver (LiSyM, grant number 031L0054).
 
-Michelle Elias is supported by the German Research Foundation (DFG) under grant number 465194077
+The German Research Foundation (DFG) supports Michelle Elias under grant number 465194077
 (Priority Programme SPP2311).
 
 © 2026 Michelle Elias & Matthias König

@@ -1,12 +1,4 @@
-"""Renderer registry and render-config resolution.
-
-A dataset's rendering is declared in its JSON ``render`` block
-(``visfem.models.RenderConfig``) and dispatched to one of a few built-in
-renderers, so adding a dataset is data-only. ``resolve_render_config`` infers an
-unset ``renderer`` (and simple mesh paths) from ``mesh_format`` and the files on
-disk, so the simplest datasets need no ``render`` block. Renderers are thin
-adapters over ``visfem.engine.scene``.
-"""
+"""Renderer registry and render-config resolution for a dataset's JSON ``render`` block (``visfem.models.RenderConfig``)."""
 
 from __future__ import annotations
 
@@ -45,16 +37,18 @@ _SURFACE_EXTS = (".stl", ".vtu", ".obj", ".vtp", ".vtk", ".ply")
 
 
 def _has_patient_dirs(ddir: Path) -> bool:
+    """Return True when ddir holds a patient_* directory."""
     return any(d.is_dir() for d in ddir.glob("patient_*"))
 
 
 def _first_patient_dir(ddir: Path) -> Path | None:
+    """Return the first patient_* directory in ddir by name, or None."""
     dirs = sorted(d for d in ddir.glob("patient_*") if d.is_dir())
     return dirs[0] if dirs else None
 
 
 def _infer_renderer(meta: ProjectMetadata, ddir: Path) -> RendererName:
-    """Infer a renderer from mesh_format + on-disk layout (time series, then patient dirs, then surface)."""
+    """Return the renderer inferred from meta.mesh_format and the layout of ddir."""
     fmt = meta.mesh_format.upper()
     if fmt == "PVD":
         return RendererName.TIMESERIES
@@ -72,7 +66,7 @@ def _infer_renderer(meta: ProjectMetadata, ddir: Path) -> RendererName:
 
 
 def _infer_mesh_file(ddir: Path) -> str | None:
-    """Return the single surface mesh filename in a flat dataset dir, if unambiguous."""
+    """Return the sole surface mesh filename in the flat dir ddir, or None when zero or several exist."""
     candidates = [
         p
         for p in sorted(ddir.iterdir())
@@ -85,13 +79,12 @@ def resolve_render_config(
     meta: ProjectMetadata,
     ddir: Path,
 ) -> RenderConfig:
-    """Return a RenderConfig with a concrete ``renderer``, inferring it (and an unambiguous surface mesh_file) when unset."""
+    """Return a copy of meta.render whose renderer, and whose surface mesh_file, are inferred from ddir when unset."""
     cfg = (
         meta.render.model_copy(deep=True) if meta.render is not None else RenderConfig()
     )
     if cfg.renderer is None:
-        # A declared flat VTK series or LS-DYNA database is a time series
-        # regardless of mesh_format.
+        # A declared flat VTK series or LS-DYNA database is a time series and overrides mesh_format.
         cfg.renderer = (
             RendererName.TIMESERIES
             if (cfg.series or cfg.database)
@@ -108,7 +101,7 @@ def resolve_render_config(
 
 
 def resolve_mesh_file(ddir: Path, cfg: RenderConfig) -> str | None:
-    """Return the surface filename to load: mesh_file, else first existing candidate."""
+    """Return the surface filename in ddir that cfg selects, or None."""
     if cfg.mesh_file:
         return cfg.mesh_file
     for name in cfg.mesh_candidates:
@@ -122,7 +115,7 @@ def resolve_mesh_file(ddir: Path, cfg: RenderConfig) -> str | None:
 
 @dataclass
 class RenderContext:
-    """Everything a renderer needs. Built once per (re)draw by the dispatch layer."""
+    """Inputs for one renderer call, built per draw by the dispatch layer."""
 
     plotter: pv.Plotter
     ctrl: TrameCtrl
@@ -132,18 +125,18 @@ class RenderContext:
     cfg: RenderConfig  # resolved (explicit plus inferred) render config
     xdmf_meta: dict[str, MeshMetadata]
     opacity: float
-    palette: list[str]  # already resolved (see selection._resolve_palette)
-    cmap: str  # already resolved (see selection.resolve_cmap)
+    palette: list[str]  # resolved by selection._resolve_palette
+    cmap: str  # resolved by selection.resolve_cmap
     field: str | None = None
     step: int = 0
     reset_camera: bool = True
 
 
-Renderer = Callable[[RenderContext], RenderResult]
+Renderer = Callable[[RenderContext], RenderResult]  # adapter over visfem.engine.scene
 
 
 def _common(ctx: RenderContext) -> dict:
-    """Shared kwargs for renderers that take dark_mode/opacity/palette."""
+    """Return the keyword arguments from ctx that the palette renderers share."""
     return {
         "dark_mode": ctx.state.dark_mode,
         "opacity": ctx.opacity,
@@ -153,10 +146,12 @@ def _common(ctx: RenderContext) -> dict:
 
 
 def render_surface(ctx: RenderContext) -> RenderResult:
-    """One solid-colour surface mesh (STL/VTU/OBJ)."""
+    """Render ctx's single solid-colour surface mesh and return the RenderResult."""
     filename = resolve_mesh_file(ctx.ddir, ctx.cfg)
     if filename is None:
-        logger.error(f"No surface mesh resolved in {ctx.ddir}")
+        logger.error(
+            f"surface renderer requires mesh_file or an existing mesh candidate in {ctx.ddir}"
+        )
         return RenderResult()
     return redraw_stl_surface(
         ctx.plotter, ctx.ctrl, ctx.ddir, filename=filename, **_common(ctx)
@@ -164,7 +159,7 @@ def render_surface(ctx: RenderContext) -> RenderResult:
 
 
 def render_region_id(ctx: RenderContext) -> RenderResult:
-    """One mesh coloured by an integer cell array, with a per-region legend and optional fibre overlay (cfg.fiber)."""
+    """Render ctx's mesh coloured by the integer cell array cfg.region_array, with a per-region legend and the optional cfg.fiber overlay; return the RenderResult."""
     cfg = ctx.cfg
     if not cfg.mesh_file or not cfg.region_array:
         logger.error("region_id renderer requires mesh_file and region_array")
@@ -183,7 +178,7 @@ def render_region_id(ctx: RenderContext) -> RenderResult:
 
 
 def render_multi_part(ctx: RenderContext) -> RenderResult:
-    """N labelled part files, merged and categorically coloured (optionally tubed)."""
+    """Render cfg.parts merged, categorically coloured and tubed per cfg.tube; return the RenderResult."""
     cfg = ctx.cfg
     parts = [(p.stem, p.label) for p in cfg.parts]
     meshes = _load_multi_part_vtk(ctx.ddir, parts, cfg.part_extensions)
@@ -206,11 +201,9 @@ def render_multi_part(ctx: RenderContext) -> RenderResult:
 
 
 def render_timeseries(ctx: RenderContext) -> RenderResult:
-    """Scalar-field time series: a flat VTK series (cfg.series) rendered whole per step, or an XDMF/PVD manifest indexed by step."""
+    """Render ctx's scalar-field time series at ctx.step from a flat VTK series (cfg.series, one file per step), an LS-DYNA database (cfg.database) or a PVD/XDMF manifest; return the RenderResult."""
     if ctx.cfg.database:
-        # LS-DYNA d3plot: the database dir IS the path; load_mesh(dir, step)
-        # streams the frame, the dir/step cache keys it, and the in-memory
-        # metadata carries the global scalar bounds.
+        # LS-DYNA d3plot: the database dir is the mesh path and load_mesh streams one frame per step.
         return redraw_xdmf(
             ctx.plotter,
             ctx.ctrl,
@@ -227,7 +220,9 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
     if ctx.cfg.series:
         files = _series_paths(ctx.ddir, ctx.cfg.series)
         if not files:
-            logger.error(f"No files match series '{ctx.cfg.series}' in {ctx.ddir}")
+            logger.error(
+                f"timeseries renderer requires at least one file matching series '{ctx.cfg.series}' in {ctx.ddir}"
+            )
             return RenderResult()
         step = max(0, min(ctx.step, len(files) - 1))
         return redraw_xdmf(
@@ -245,7 +240,7 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
         )
     path = _timeseries_path(ctx)
     if path is None:
-        logger.error(f"No timeseries file for dataset in {ctx.ddir}")
+        logger.error(f"timeseries renderer requires a PVD or XDMF file in {ctx.ddir}")
         return RenderResult()
     return redraw_xdmf(
         ctx.plotter,
@@ -262,10 +257,12 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
 
 
 def render_pvd_phase_series(ctx: RenderContext) -> RenderResult:
-    """Per-patient region-coloured phase surfaces (GRASP MRI). ddir is the patient dir."""
+    """Render the region-coloured GRASP MRI phase surface at ctx.step for the patient dir ctx.ddir; return the RenderResult."""
     pvd = grasp_phase_pvd(ctx.ddir)
     if pvd is None:
-        logger.error(f"No phase-series PVD in {ctx.ddir}")
+        logger.error(
+            f"pvd_phase_series renderer requires a phase-series PVD in {ctx.ddir}"
+        )
         return RenderResult()
     return redraw_region_surface_step(
         ctx.plotter,
@@ -281,12 +278,12 @@ def render_pvd_phase_series(ctx: RenderContext) -> RenderResult:
 
 
 def render_patient_organs(ctx: RenderContext) -> RenderResult:
-    """Per-patient per-organ .vtk glob (ircadb family). ddir is the patient dir."""
+    """Render the per-organ .vtk files (ircadb family) in the patient dir ctx.ddir; return the RenderResult."""
     return redraw_ircadb(ctx.plotter, ctx.ctrl, ctx.ddir, **_common(ctx))
 
 
 def render_scalar_field(ctx: RenderContext) -> RenderResult:
-    """Static mesh coloured by a selectable field: a percentile-clamped ramp, or discrete zones for cfg.categorical_fields."""
+    """Render ctx's static mesh coloured by its field as a percentile-clamped ramp, or as discrete zones for cfg.categorical_fields; return the RenderResult."""
     cfg = ctx.cfg
     if not cfg.mesh_file:
         logger.error("scalar_field renderer requires mesh_file")
@@ -317,7 +314,7 @@ def render_scalar_field(ctx: RenderContext) -> RenderResult:
 
 
 def _timeseries_path(ctx: RenderContext) -> Path | None:
-    """Resolve the active timeseries file: PVD, the active XDMF, or the first found."""
+    """Return the active timeseries file for ctx, or None."""
     if ctx.meta.mesh_format.upper() == "PVD":
         return pvd_file_path(ctx.meta)
     xdmf_files = discover_xdmf(ctx.ddir)
@@ -327,15 +324,13 @@ def _timeseries_path(ctx: RenderContext) -> Path | None:
     return next(iter(xdmf_files.values()), None)
 
 
-# Flat VTK series: resolve the ordered file list and global metadata once per
-# (dir, pattern), since scrubbing re-renders repeatedly and the glob/bounds scan
-# is the same every time.
+# Per-(dir, pattern) caches for a flat VTK series' ordered files and global metadata.
 _series_paths_cache: dict[tuple[Path, str], list[Path]] = {}
 _series_meta_cache: dict[tuple[Path, str], MeshMetadata] = {}
 
 
 def _series_paths(ddir: Path, pattern: str) -> list[Path]:
-    """Natural-sorted per-step files for a flat VTK series (memoised)."""
+    """Return the natural-sorted per-step files of the flat VTK series pattern in ddir."""
     key = (ddir, pattern)
     if key not in _series_paths_cache:
         _series_paths_cache[key] = [p for _, p in vtk_series_steps(ddir, pattern)]
@@ -343,7 +338,7 @@ def _series_paths(ddir: Path, pattern: str) -> list[Path]:
 
 
 def _series_metadata(ddir: Path, pattern: str) -> MeshMetadata | None:
-    """MeshMetadata (n_steps, fields, global scalar bounds) for a flat series (memoised)."""
+    """Return the MeshMetadata (n_steps, fields, global scalar bounds) of the flat VTK series pattern in ddir, or None when it has zero files."""
     key = (ddir, pattern)
     if key not in _series_meta_cache:
         files = _series_paths(ddir, pattern)
@@ -353,13 +348,12 @@ def _series_metadata(ddir: Path, pattern: str) -> MeshMetadata | None:
     return _series_meta_cache[key]
 
 
-# LS-DYNA d3plot metadata is resolved lazily (the first select triggers the
-# one-time global-bounds scan / sidecar read) and memoised per database dir.
+# Per-database-dir cache; the first lookup runs the global-bounds scan or sidecar read.
 _d3plot_meta_cache: dict[Path, MeshMetadata] = {}
 
 
 def _d3plot_metadata(ddir: Path) -> MeshMetadata | None:
-    """MeshMetadata for an LS-DYNA d3plot database (memoised; sidecar-backed)."""
+    """Return the sidecar-backed MeshMetadata of the LS-DYNA d3plot database in ddir."""
     if ddir not in _d3plot_meta_cache:
         _d3plot_meta_cache[ddir] = metadata_for_d3plot(ddir)
     return _d3plot_meta_cache[ddir]
@@ -375,8 +369,7 @@ RENDERER_REGISTRY: dict[RendererName, Renderer] = {
     RendererName.PATIENT_ORGANS: render_patient_organs,
 }
 
-# Renderers whose datasets are selected per-patient: the top-level dataset click
-# clears the scene and the render happens on patient selection.
+# Renderers that draw on patient selection; the dataset click clears the scene.
 PATIENT_RENDERERS: frozenset[RendererName] = frozenset(
     {
         RendererName.PATIENT_ORGANS,
@@ -384,7 +377,7 @@ PATIENT_RENDERERS: frozenset[RendererName] = frozenset(
     }
 )
 
-# Renderers that expose a scalar-field / step time series.
+# Renderers that expose a scalar-field time series with steps.
 TIMESERIES_RENDERERS: frozenset[RendererName] = frozenset(
     {
         RendererName.TIMESERIES,
@@ -393,21 +386,23 @@ TIMESERIES_RENDERERS: frozenset[RendererName] = frozenset(
 
 
 def dispatch_render(ctx: RenderContext) -> RenderResult:
-    """Render *ctx* via the registry entry for its resolved renderer (set by resolve_render_config)."""
+    """Render ctx with the registry entry for cfg.renderer and return the RenderResult."""
     renderer = ctx.cfg.renderer
-    assert renderer is not None, "render config has no resolved renderer"
+    assert renderer is not None, (
+        "dispatch_render needs a config from resolve_render_config"
+    )
     return RENDERER_REGISTRY[renderer](ctx)
 
 
 def is_patient_renderer(cfg: RenderConfig) -> bool:
-    """True if the dataset is patient-driven (rendered on patient select)."""
+    """Return True when cfg.renderer draws on patient selection."""
     return cfg.renderer in PATIENT_RENDERERS
 
 
 def _scalar_fields(
     mesh_meta: MeshMetadata | None, cfg: RenderConfig
 ) -> list[dict[str, str]]:
-    """Selectable {name,label} fields (explicit cfg list, else discovered): scalars and vectors (by magnitude); tensors excluded."""
+    """Return the selectable {name,label} fields: cfg.fields, else the scalar and vector (magnitude) fields of mesh_meta."""
     from visfem.engine.scene import field_label
 
     if cfg.fields:
@@ -430,7 +425,7 @@ def _scalar_fields(
 
 
 def _timeseries_mesh_meta(ctx: RenderContext) -> MeshMetadata | None:
-    """MeshMetadata for the active timeseries (for field/step UI population)."""
+    """Return the MeshMetadata of ctx's active timeseries source, or None."""
     if ctx.cfg.database:
         return _d3plot_metadata(ctx.ddir)
     if ctx.cfg.series:
@@ -440,19 +435,15 @@ def _timeseries_mesh_meta(ctx: RenderContext) -> MeshMetadata | None:
 
 
 def apply_result_to_state(state: Any, result: RenderResult) -> None:
-    """Write the common render outputs (legend/stats/scalar bar) to Trame state.
-
-    The legend goes through apply_overrides_to_state so per-category colour overrides
-    survive a full re-render. The renderers themselves stay override-agnostic: they
-    always emit plain palette colours.
-    """
+    """Write result's legend, mesh stats and scalar bar to Trame state."""
+    # Renderers emit plain palette colours; apply_overrides_to_state reapplies the per-category overrides.
     apply_overrides_to_state(state, result.legend_items)
     state.mesh_stats = result.mesh_stats
     state.scalar_bar = result.scalar_bar_info
 
 
 def populate_timeseries_state(state: Any, ctx: RenderContext) -> str | None:
-    """Set available_scalar_fields/n_steps/step_times; return the chosen default field."""
+    """Populate the timeseries field and step state from ctx and return the default field."""
     mesh_meta = _timeseries_mesh_meta(ctx)
     fields = _scalar_fields(mesh_meta, ctx.cfg)
     default = ctx.cfg.default_field or (fields[0]["name"] if fields else None)

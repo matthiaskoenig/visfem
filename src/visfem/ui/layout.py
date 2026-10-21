@@ -9,9 +9,9 @@ from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 from trame.widgets.vtk import VtkRemoteLocalView, VtkWebXRHelper
 
-try:  # trame 4 renamed the module of the trame widgets
+try:  # trame 4 import path
     from trame_client.widgets.client import Script
-except ImportError:  # trame 3
+except ImportError:  # trame 3 import path
     from trame_client.widgets.trame import Script
 
 from visfem.models import ProjectMetadata
@@ -31,7 +31,7 @@ from visfem.ui.theme import (
 )
 from visfem.ui.toolbar import build_toolbar
 
-# Register the custom light theme; Vuetify merges it over its light defaults.
+# Light theme colour overrides; Vuetify merges them over its light defaults.
 _VUETIFY_CONFIG = {
     "theme": {
         "themes": {
@@ -43,6 +43,8 @@ _VUETIFY_CONFIG = {
 
 @dataclass
 class UICallbacks:
+    """Server-side callbacks that the UI widgets bind to."""
+
     # Dataset selection
     on_select_dataset: object
     on_select_xdmf: object
@@ -70,38 +72,28 @@ class UICallbacks:
 
 
 def _make_push_scene(view: VtkRemoteLocalView) -> object:
-    """Return a callback that publishes the scene to the vtk.js client: a delta, then the full state.
-
-    Both are needed. The delta (``new_state=False``) is the only message that
-    carries ``removeViewProp`` calls: the serializer derives them by comparing
-    against the dependency list of the previous push, which the full state
-    ignores, so a full state alone leaves the previous dataset's actor on the
-    client. The full state (``new_state=True``, ``ignore_last_dependencies``)
-    re-emits every array fresh: a delta is keyed by cached array-dependency
-    hashes that can collide across a dataset switch and leave the client
-    painting old arrays. ``view.update()`` would serialise twice on its own (the
-    delta and a reconnect snapshot), so routing the full push through it cost
-    three serialisations; here the full state doubles as that snapshot. Falls
-    back to ``view.update()`` if an internal attr is unavailable across a
-    trame-vtk version.
-    """
+    """Return a callback that publishes the scene of view to the vtk.js client as a delta followed by the full state."""
 
     def push_scene() -> None:
+        """Publish the scene as a delta, then as the full state, to the connected client."""
         server = view.server
         if not getattr(server, "protocol", None):
-            return  # no client transport yet (headless), nothing to push
+            return  # headless: the protocol arrives with the first client connection
         try:
             helper = view._helper
             vtk_view = view._VtkRemoteLocalView__view
             scene_key = view._VtkRemoteLocalView__scene_id
-        except AttributeError:
+        except AttributeError:  # private trame-vtk attrs vary by version
             view.update()
             return
+        # Only the delta carries removeViewProp calls, derived from the previous push's dependencies.
         server.protocol.publish(
             "trame.vtk.delta", helper.scene(vtk_view, new_state=False)
         )
+        # The full state (ignore_last_dependencies) re-emits every array; delta array hashes can collide across a dataset switch.
         full_state = helper.scene(vtk_view, new_state=True)
         server.protocol.publish("trame.vtk.delta", full_state)
+        # The full state doubles as the reconnect snapshot that view.update() serialises separately.
         server.state[scene_key] = full_state
 
     return push_scene
@@ -115,7 +107,7 @@ def build_ui(
     patients_by_dataset: dict[str, list[int]],
     callbacks: UICallbacks,
 ) -> SinglePageLayout:
-    """Assemble the full SinglePageLayout and return it."""
+    """Build and return the SinglePageLayout for server, wiring plotter and ctrl to the VTK view and organ_groups, patients_by_dataset and callbacks to the panels."""
     with SinglePageLayout(
         server,
         theme=("dark_mode ? 'dark' : 'light'",),
@@ -148,10 +140,7 @@ def build_ui(
             footer.style = FOOTER_STYLE
             build_footer()
 
-        # After reading ?model=/?dataset= once, strip it from the address bar via
-        # replaceState so a client reconnect (which replays these page scripts)
-        # doesn't re-read it and snap back to that model after the user has
-        # manually picked another dataset.
+        # Reads ?model=/?dataset= into url_model and strips it from the address bar; a reconnect replays this script.
         Script(
             "(function(){"
             "  function apply(){"
@@ -171,6 +160,7 @@ def build_ui(
             "  apply();"
             "})();"
         )
+        # Defers ResizeObserver callbacks to the next frame and swallows its loop errors.
         Script(
             "(function() {"
             "  var _RO = window.ResizeObserver;"
@@ -188,7 +178,7 @@ def build_ui(
             "  }, true);"
             "})();"
         )
-        # Probe for usable WebGL; privacy features can block it without explanation.
+        # Probes for usable WebGL and sets webgl_blocked; privacy features block it silently.
         Script(
             "(function() {"
             "  function probe() {"
@@ -207,6 +197,7 @@ def build_ui(
             "  report();"
             "})();"
         )
+        # Mirrors the browser fullscreen state into the fullscreen state key.
         Script(
             "document.addEventListener('fullscreenchange', function() {"
             "  if (window.trame && window.trame.state) {"
@@ -214,6 +205,7 @@ def build_ui(
             "  }"
             "});"
         )
+        # Hooks the WebXR session: a controller select on the exit panel sets xr_exit_triggered, session end sets xr_session_ended.
         Script(
             "if (navigator.xr) {"
             "  var _origReq = navigator.xr.requestSession.bind(navigator.xr);"
@@ -285,7 +277,7 @@ def build_ui(
                     "overflow:hidden;"
                 )
             ):
-                # ---- Left panel ----
+                # Left panel
                 with html.Div(
                     style=(
                         f"'flex-shrink:0; height:100%; overflow:hidden; "
@@ -303,7 +295,7 @@ def build_ui(
                         callbacks.on_select_patient,
                     )
 
-                # ---- VTK viewport (fills remaining space) ----
+                # VTK viewport
                 with html.Div(
                     style=(
                         f"'flex:1; min-width:0; height:100%; position:relative; "
@@ -351,8 +343,7 @@ def build_ui(
                             style="font-size:0.7rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;",
                         )
 
-                    # A failed load or update: app.py logs the traceback and
-                    # sets these two keys, so the user sees why nothing changed.
+                    # Error snackbar; app.py sets both keys after a failed load or update.
                     with v3.VSnackbar(
                         v_model=("error_open",),
                         timeout=10000,
@@ -368,8 +359,7 @@ def build_ui(
                                 click="error_open = false",
                             )
 
-                    # Shown instead of a silently empty viewport when the
-                    # browser blocks WebGL. v_if: absent entirely when fine.
+                    # WebGL blocked overlay; the probe script above sets webgl_blocked.
                     with html.Div(
                         v_if="webgl_blocked",
                         style=(
@@ -380,18 +370,18 @@ def build_ui(
                     ):
                         html.Div("\u26a0", style="font-size:2rem; opacity:0.7;")
                         html.Div(
-                            "3D rendering is blocked by this browser",
+                            "This browser blocks 3D rendering",
                             style="font-size:0.95rem; font-weight:600;",
                         )
                         html.Div(
-                            "VisFEM renders meshes with WebGL. A privacy setting is "
-                            "blocking it \u2014 in Brave lower Shields for this site, in "
-                            "Firefox disable resistFingerprinting, in Safari turn off "
-                            "Advanced Tracking Protection. Then reload.",
+                            "VisFEM renders meshes with WebGL. A privacy setting blocks "
+                            "it. In Brave lower Shields for this site, in Firefox disable "
+                            "resistFingerprinting, in Safari turn off Advanced Tracking "
+                            "Protection. Then reload.",
                             style="font-size:0.8rem; opacity:0.75; max-width:34rem; line-height:1.5;",
                         )
 
-                # ---- Right panel ----
+                # Right panel
                 with html.Div(
                     style=(
                         f"'flex-shrink:0; height:100%; overflow:hidden; "

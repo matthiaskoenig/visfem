@@ -1,4 +1,4 @@
-"""Left panel: dataset selection tree + active dataset info."""
+"""Left panel with the dataset tree and the active dataset info."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -39,13 +39,10 @@ from visfem.ui.theme import (
 )
 from visfem.ui.widgets import section_header
 
-# Compact gap between the leading icon and the item label
 _ICON_GAP = f"display:flex; align-items:center; gap:{GAP_MD};"
 
-# Padding of the two left panel section headers.
 _HEADER_PAD = f"padding:{PAD_MD} {PAD_LG} 4px {PAD_LG};"
 
-# Metadata row container and its leading icon.
 _ROW_STYLE = f"display:flex; gap:{GAP_LG}; margin-bottom:8px; align-items:flex-start;"
 _ROW_ICON_STYLE = f"opacity:{OP_DIM}; margin-top:2px; flex-shrink:0;"
 
@@ -57,7 +54,7 @@ def build_left_panel(
     on_select_xdmf: object,
     on_select_patient: object,
 ) -> None:
-    """Left panel content: dataset tree (top) + active dataset info (bottom)."""
+    """Build the left panel, the dataset tree above the active dataset info, from organ_groups and patients_by_dataset, with on_select_dataset, on_select_xdmf and on_select_patient as click callbacks; returns None."""
     with html.Div(style="display:flex; flex-direction:column; height:100%;"):
         section_header(
             "mdi-layers-outline",
@@ -88,7 +85,6 @@ def build_left_panel(
                                         system.title(),
                                         style=f"font-size:{FS_SM}; font-weight:{FW_SEMI}; text-transform:uppercase; letter-spacing:{LS_WIDE}; opacity:{OP_MUTED};",
                                     )
-                        # Split datasets into ungrouped and sub-grouped buckets
                         ungrouped = [(k, m) for k, m in datasets if not m.subgroup]
                         subgroups: dict[str, list[tuple[str, ProjectMetadata]]] = {}
                         for k, m in datasets:
@@ -143,7 +139,6 @@ def build_left_panel(
             v_show="left_info_section_open",
             style=f"flex:1; overflow-y:auto; min-height:0; padding:0 {PAD_LG} {PAD_LG} {PAD_LG};",
         ):
-            # Empty state
             with html.Div(
                 v_if="active_meta === null",
                 style=f"padding:{PAD_XL} 0; text-align:center; opacity:{OP_GHOST};",
@@ -157,7 +152,6 @@ def build_left_panel(
                     "Select a dataset to view metadata", style=f"font-size:{FS_MD};"
                 )
 
-            # Filled state
             with html.Div(v_if="active_meta !== null"):
                 with html.Div(
                     style=f"display:flex; align-items:center; gap:{GAP_MD}; flex-wrap:wrap; margin-bottom:6px;"
@@ -199,7 +193,7 @@ def build_left_panel(
                         style=f"font-size:{FS_MD}; line-height:1.4; opacity:{OP_BODY};",
                     )
 
-                # The label keeps its case: uppercase would read "PI(S)".
+                # The label keeps its case; uppercase renders it as "PI(S)".
                 with _row("mdi-account-outline", "PI(s)", label_upper=False):
                     html.Div("{{ active_meta.pi }}", style=f"font-size:{FS_MD};")
 
@@ -272,7 +266,7 @@ def _render_dataset_item(
     on_select_xdmf: object,
     on_select_patient: object,
 ) -> None:
-    """Render the entry for dataset key with metadata meta at the given indent: a patient group when key is in patients_by_dataset, a single item, or an XDMF file group, dispatching to the three select callbacks; returns None."""
+    """Render the tree entry for dataset key with metadata meta at left padding indent: a patient group when key is in patients_by_dataset, an XDMF file group when the dataset directory holds several XDMF files, else one item, with the on_select callbacks on click; returns None."""
     ddir = dataset_dir(meta)
     xdmf_files = discover_xdmf(ddir)
     if key in patients_by_dataset:
@@ -325,7 +319,7 @@ def _render_dataset_item(
 
 
 def _tree_group(value: str) -> v3.VListGroup:
-    """Return a VListGroup for the tree with the chevron expand and collapse icons, keyed by value."""
+    """Return a VListGroup keyed by value with chevron expand and collapse icons."""
     return v3.VListGroup(
         value=value,
         expand_icon="mdi-chevron-right",
@@ -345,7 +339,7 @@ def _tree_item(
     activator: bool = False,
     highlight: bool = True,
 ) -> None:
-    """Render one tree list item with a muted icon of icon_size and label at the given indent; active is a JS expression, click a (callback, args) tuple that also disables the item while loading or busy, activator binds the slot props, wrap lets the label break, highlight adds the rounded accent active style; returns None."""
+    """Render one tree item with left padding indent, an icon at icon_size and label; active is a Vue expression, click a (callback, args) tuple, activator binds the slot props, wrap lets the label break, highlight adds the accent active style; returns None."""
     with v3.VListItem(
         v_bind="props" if activator else None,
         density="compact",
@@ -371,7 +365,7 @@ def _tree_item(
 
 
 def _label(text: str, *, upper: bool = True) -> None:
-    """Render text as a small metadata label; upper selects uppercase or unchanged case; returns None."""
+    """Render text as a small metadata label, uppercased when upper is true; returns None."""
     transform = "uppercase" if upper else "none"
     html.Div(
         text,
@@ -388,7 +382,7 @@ def _row(
     icon_style: str | None = None,
     label_upper: bool = True,
 ) -> Iterator[None]:
-    """Open an icon + label metadata row gated by the v_if expression and yield inside its value column; icon_style replaces the muted icon style, label_upper selects the label case; yields None."""
+    """Open a metadata row with icon and label, gated by the Vue expression v_if, and yield inside its value column; icon_style replaces the default icon style, label_upper uppercases the label; yields None."""
     with html.Div(v_if=v_if, style=_ROW_STYLE):
         v3.VIcon(icon, size=ICON_SM, style=icon_style or _ROW_ICON_STYLE)
         with html.Div():
@@ -397,6 +391,6 @@ def _row(
 
 
 def _value_row(icon: str, label: str, value_template: str) -> None:
-    """Render an icon + label + single value metadata row from the value template; returns None."""
+    """Render a metadata row of icon, label and the Vue template value_template; returns None."""
     with _row(icon, label):
         html.Div(value_template, style=f"font-size:{FS_MD};")

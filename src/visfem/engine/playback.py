@@ -36,7 +36,7 @@ async def vtkjs_warmup(
     state: Any,
     path: Path,
 ) -> None:
-    """Warm the server-side mesh LRU cache for all keyframes, then clear loading state."""
+    """Load every keyframe step of *path* into the server-side mesh cache, then clear the overlay on *state* when *get_gen()* still equals *gen*."""
     n_steps = int(state.n_steps)
     if n_steps <= 1:
         return
@@ -68,12 +68,7 @@ async def autoplay_loop(
     xdmf_meta: dict[str, MeshMetadata],
     frame_sleep: float,
 ) -> None:
-    """Advance one step at a time until stopped or the end of the sequence.
-
-    ``frame_sleep`` is the base delay at 1x speed; the live ``playback_speed`` state
-    (cycled from the UI) divides it, so changing speed mid-playback takes effect on
-    the next frame.
-    """
+    """Advance *state.active_step* by *state.step_inc* through select_step with *plotter*, *ctrl*, *project_metadata* and *xdmf_meta*, wrapping to step 0, every *frame_sleep* / *state.playback_speed* seconds until *state.autoplay* clears or a step fails."""
     try:
         while state.autoplay:
             step = int(state.active_step)
@@ -95,6 +90,7 @@ async def autoplay_loop(
             with state:  # flush the step change to the client
                 pass
             speed = float(getattr(state, "playback_speed", 1.0)) or 1.0
+            # frame_sleep is the delay at 1x speed
             await asyncio.sleep(frame_sleep / speed)
     finally:
         state.autoplay = False

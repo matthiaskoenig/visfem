@@ -1,4 +1,7 @@
-"""Trame web application for FEM mesh visualization."""
+"""Trame web application for FEM mesh visualization.
+
+Usage: visfem, or python -m visfem.app. VISFEM_PRELOAD=1 preloads every mesh.
+"""
 
 import asyncio
 import base64
@@ -63,17 +66,11 @@ from visfem.ui.layout import UICallbacks, build_ui
 
 logger = get_logger(__name__)
 
-_FRAME_SLEEP: float = 0.2  # seconds between frames (scalar-field timeseries)
-# GRASP phase series redraws fully per phase; slower cadence makes the contrast
-# wash-in watchable rather than a fast flicker.
-_PHASE_FRAME_SLEEP: float = 0.7
-# Hold the loading overlay after pushing geometry, covering the client-side
-# WebGL paint. The server gets no completion callback for that paint (the scene
-# is published straight onto trame.vtk.delta), so the hold is a timer scaled by
-# mesh size: a 683k-cell surface needs far longer to ship and paint than a 500-
-# cell one, and the old fixed 1.6s cleared the spinner mid-transfer on the big
-# ones. Overshooting only costs a slightly long spinner.
-_RENDER_SETTLE_MIN: float = 2.0  # seconds, small meshes
+_FRAME_SLEEP: float = 0.2  # seconds between frames of a scalar-field timeseries
+# A GRASP phase is a full redraw; the slower cadence keeps the contrast wash-in watchable.
+_PHASE_FRAME_SLEEP: float = 0.7  # seconds per phase
+# Overlay hold after a geometry push; the timer is the server's only end-of-paint signal.
+_RENDER_SETTLE_MIN: float = 2.0  # seconds, smallest meshes
 _RENDER_SETTLE_MAX: float = 7.0  # seconds, cap for the largest
 _RENDER_SETTLE_PER_MCELL: float = 1.4  # extra seconds per million cells
 
@@ -82,7 +79,7 @@ class VisfemApp(TrameApp):
     """Main Trame application for VisFEM."""
 
     def __init__(self, server: object = None) -> None:
-        """Load project metadata, build plotter and state, assemble UI."""
+        """Load project metadata, build plotter and state, assemble the UI on *server*."""
         super().__init__(server)
         self._fiber_actor = None
         self._initial_camera: pv.CameraPosition | None = None
@@ -102,9 +99,9 @@ class VisfemApp(TrameApp):
             for name, path in series:
                 try:
                     self._xdmf_meta[name] = get_metadata(path)
-                except Exception as e:  # noqa: BLE001 - a corrupt file must not take the server down
+                except Exception as e:  # noqa: BLE001 - skip the corrupt file and keep serving
                     logger.warning(
-                        f"Dataset '{key}': skipping '{path.name}', its metadata cannot be read: {e}"
+                        f"Dataset '{key}': skipping '{path.name}', metadata read failed: {e}"
                     )
         self._patients_by_dataset: dict[str, list[int]] = {}
         for key, meta in self._project_metadata.items():
@@ -147,12 +144,10 @@ class VisfemApp(TrameApp):
     def _setup_plotter(self) -> None:
         """Initialize an empty off-screen plotter."""
         self.plotter = pv.Plotter(off_screen=True, theme=pv.themes.DarkTheme())
-        # Plotter methods built with functools.wraps aren't bound to the instance in
-        # typeshed, so mypy misreads these calls; the targeted ignores cover only that.
+        # typeshed types functools.wraps-built Plotter methods as unbound; the ignores cover that.
         self.plotter.enable_depth_peeling(number_of_peels=4)  # type: ignore[call-arg]
         self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
-        # Physical scale stays default: SetPhysicalScale doesn't propagate to the vtk.js
-        # client, so the JS selectstart handler multiplies XR metres by 1000 to match VTK mm.
+        # Physical scale stays default: SetPhysicalScale is server-only; the JS selectstart handler scales XR metres by 1000 to VTK mm.
 
     @staticmethod
     def _favicon_data_uri() -> str:
@@ -190,11 +185,9 @@ class VisfemApp(TrameApp):
                 "right_scalar_bar_open": True,
                 "right_regions_open": True,
                 "legend_items": [],
-                # Per-category colour overrides, "<dataset>:<patient>" -> {category: hex}.
-                # Session-scoped: sticky across palette swaps and dataset switches, not
-                # persisted to disk.
+                # Session-scoped overrides, "<dataset>:<patient>" -> {category: hex}, kept across palette and dataset switches.
                 "category_colors": {},
-                # Overrides matching the categories on screen right now — what the UI reads.
+                # Overrides for the categories on screen now; the map the UI reads.
                 "category_colors_active": {},
                 "ctrl_opacity": 0.9,
                 "active_meta": None,
@@ -220,9 +213,7 @@ class VisfemApp(TrameApp):
                 # Set by _show_error; shown by the snackbar in layout.py.
                 "error_message": "",
                 "error_open": False,
-                # Set by the client-side probe in layout.py; True when the browser
-                # gives us no usable WebGL2 context (Brave shields, Firefox RFP,
-                # Safari ATP). The 3D viewport cannot render at all in that case.
+                # Set by the client probe in layout.py when WebGL2 is blocked (Brave shields, Firefox RFP, Safari ATP); the viewport stays blank.
                 "webgl_blocked": False,
                 "camera_resetting": False,
                 "color_reversed": False,
@@ -237,17 +228,12 @@ class VisfemApp(TrameApp):
 
     @change("url_model")
     def _on_url_model_change(self, url_model: str = "", **_: object) -> None:
-        """Auto-select a dataset from the ?model= URL query parameter on first load.
-
-        Consumed one-shot: ``url_model`` is reset to "" right after reading it so
-        that a later manual dataset selection isn't snapped back to the URL model
-        (the param stays in the address bar, and trame replays it on every client
-        reconnect). The reset itself re-enters this handler with an empty key,
-        which the guard below ignores.
-        """
+        """Select the ?model= URL dataset *url_model* once, then clear url_model."""
         key: str = (url_model or "").strip()
+        # The reset below re-enters this handler with an empty key.
         if not key:
             return
+        # One-shot: trame replays the address-bar param on every client reconnect.
         self.state.url_model = ""
         if key in self._project_metadata:
             self._url_select_task = asyncio.ensure_future(self.select_dataset(key))
@@ -283,8 +269,7 @@ class VisfemApp(TrameApp):
                 self.plotter.camera_position = self._initial_camera
                 self.ctrl.view_push_camera()
                 push_scene(self.plotter, self.ctrl, reset_camera=False)
-                # Fixed hold: the server has no callback for when the client
-                # finishes the WebGL re-render on the new camera pose.
+                # Fixed hold: the server learns the end of the client's re-render only through this timer.
                 await asyncio.sleep(0.4)
             finally:
                 self.state.camera_resetting = False
@@ -295,17 +280,18 @@ class VisfemApp(TrameApp):
 
     @change("xr_exit_triggered")
     def _on_xr_exit_triggered(self, xr_exit_triggered: bool, **_: object) -> None:
+        """Forward the *xr_exit_triggered* change to the XR manager."""
         self.xr.on_exit_triggered(xr_exit_triggered)
 
     @change("xr_session_ended")
     def _on_xr_session_ended(self, xr_session_ended: bool, **_: object) -> None:
+        """Forward the *xr_session_ended* change to the XR manager."""
         self.xr.on_session_ended(xr_session_ended)
 
     @change("scalar_bar")
     def _on_scalar_bar_change(self, scalar_bar: dict | None, **_: object) -> None:
-        """Keep clim text inputs in sync whenever scalar_bar is updated anywhere."""
+        """Sync the clim text inputs to *scalar_bar* unless a manual override is set."""
         if scalar_bar:
-            # If the user has set a manual override, preserve their input values.
             if getattr(self.state, "clim_override", None) is None:
                 self.state.clim_input_min = scalar_bar.get("min_label", "")
                 self.state.clim_input_max = scalar_bar.get("max_label", "")
@@ -335,7 +321,7 @@ class VisfemApp(TrameApp):
             self.state.scalar_bar = scalar_bar
 
     def _cancel_warmup(self) -> None:
-        """Cancel any running vtk.js warmup task and clear the loading flag."""
+        """Cancel any running vtk.js warmup task and clear the loading and busy flags."""
         self._warmup_gen += 1
         if self._warmup_task is not None and not self._warmup_task.done():
             self._warmup_task.cancel()
@@ -344,7 +330,7 @@ class VisfemApp(TrameApp):
         self.state.busy = False
 
     def _render_settle(self) -> float:
-        """Overlay hold for the active mesh, scaled by cell count."""
+        """Return the overlay hold in seconds for the active mesh, scaled by cell count."""
         stats = self.state.mesh_stats or {}
         cells = 0
         if isinstance(stats, dict):
@@ -356,7 +342,8 @@ class VisfemApp(TrameApp):
         return min(settle, _RENDER_SETTLE_MAX)
 
     def _show_error(self, context: str, exc: Exception) -> None:
-        """Log the traceback of *exc* and show "*context*: *exc*" to the user (call from an except block)."""
+        """Log the traceback of *exc* and show "*context*: *exc*" to the user."""
+        # logger.exception attaches the exception being handled.
         logger.exception(context)
         with self.state:
             self.state.error_message = f"{context}: {exc}"
@@ -364,20 +351,16 @@ class VisfemApp(TrameApp):
 
     @contextlib.contextmanager
     def _claim_busy(self, what: str) -> Iterator[bool]:
-        """Claim the busy flag; yields False if another handler holds it.
-
-        Claims before any await so two fast clicks can't both pass, and releases
-        in `finally` so an exception can't leave the UI locked. An exception in
-        the block is reported to the user as "Could not *what*: ..." and swallowed.
-        """
+        """Claim the busy flag and yield True, or yield False while held; an exception in the block is shown as "Failed to *what*" and swallowed."""
+        # The claim precedes every await; a second fast click sees the flag.
         if self.state.busy:
             yield False
             return
         self.state.busy = True
         try:
             yield True
-        except Exception as e:  # noqa: BLE001 - the UI boundary: report, never leave the view locked
-            self._show_error(f"Could not {what}", e)
+        except Exception as e:  # noqa: BLE001 - UI boundary: report and release the view
+            self._show_error(f"Failed to {what}", e)
         finally:
             self.state.busy = False
 
@@ -389,7 +372,7 @@ class VisfemApp(TrameApp):
         prepare: Callable[[], None] | None = None,
         needs_dataset: bool = True,
     ) -> None:
-        """Run one busy-guarded engine call: *what* names the action for the error message, *prepare* applies the handler's state changes inside the claim, *render* receives the plotter, ctrl, state, project metadata, xdmf metadata and *args, and *needs_dataset* skips everything when no dataset is active; returns None."""
+        """Run *render* with the plotter, ctrl, state, both metadata maps and *args* under the busy claim; *prepare* applies state first, *what* names the action in the error, *needs_dataset* requires an active dataset."""
         if needs_dataset and self.state.active_dataset is None:
             return
         with self._claim_busy(what) as claimed:
@@ -410,13 +393,7 @@ class VisfemApp(TrameApp):
             )
 
     async def _switch(self, what: str, render: Callable[[], vtkActor | None]) -> None:
-        """Common path of the dataset, file and patient switches: overlay on, render, warm up.
-
-        *render* runs the synchronous selection and returns the fibre actor, if
-        any. An exception is logged with its traceback and shown to the user,
-        and the overlay and busy flag are cleared, so a bad dataset never leaves
-        the UI stuck on the spinner.
-        """
+        """Overlay on, run *render* (the synchronous selection, returns the fibre actor or None), warm up; *what* names the target in the error message."""
         self.state.autoplay = False
         self._cancel_warmup()
         self.state.loading = True
@@ -428,18 +405,17 @@ class VisfemApp(TrameApp):
             apply_opacity(self.plotter, float(self.state.ctrl_opacity))
             self._initial_camera = self.plotter.camera_position
             await self._start_vtkjs_warmup()
-        except Exception as e:  # noqa: BLE001 - the UI boundary: report, never leave the view locked
-            self._show_error(f"Could not load {what}", e)
+        except Exception as e:  # noqa: BLE001 - UI boundary: report and release the view
+            self._show_error(f"Failed to load {what}", e)
             clear_overlay(self.state)
 
     def _resolve_active_path(self) -> Path | None:
-        """Return the XDMF/PVD file path for the currently active dataset."""
+        """Return the load_mesh path of the active dataset (d3plot directory, series step file, PVD or XDMF), or None."""
         key: str | None = self.state.active_dataset
         if not key or key not in self._project_metadata:
             return None
         meta = self._project_metadata[key]
-        # LS-DYNA d3plot: the database directory itself is the load_mesh path
-        # (step resolved by the `step` passed to load_mesh during warmup).
+        # LS-DYNA d3plot: the database directory is the load_mesh path; warmup passes the step.
         if meta.render is not None and meta.render.database:
             return dataset_dir(meta)
         # Flat VTK series: the active path is the per-step file at active_step.
@@ -448,8 +424,7 @@ class VisfemApp(TrameApp):
             if steps:
                 idx = max(0, min(int(self.state.active_step), len(steps) - 1))
                 return steps[idx][1]
-        # GRASP phase series: the active path is the current patient's per-patient PVD
-        # (phase resolved by the `step` passed to load_mesh during warmup).
+        # GRASP phase series: the patient's PVD; warmup passes the phase as the step.
         patient = self.state.active_patient
         if patient is not None:
             pvd = grasp_phase_pvd(patient_subdir(dataset_dir(meta), patient))
@@ -458,16 +433,11 @@ class VisfemApp(TrameApp):
         return active_timeseries_path(meta, self.state, dataset_dir(meta))
 
     async def _start_vtkjs_warmup(self) -> None:
-        """Finish a dataset switch: hold the overlay while the client paints, then warm the step cache for a series.
-
-        The renderer already pushed the full scene (push_scene); with
-        disable_auto_switch the client paints nothing on its own, so that one
-        push is the authoritative one and nothing is re-sent here.
-        """
+        """Hold the overlay while the client paints, then warm the step cache for a series."""
         n_steps = int(self.state.n_steps)
         if n_steps <= 1:
             self.state.step_inc = 1
-            # Keep the overlay up while the client paints the new geometry.
+            # The client paints push_scene's single push (disable_auto_switch); the sleep covers it.
             await asyncio.sleep(self._render_settle())
             clear_overlay(self.state)
             return
@@ -483,7 +453,7 @@ class VisfemApp(TrameApp):
 
     @change("ctrl_opacity")
     def _on_opacity_change(self, ctrl_opacity: float, **_: object) -> None:
-        """Show feedback immediately; debounce the actual render for heavy meshes."""
+        """Flag the slider as adjusting and debounce the render of *ctrl_opacity*."""
         if self.state.active_dataset is None:
             return
         if self._opacity_task is not None and not self._opacity_task.done():
@@ -494,7 +464,7 @@ class VisfemApp(TrameApp):
         )
 
     async def _apply_opacity_debounced(self, opacity: float) -> None:
-        """Apply opacity 150 ms after the last slider movement."""
+        """Apply *opacity* after the debounce delay, then clear the adjusting flag."""
         try:
             await asyncio.sleep(0.15)
         except asyncio.CancelledError:
@@ -510,7 +480,7 @@ class VisfemApp(TrameApp):
     def _on_organ_group_change(
         self, active_organ_group_open: list, **_: object
     ) -> None:
-        """Accordion: keep only the most-recently-opened organ system group open."""
+        """Keep only the last opened organ system group of *active_organ_group_open* open."""
         top_level = set(self._organ_groups.keys())
         open_top = [v for v in active_organ_group_open if v in top_level]
         if len(open_top) > 1:
@@ -521,14 +491,14 @@ class VisfemApp(TrameApp):
 
     @change("show_fibers")
     def _on_show_fibers_change(self, show_fibers: bool, **_: object) -> None:
-        """Toggle fiber glyph actor visibility."""
+        """Set the fibre glyph actor visibility to *show_fibers*."""
         if self._fiber_actor is None:
             return
         self._fiber_actor.SetVisibility(bool(show_fibers))
         push_scene(self.plotter, self.ctrl, reset_camera=False)
 
     async def select_dataset(self, key: str) -> None:
-        """Route to the correct redraw based on dataset key."""
+        """Switch to dataset *key*."""
         await self._switch(
             f"dataset '{key}'",
             lambda: select_dataset(
@@ -542,9 +512,10 @@ class VisfemApp(TrameApp):
         )
 
     async def select_xdmf(self, key: str, stem: str) -> None:
-        """Load and render a specific XDMF file within a multi-file dataset."""
+        """Switch to XDMF file *stem* of dataset *key*."""
 
         def render() -> None:
+            """Render XDMF file *stem* of dataset *key*."""
             select_xdmf(
                 self.plotter,
                 self.ctrl,
@@ -558,9 +529,10 @@ class VisfemApp(TrameApp):
         await self._switch(f"'{stem}' of dataset '{key}'", render)
 
     async def select_patient(self, dataset_key: str, patient: int) -> None:
-        """Load and render a specific patient from a multi-patient dataset."""
+        """Switch to patient *patient* of dataset *dataset_key*."""
 
         def render() -> None:
+            """Render patient *patient* of dataset *dataset_key*."""
             select_patient(
                 self.plotter,
                 self.ctrl,
@@ -573,10 +545,10 @@ class VisfemApp(TrameApp):
         await self._switch(f"patient {patient} of dataset '{dataset_key}'", render)
 
     async def select_scalar_field(self, field: str) -> None:
-        """Re-render the current dataset with the given scalar field."""
+        """Re-render the active dataset with scalar field *field*."""
 
         def prepare() -> None:
-            """Stop playback and warmup and rewind to step 0 with no range override; returns None."""
+            """Stop playback and warmup, rewind to step 0 and drop the range override."""
             self.state.autoplay = False
             self._cancel_warmup()
             self.state.active_step = 0
@@ -591,7 +563,7 @@ class VisfemApp(TrameApp):
         )
 
     async def select_step(self, step: int) -> None:
-        """Navigate the current XDMF dataset to a different timestep."""
+        """Show time step *step* of the active dataset."""
 
         def render(
             plotter: pv.Plotter,
@@ -600,7 +572,7 @@ class VisfemApp(TrameApp):
             project_metadata: dict[str, ProjectMetadata],
             xdmf_meta: dict[str, MeshMetadata],
         ) -> None:
-            """Call select_step on *plotter*, *ctrl*, *state*, *project_metadata* and *xdmf_meta* with the step coerced inside the busy claim, where a bad value is reported; returns None."""
+            """Call select_step with the coerced *step* on *plotter*, *ctrl*, *state*, *project_metadata* and *xdmf_meta*."""
             select_step(plotter, ctrl, state, project_metadata, xdmf_meta, int(step))
 
         await self._busy_render("change the time step", render, needs_dataset=False)
@@ -609,7 +581,7 @@ class VisfemApp(TrameApp):
         """Flip the color order of the active palette or colormap and re-render."""
 
         def prepare() -> None:
-            """Flip the colour order and drop the range override; returns None."""
+            """Flip the colour order and drop the range override."""
             self.state.color_reversed = not self.state.color_reversed
             self.state.clim_override = None
 
@@ -618,10 +590,10 @@ class VisfemApp(TrameApp):
         )
 
     async def select_color_scheme(self, name: str) -> None:
-        """Update the active palette/colormap and re-render the current scene."""
+        """Set *name* as the active palette or colormap and re-render the scene."""
 
         def prepare() -> None:
-            """Store *name* as the colormap of a scalar scene or the palette of a categorical one and drop the range override; returns None."""
+            """Store *name* as the colormap of a scalar scene or the palette of a categorical one and drop the range override."""
             if self.state.scalar_bar is not None:
                 self.state.active_continuous_cmap = name
             else:
@@ -633,7 +605,7 @@ class VisfemApp(TrameApp):
         )
 
     async def set_category_color(self, name: str, color: str) -> None:
-        """Override one category's colour and recolour the scene in place."""
+        """Override category *name* with *color* and recolour the scene in place."""
         if not name:
             return
         await self._busy_render(
@@ -643,10 +615,10 @@ class VisfemApp(TrameApp):
         )
 
     async def reset_category_colors(self, name: str | None = None) -> None:
-        """Clear one category's override, or every override in scope when name is None."""
+        """Clear the override of category *name*, or every override in scope when None, and recolour."""
 
         def prepare() -> None:
-            """Clear the override of *name*, or every override in scope when name is None; returns None."""
+            """Clear the override of *name*, or every override in scope when None."""
             if name:
                 set_override(self.state, name, None)
             else:
@@ -662,7 +634,7 @@ class VisfemApp(TrameApp):
         if self.state.autoplay:
             self.state.autoplay = False
         else:
-            # Guard against double-start while previous task winds down.
+            # A previous autoplay task still winding down blocks the restart.
             if self._autoplay_task is not None and not self._autoplay_task.done():
                 return
             self.state.autoplay = True
@@ -685,13 +657,11 @@ class VisfemApp(TrameApp):
 
 
 def main() -> None:
-    """Entry point."""
+    """Build the app, preload every mesh when VISFEM_PRELOAD=1, and start the server."""
     import os
 
     app = VisfemApp()
-    # Preload every mesh up front only when explicitly requested. In the
-    # per-session deployment we leave this off so the idle container stays
-    # light and each session lazy-loads just the model it opens.
+    # Unset in the per-session deployment: each session lazy-loads its one model and the idle container stays light.
     if os.environ.get("VISFEM_PRELOAD", "0") == "1":
         preload_all_meshes(app._project_metadata)
     app.server.start()

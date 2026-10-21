@@ -1,8 +1,4 @@
-"""Pydantic models for mesh and project metadata validation.
-
-MeshMetadata is auto-generated from mesh files and cached as .meta.json sidecars.
-ProjectMetadata is hand-authored per dataset, stored in data/datasets/**/*.json.
-"""
+"""Pydantic models for mesh and project metadata validation."""
 
 import hashlib
 import json
@@ -25,8 +21,9 @@ Bounds3D = tuple[float, float, float, float, float, float]
 
 
 class MeshMetadata(BaseModel):
-    """Auto-generated per-mesh metadata, cached as a .meta.json sidecar (regenerated when schema_hash changes)."""
+    """Per-mesh metadata generated from the mesh file and cached as a .meta.json sidecar."""
 
+    # a sidecar whose hash differs from MESH_METADATA_HASH is regenerated
     schema_hash: str = ""
     format: str  # fenics_xdmf | timeseries_xdmf | pyvista_native | meshio_fallback
     n_steps: int = Field(ge=1)
@@ -36,12 +33,12 @@ class MeshMetadata(BaseModel):
     cell_types: list[str]
     fields: dict[str, FieldInfo]
     bounds: Bounds3D | None = None
+    # field name -> [global min, global max] across all timesteps
     scalar_bounds: dict[str, list[float]] = {}
-    # field_name -> [global_min, global_max] across all timesteps
 
 
 def compute_mesh_metadata_hash() -> str:
-    """Return an 8-char hash of MeshMetadata field names and types (changes when fields are added/removed/retyped)."""
+    """Return an 8-char hash of MeshMetadata field names and types."""
     fields = {
         name: str(field.annotation)
         for name, field in MeshMetadata.model_fields.items()
@@ -50,7 +47,6 @@ def compute_mesh_metadata_hash() -> str:
     return hashlib.md5(json.dumps(fields, sort_keys=True).encode()).hexdigest()[:8]
 
 
-# Computed once at import time; used by mesh.py for sidecar validation
 MESH_METADATA_HASH: str = compute_mesh_metadata_hash()
 
 
@@ -81,27 +77,19 @@ class OrganSystem(StrEnum):
     VASCULATURE = "vasculature"
 
 
-# Rendering configuration
-#
-# Declared per dataset in an optional JSON `render` block. Every field is
-# optional; omitted values are inferred from mesh_format + file discovery
-# (engine.renderers.resolve_render_config), so simple datasets need no block.
+# RenderConfig
 
 
 class RendererName(StrEnum):
     """Built-in renderer selected by a dataset's render config."""
 
     SURFACE = "surface"  # one solid-colour mesh (STL/VTU/OBJ)
-    MULTI_PART = "multi_part"  # N labelled part files, merged + coloured
-    REGION_ID = (
-        "region_id"  # mesh coloured by an integer cell array (+ optional fibre overlay)
-    )
-    SCALAR_FIELD = "scalar_field"  # static mesh coloured by a selectable scalar field (continuous + categorical zones)
-    TIMESERIES = (
-        "timeseries"  # scalar-field time series from XDMF, PVD, or a flat VTK series
-    )
+    MULTI_PART = "multi_part"  # N labelled part files, merged and coloured
+    REGION_ID = "region_id"  # coloured by an integer cell array, optional fibre glyphs
+    SCALAR_FIELD = "scalar_field"  # static mesh coloured by a selectable field
+    TIMESERIES = "timeseries"  # scalar-field series from XDMF, PVD or flat VTK files
     PVD_PHASE_SERIES = "pvd_phase_series"  # per-patient region-coloured phase surfaces
-    PATIENT_ORGANS = "patient_organs"  # per-patient per-organ .vtk glob (ircadb family)
+    PATIENT_ORGANS = "patient_organs"  # per-patient .vtk file per organ (ircadb)
 
 
 class PartSpec(BaseModel):
@@ -115,13 +103,13 @@ class ScalarField(BaseModel):
     """One selectable scalar field with a display label."""
 
     name: str
-    label: str | None = None  # defaults to a humanised name if omitted
+    label: str | None = None  # None: humanised copy of name
 
 
 class FiberOptions(BaseModel):
-    """Fibre glyph overlay for the region_id renderer: a vector cell array drawn as oriented glyphs (e.g. cardiac fibres)."""
+    """Fibre glyph overlay for the region_id renderer."""
 
-    array: str = "Fiber"  # cell array to orient glyphs by
+    array: str = "Fiber"  # vector cell array that orients the glyphs
     stride: int = Field(default=5, ge=1)  # subsample every Nth cell
     scale: float = 1.5
 
@@ -135,7 +123,7 @@ class TubeOptions(BaseModel):
 
 
 class RenderConfig(BaseModel):
-    """Declarative per-dataset render config; omitted fields are inferred in engine.renderers.resolve_render_config."""
+    """Per-dataset render config from the optional JSON `render` block; engine.renderers.resolve_render_config infers omitted fields from mesh_format and file discovery."""
 
     renderer: RendererName | None = None
 
@@ -149,38 +137,34 @@ class RenderConfig(BaseModel):
     categorical_palette: str = "paired"
     continuous_cmap: str = "viridis"
     region_array: str | None = None  # integer cell array (Material / PartId)
-    region_labels: dict[
-        int, list[str]
-    ] = {}  # region id -> display name(s); supersedes labels_file
-    labels_mesh_key: str | None = None  # which key of labels_file to use (e.g. "M.vtu")
+    # region id -> display name(s); overrides labels_file
+    region_labels: dict[int, list[str]] = {}
+    labels_mesh_key: str | None = None  # key of labels_file to use (e.g. "M.vtu")
 
     # scalar fields
     fields: list[ScalarField] = []  # explicit, ordered selectable fields
-    exclude_fields: list[str] = []  # deny-list applied to discovered fields
-    default_field: str | None = None  # initial field; else first listed/discovered
+    exclude_fields: list[str] = []  # discovered fields to drop
+    default_field: str | None = None  # initial field; None: first listed or discovered
 
-    # timeseries renderer: flat VTK series (no .pvd/XDMF manifest)
-    series: str | None = (
-        None  # glob (relative to dataset dir) of per-step mesh files, natural-sorted
-    )
-    database: str | None = (
-        None  # LS-DYNA d3plot master filename (e.g. "d3plot"); dataset dir is the database dir
-    )
+    # timeseries renderer: flat VTK series or LS-DYNA database
+    # glob of per-step mesh files relative to the dataset dir, natural-sorted
+    series: str | None = None
+    # LS-DYNA d3plot master filename (e.g. "d3plot") inside the dataset dir
+    database: str | None = None
 
     # renderer-specific options
-    fiber: FiberOptions | None = None  # region_id fibre overlay; None => no fibres
-    tube: TubeOptions | None = None  # multi_part tubing; None => no tubing
-    solid: bool = False  # pvd_phase_series: single colour (no flicker)
+    fiber: FiberOptions | None = None  # region_id fibre overlay
+    tube: TubeOptions | None = None  # multi_part tubing
+    solid: bool = False  # pvd_phase_series: one colour for every phase; the body count differs per phase
     # scalar_field renderer
-    categorical_fields: list[
-        str
-    ] = []  # field names drawn as discrete zones (region legend) not a continuous ramp
-    percentile_clamp: int | None = (
-        None  # continuous-field upper clamp percentile (default 95 when None)
-    )
+    # fields drawn as discrete zones with a region legend
+    categorical_fields: list[str] = []
+    # upper clamp percentile for continuous fields; None: 95
+    percentile_clamp: int | None = None
 
     @model_validator(mode="after")
     def _coerce_field_labels(self) -> "RenderConfig":
+        """Fill missing field labels with the humanised field name and return self."""
         for f in self.fields:
             if f.label is None:
                 f.label = f.name.replace("_", " ")
@@ -188,7 +172,7 @@ class RenderConfig(BaseModel):
 
 
 class ProjectMetadata(BaseModel):
-    """Hand-authored per-dataset descriptor (scientific context for the UI), stored in data/datasets/**/*.json."""
+    """Hand-authored per-dataset descriptor with the scientific context shown in the UI, stored in data/datasets/**/*.json."""
 
     data_path: str
     labels_file: str | None = None
@@ -196,18 +180,14 @@ class ProjectMetadata(BaseModel):
     pi: str
     institution: list[str]
     biological_scale: BiologicalScale
-    organ_system: list[OrganSystem]  # list because multi-system datasets (e.g. IRCADb)
+    organ_system: list[OrganSystem]  # multi-system datasets list several (e.g. IRCADb)
     description: str = Field(max_length=500)
     mesh_format: str  # e.g. "VTK", "XDMF+HDF5", "VTU"
     references: list[str] = []  # DOIs, URLs, or citations
-    spp_project: str | None = None  # SPP2311 project title, None for non-SPP datasets
-    spp_badge: bool = False  # show SPP2311 badge without a project title
-    subgroup: str | None = (
-        None  # optional sub-group label within the organ system (e.g. "Vessel")
-    )
-    sort_order: int | None = (
-        None  # explicit sort position within organ group / subgroup (None = sort by name)
-    )
-    render: RenderConfig | None = (
-        None  # declarative render config; None => fully inferred
-    )
+    spp_project: str | None = None  # SPP2311 project title
+    spp_badge: bool = False  # show the SPP2311 badge even when spp_project is None
+    # sub-group label within the organ system (e.g. "Vessel")
+    subgroup: str | None = None
+    # sort position within the organ group or subgroup; None: by name
+    sort_order: int | None = None
+    render: RenderConfig | None = None  # render config; None: every field inferred

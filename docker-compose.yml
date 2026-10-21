@@ -1,16 +1,14 @@
-# Build and start
-#  Update dependencies
+# Build
+#  Dependency export
 #    uv export --frozen --no-dev --no-editable -o setup/requirements.txt
-#  Build
+#  Image build
 #    docker compose up --build
 
-# Key Environment Variables
-# Several environment variables control the runtime behavior:
-#
-# TRAME_USE_HOST — Overrides the sessionURL host. Useful when the app is served behind a reverse proxy or a different hostname. If the value contains ://, it replaces the entire ws://USE_HOST prefix.
-# TRAME_USER_DATA — Path inside Docker to check ownership and remap the UID/GID to the unprivileged trame-user. Useful when the container mounts host directories and the users don't match.
-# TRAME_URL_PREFIX — Serves content from a sub-path (e.g. /app) instead of /.
-# TRAME_LAUNCHER_TIMEOUT — Seconds to wait for a session to start before timing out (default: 25). GitHub
+# Environment variables
+# TRAME_USE_HOST: sessionURL host for a reverse proxy or another hostname; a value containing :// replaces the whole ws://USE_HOST prefix
+# TRAME_USER_DATA: container path whose owner UID/GID the unprivileged trame-user takes over, for mounted host directories owned by another user
+# TRAME_URL_PREFIX: sub-path the content is served from (e.g. /app); default /
+# TRAME_LAUNCHER_TIMEOUT: seconds to wait for a session to start (default 25)
 
 services:
   visfem:
@@ -21,7 +19,7 @@ services:
       - "8080:80"
     restart: unless-stopped
     volumes:
-      - ./data:/data:ro        # mount local ./data into container at /data
+      - ./data:/data:ro
     environment:
-      TRAME_USER_DATA: /data   # remap UID/GID so trame-user can read it
+      TRAME_USER_DATA: /data   # trame-user takes over this path's owner UID/GID
       DATA_DIR: /data

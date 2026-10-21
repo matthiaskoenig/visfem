@@ -13,9 +13,7 @@ logger = get_logger(__name__)
 
 # ---- Paths ----
 
-# Datasets live at <repo>/data/datasets by default. When deployed, the package
-# is installed non-editable into a venv (so the relative path above no longer
-# resolves to the repo), and DATA_DIR points at the mounted data directory.
+# Datasets default to <repo>/data/datasets, a path that resolves only from an editable checkout; a deployment sets DATA_DIR or VISFEM_DATA_DIR to the mounted data directory.
 _DATA_ENV = os.environ.get("DATA_DIR") or os.environ.get("VISFEM_DATA_DIR")
 DATASETS_DIR = (
     (Path(_DATA_ENV) / "datasets")
@@ -23,8 +21,7 @@ DATASETS_DIR = (
     else (Path(__file__).parents[3] / "data" / "datasets")
 )
 
-# Comma-separated allowlist of dataset keys to expose. Unset/empty = all
-# datasets (local dev). Deployment sets this to the SPP2311 subset.
+# VISFEM_DATASETS is a comma-separated allowlist of dataset keys; empty exposes every dataset and deployment sets the SPP2311 subset.
 _DATASETS_ENV = os.environ.get("VISFEM_DATASETS", "").strip()
 ALLOWED_DATASETS: set[str] | None = (
     {k.strip() for k in _DATASETS_ENV.split(",") if k.strip()}
@@ -51,7 +48,7 @@ def ircadb_organ_names(patient_dir: Path) -> list[str]:
 
 
 def format_organ_name(name: str) -> str:
-    """Insert space before known prefix words in organ names."""
+    """Return *name* with a space inserted after a known leading prefix word."""
     _prefixes = (
         "left",
         "right",
@@ -71,7 +68,7 @@ def format_organ_name(name: str) -> str:
 
 
 def xdmf_display_name(stem: str) -> str:
-    """Convert an XDMF stem to a readable display name."""
+    """Return a readable display name for an XDMF *stem*."""
     if stem.startswith("lobule_sixth_"):
         suffix = stem[len("lobule_sixth_") :]
         if suffix:
@@ -83,7 +80,8 @@ def xdmf_display_name(stem: str) -> str:
 
 
 def iter_descriptor_paths() -> list[Path]:
-    """Return the sorted paths of every dataset descriptor JSON file under DATASETS_DIR; a ``.meta.json`` sidecar is a cache and is left out."""
+    """Return the sorted paths of every dataset descriptor JSON under DATASETS_DIR."""
+    # A .meta.json sidecar is a cache.
     return [
         p
         for p in sorted(DATASETS_DIR.rglob("*.json"))
@@ -97,15 +95,10 @@ def load_descriptor(path: Path) -> ProjectMetadata:
 
 
 def load_project_metadata() -> dict[str, ProjectMetadata]:
-    """Load and validate every dataset JSON under DATASETS_DIR; if VISFEM_DATASETS is set, only those keys.
-
-    Keys are the JSON file stems. A JSON that cannot be read or validated, or
-    whose key was already loaded from another JSON, is skipped with a warning
-    so that one bad descriptor cannot take the whole server down.
-    """
+    """Return ProjectMetadata for each readable, valid dataset JSON under DATASETS_DIR, keyed by file stem and filtered by ALLOWED_DATASETS."""
     result: dict[str, ProjectMetadata] = {}
     if not DATASETS_DIR.is_dir():
-        logger.warning(f"Datasets directory not found: {DATASETS_DIR} (set DATA_DIR)")
+        logger.warning(f"Datasets directory missing: {DATASETS_DIR} (set DATA_DIR)")
         return result
     for path in iter_descriptor_paths():
         key = path.stem
@@ -113,7 +106,7 @@ def load_project_metadata() -> dict[str, ProjectMetadata]:
             continue
         if key in result:
             logger.warning(
-                f"Skipping '{path}': dataset key '{key}' was already loaded from another JSON"
+                f"Skipping '{path}': dataset key '{key}' is already loaded from another JSON"
             )
             continue
         try:
@@ -125,7 +118,7 @@ def load_project_metadata() -> dict[str, ProjectMetadata]:
 
 
 def patient_numbers(ddir: Path) -> list[int]:
-    """Return the sorted numeric ids of the ``patient_<n>`` folders in *ddir*; other folders are ignored."""
+    """Return the sorted numeric ids of the ``patient_<n>`` folders in *ddir*."""
     numbers: list[int] = []
     for d in ddir.glob("patient_*"):
         suffix = d.name.removeprefix("patient_")
@@ -137,7 +130,7 @@ def patient_numbers(ddir: Path) -> list[int]:
 def group_by_organ_system(
     metadata: dict[str, ProjectMetadata],
 ) -> dict[str, list[tuple[str, ProjectMetadata]]]:
-    """Group datasets by first organ_system value, sorted alphabetically by name."""
+    """Return the datasets in *metadata* grouped by first organ_system value, groups sorted by that value and entries by sort_order then name."""
     groups: dict[str, list[tuple[str, ProjectMetadata]]] = {}
     for key, meta in metadata.items():
         system = meta.organ_system[0].value
@@ -145,7 +138,9 @@ def group_by_organ_system(
         groups[system].append((key, meta))
 
     def _sort_key(t: tuple[str, ProjectMetadata]) -> tuple[int, str]:
+        """Return the (sort_order, name) sort key of a (key, meta) pair."""
         meta = t[1]
+        # 999 sorts entries without sort_order last.
         return (meta.sort_order if meta.sort_order is not None else 999, meta.name)
 
     return {
@@ -154,7 +149,7 @@ def group_by_organ_system(
 
 
 def dataset_dir(meta: ProjectMetadata) -> Path:
-    """Resolve the filesystem directory for a dataset from its metadata."""
+    """Return the dataset directory for *meta*."""
     return DATASETS_DIR / meta.data_path
 
 
@@ -166,7 +161,7 @@ def pvd_file_path(meta: ProjectMetadata) -> Path | None:
 
 
 def patient_subdir(ddir: Path, patient: int) -> Path:
-    """Return the ``patient_NN`` folder for *patient* under the dataset directory *ddir*."""
+    """Return the ``patient_NN`` folder for *patient* under *ddir*."""
     return ddir / f"patient_{int(patient):02d}"
 
 
@@ -176,7 +171,6 @@ def active_timeseries_path(
     """Return the active timeseries file of *meta*: its PVD for a PVD dataset, else the XDMF in *ddir* named by ``state.active_xdmf``, else the first XDMF in *ddir*, else None."""
     if meta.mesh_format == "PVD":
         return pvd_file_path(meta)
-    # The glob runs only for XDMF datasets; a PVD dataset returns above.
     xdmf_files = discover_xdmf(ddir)
     stem: str | None = state.active_xdmf
     return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
@@ -196,7 +190,7 @@ def grasp_phase_count(pvd_path: Path) -> int:
 
 
 def meta_to_state(meta: ProjectMetadata) -> dict[str, object]:
-    """Serialize a ProjectMetadata instance to a plain dict for Trame state."""
+    """Return a plain dict of *meta* for Trame state."""
     return {
         "name": meta.name,
         "pi": meta.pi,

@@ -3,14 +3,8 @@
 # Usage on the server:
 #   docker compose -f compose.deploy.yml up -d --build
 #
-# The data (mesh files) lives in this repo at ./data/datasets/ and is mounted
-# read-only into the container. DATA_DIR tells the app where to find it (the
-# package is installed non-editable, so its default relative path does not
-# resolve to the repo at runtime).
-#
-# TRAME_USE_HOST rewrites the WebSocket sessionURL handed to the browser so it
-# points at the public HTTPS host behind the reverse proxy. Change it to match
-# the app's subdomain.
+# Mesh data lives at ./data/datasets/ and mounts read-only; DATA_DIR points the app at the mount, since the non-editable install's default data path lies inside the venv.
+# TRAME_USE_HOST sets the browser's WebSocket sessionURL to the public HTTPS host behind the reverse proxy; set it to the app subdomain.
 
 services:
   visfem:
@@ -20,12 +14,12 @@ services:
     image: visfem:local
     container_name: visfem
     ports:
-      - "127.0.0.1:8080:80"        # localhost-only; only the reverse proxy reaches it
+      - "127.0.0.1:8080:80"        # reachable by the reverse proxy only
     restart: unless-stopped
     volumes:
-      - ./data:/deploy/data:ro     # repo data/, read-only into the container
+      - ./data:/deploy/data:ro
     environment:
       DATA_DIR: /deploy/data       # discovery.py reads /deploy/data/datasets
-      TRAME_USE_HOST: "wss://app.visfem.de"   # <-- the app subdomain
+      TRAME_USE_HOST: "wss://app.visfem.de"   # app subdomain
       # Public deployment exposes the SPP2311 subset
       VISFEM_DATASETS: "ia_ai4ia,avm_md,aneurysm,aneurysm_coils,heart,heart_ep,heart_iv,lobule_convergence,tibia_mesh,tibia_simulation,meniscus_regeneration,ami,liver_vessels,rectangle_one_tree,rectangle_two_trees,rectangle_quad_500,rectangle_quad_2000,rectangle_quad_3000,openknees_gen1,openknees_oks001,openknees_oks002,openknees_oks003,openknees_oks004,openknees_oks006,openknees_oks007,openknees_oks008,openknees_oks009"

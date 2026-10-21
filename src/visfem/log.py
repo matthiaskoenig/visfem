@@ -8,7 +8,7 @@ from visfem.console import console
 
 
 def get_logger(name: str, level: int = logging.WARNING) -> logging.Logger:
-    """Get new custom logger for name."""
+    """Return the logger for name at level with a RichHandler attached."""
     formatter = logging.Formatter(
         fmt="%(message)s",
         datefmt="[%X]",

@@ -7,10 +7,10 @@ from visfem.engine.colors import scheme_to_hex
 # Clinical Claes healing-zone colors (red=bad, green=good, grey=resorption).
 _CLINICAL: list[str] = ["#7f7f7f", "#bcbd22", "#d62728", "#ff7f0e", "#2ca02c"]
 
-# Qual-paired palette (11 distinct colors) for datasets with many regions.
+# PyVista qual_paired scheme (id 60), 11 colors, for datasets with many regions.
 _PAIRED: list[str] = scheme_to_hex(60)
 
-# Tableau 10 colors
+# Tableau 10 colors.
 _TABLEAU: list[str] = [
     "#4e79a7",
     "#f28e2b",
@@ -24,7 +24,7 @@ _TABLEAU: list[str] = [
     "#bab0ac",
 ]
 
-# Wong (2011) - "Points of view: Color blindness", Nature Methods 8:441.
+# Wong (2011), "Points of view: Color blindness", Nature Methods 8:441.
 _WONG: list[str] = [
     "#000000",
     "#e69f00",
@@ -36,7 +36,7 @@ _WONG: list[str] = [
     "#cc79a7",
 ]
 
-# Paul Tol's Bright scheme, optimised for all colour-vision deficiencies.
+# Paul Tol's Bright scheme, optimized for all color-vision deficiencies.
 _TOL_BRIGHT: list[str] = [
     "#4477aa",
     "#ee6677",
@@ -55,9 +55,9 @@ CATEGORICAL_PALETTES: dict[str, list[str]] = {
     "tol_bright": _TOL_BRIGHT,
 }
 
-# UI metadata for the palette picker (name, display label, preview swatches).
-_SWATCH_COUNT = 5  # normalized count - all palettes show same number of dots
+_SWATCH_COUNT = 5  # swatches shown per palette in the picker
 
+# UI metadata for the palette picker (name, display label, preview swatches).
 CATEGORICAL_META: list[dict] = [
     {"name": "clinical", "label": "Clinical", "swatches": _CLINICAL[:_SWATCH_COUNT]},
     {"name": "paired", "label": "Paired", "swatches": _PAIRED[:_SWATCH_COUNT]},
@@ -99,7 +99,7 @@ CONTINUOUS_CMAPS: dict[str, str] = {
     ),
 }
 
-# UI metadata for the colormap picker (name, display label, gradient CSS string)
+# UI metadata for the colormap picker (name, display label, gradient CSS string).
 CONTINUOUS_META: list[dict] = [
     {"name": "viridis", "label": "Viridis", "gradient": CONTINUOUS_CMAPS["viridis"]},
     {"name": "plasma", "label": "Plasma", "gradient": CONTINUOUS_CMAPS["plasma"]},

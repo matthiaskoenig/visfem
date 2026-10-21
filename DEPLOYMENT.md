@@ -8,10 +8,9 @@ Host VisFEM on a Linux server:
 The setup is three pieces behind Caddy: a static landing page, the app in Docker,
 and Caddy routing by hostname and handling HTTPS.
 
-NOTE: `visfem.de` is currently served by GitHub Pages from the repo's `docs/` folder.
-This deployment moves it onto the server, so section 2 repoints the `visfem.de` DNS
-record from GitHub Pages to the server IP. Once live, the GitHub Pages site is
-unused and can be retired.
+`visfem.de` is served by GitHub Pages from the repo's `docs/` folder. Section 2
+repoints the `visfem.de` DNS record from GitHub Pages to the server IP. Once the
+server is live, retire the GitHub Pages site.
 
 ---
 
@@ -46,26 +45,23 @@ Requirements:
   ```bash
   sudo ufw allow 80,443/tcp    # only if ufw is in use
   ```
-- The dataset files (meshes). These are not in the git repo and are staged from the
-  lab NAS in section 5.
+- The dataset files (meshes), which live on the lab NAS. Section 5 stages them.
 
 ---
 
 ## 2. DNS
 
-The landing page and the app run on the same machine and are distinguished by
-hostname, so each needs its own DNS name. Create two A records pointing at the
-server IP:
+Create two A records pointing at the server IP, one per hostname Caddy routes on:
 
 | Type | Name             | Value           |
 |------|------------------|-----------------|
 | A    | `visfem.de`      | `<server IP>`   |
 | A    | `app.visfem.de`  | `<server IP>`   |
 
-If `visfem.de` currently points at GitHub Pages, change it to the server IP.
+If `visfem.de` points at GitHub Pages, change it to the server IP.
 `app.visfem.de` is new. Add matching `AAAA` records if the server has IPv6.
 
-Caddy cannot issue certificates until both names resolve to the server. Verify:
+Caddy issues certificates once both names resolve to the server. Verify:
 
 ```bash
 dig +short visfem.de
@@ -76,13 +72,13 @@ Both print the server IP once DNS has propagated.
 
 ---
 
-## 3. Prerequisites (on the server)
+## 3. Server prerequisites
 
 ### Docker + Compose
 
 ```bash
 curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker $USER     # run docker without sudo; re-login to apply
+sudo usermod -aG docker $USER     # grants $USER docker access; re-login to apply
 ```
 
 Re-login (or `newgrp docker`), then confirm:
@@ -109,7 +105,7 @@ section 7). Confirm with `systemctl status caddy`.
 
 ---
 
-## 4. Get the code
+## 4. Code checkout
 
 ```bash
 sudo mkdir -p /opt && cd /opt
@@ -122,21 +118,21 @@ All later commands run from `/opt/visfem`.
 
 ---
 
-## 5. Stage the dataset files
+## 5. Dataset files
 
 Copy the dataset files from the lab NAS into the repo's data folder.
 
 ```bash
-# Adjust the source to the NAS mount/host. Trailing slashes copy contents into contents.
+# Set the source to the NAS mount or host; trailing slashes copy folder contents into the target folder.
 rsync -av <nas>:/path/to/data/datasets/  /opt/visfem/data/datasets/
 ```
 
-Staging all datasets is fine even if the public site shows only some; the public
-subset is controlled by an allowlist in `compose.deploy.yml` (section 6).
+Stage all datasets. The allowlist in `compose.deploy.yml` (section 6) selects the
+public subset.
 
 ---
 
-## 6. Start the web app
+## 6. Web app
 
 ```bash
 cd /opt/visfem
@@ -146,15 +142,14 @@ docker compose -f compose.deploy.yml up -d --build
 This reads [`compose.deploy.yml`](compose.deploy.yml) and:
 
 - builds the image `visfem:local` from the [`Dockerfile`](Dockerfile);
-- starts the container `visfem`, listening only on `127.0.0.1:8080` (Caddy proxies
-  to it; the port is not exposed to the internet);
+- starts the container `visfem` on `127.0.0.1:8080`, the loopback port Caddy
+  proxies to;
 - mounts `./data` read-only and points the app at it via `DATA_DIR`;
-- sets `TRAME_USE_HOST: "wss://app.visfem.de"` so the browser opens its WebSocket to
-  the correct public address;
+- sets `TRAME_USE_HOST: "wss://app.visfem.de"`, the public address the browser opens
+  its WebSocket to;
 - restricts the public app to the datasets listed in `VISFEM_DATASETS`, a
   comma-separated allowlist of dataset keys (a key is a descriptor's `.json`
-  filename without the extension, e.g. `heart`). Datasets on disk but not listed
-  stay hidden.
+  filename stem, e.g. `heart`). Unlisted datasets stay hidden.
 
 Confirm it is up:
 
@@ -163,12 +158,12 @@ docker compose -f compose.deploy.yml ps        # STATUS: Up
 curl -I http://127.0.0.1:8080/                 # HTTP/1.1 200
 ```
 
-Changing any of these settings later means editing that one file
-([`compose.deploy.yml`](compose.deploy.yml)) and re-running
+Change a setting by editing [`compose.deploy.yml`](compose.deploy.yml) and re-running
 `docker compose -f compose.deploy.yml up -d`.
+
 ---
 
-## 7. Configure Caddy
+## 7. Caddy configuration
 
 Copy the landing page to Caddy's web root:
 
@@ -177,8 +172,8 @@ sudo mkdir -p /var/www/landing
 sudo cp -r /opt/visfem/deploy/landing/. /var/www/landing/
 ```
 
-The landing page ([`deploy/landing/`](deploy/landing/)) is ready as-is; its tiles
-already point at `https://app.visfem.de/?model=...`.
+The landing page ([`deploy/landing/`](deploy/landing/)) ships with tiles that point at
+`https://app.visfem.de/?model=...`.
 
 Back up any existing Caddy config, then write the new one:
 
@@ -209,7 +204,7 @@ provided the section 2 DNS points at this server and ports 80/443 are open.
 
 ---
 
-## 8. Verify
+## 8. Verification
 
 - `https://visfem.de/` shows the landing page with dataset tiles.
 - `https://app.visfem.de/` loads the app; selecting a dataset renders its mesh.
@@ -237,18 +232,17 @@ docker compose -f compose.deploy.yml down          # stop
 docker compose -f compose.deploy.yml up -d --build # rebuild after code/config changes
 ```
 
-- The container uses `restart: unless-stopped`, so it returns after a reboot or
-  crash.
+- `restart: unless-stopped` brings the container back after a reboot or crash.
 - Update the code with `git pull`, then rebuild
   (`docker compose -f compose.deploy.yml up -d --build`). Staged data and the
-  landing page are untouched.
+  landing page stay in place.
 - Concurrency: set in [`setup/launcher.json`](setup/launcher.json), field
-  `resources` → `port_range`. Each visitor uses one port from the range, so the
-  number of ports equals the number of simultaneous sessions. The default
-  `[9001, 9006]` is 6 sessions. Widening the range (e.g. `[9001, 9020]`) requires a
-  rebuild, since `launcher.json` is baked into the image. `"timeout": 60` in the
-  same file reclaims an idle session after 60 seconds. Memory scales with sessions
-  and dataset size; check `docker stats visfem` under real use before widening.
+  `resources` → `port_range`. Each visitor holds one port from the range; the port
+  count is the session cap. The default `[9001, 9006]` is 6 sessions. Widening the
+  range (e.g. `[9001, 9020]`) needs a rebuild: `launcher.json` is baked into the
+  image. `"timeout": 60` in the same file reclaims an idle session after 60 seconds.
+  Memory scales with sessions and dataset size; check `docker stats visfem` under
+  real use before widening.
 
 ---
 
@@ -279,7 +273,7 @@ public.
 ## Appendix B: deployment files in the repo
 
 - [`Dockerfile`](Dockerfile): builds the app image from the `kitware/trame:uv` base
-  (Python 3.13) and installs OSMesa for GPU-less 3D rendering.
+  (Python 3.13) and installs OSMesa for software 3D rendering.
 - [`compose.deploy.yml`](compose.deploy.yml): the production Compose file (image
   name, port binding, data mount, and the `DATA_DIR` / `TRAME_USE_HOST` /
   `VISFEM_DATASETS` settings).

@@ -1,5 +1,9 @@
 """Right panel: view controls (opacity, field, color, playback, scalar bar)."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from functools import partial
+
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
@@ -8,12 +12,10 @@ from visfem.ui.theme import (
     FS_MD,
     FS_SM,
     FS_XS,
-    FW_BOLD,
     GAP_LG,
     GAP_MD,
     GAP_SM,
     GAP_XS,
-    LS_WIDEST,
     OP_DIM,
     OP_SUBDUED,
     PAD_LG,
@@ -23,9 +25,28 @@ from visfem.ui.theme import (
     TRACK_DARK,
     TRACK_LIGHT,
 )
+from visfem.ui.widgets import icon_button, section_header
 
 # Slider track color, per theme.
 _TRACK_COLOR = (f"dark_mode ? '{TRACK_DARK}' : '{TRACK_LIGHT}'",)
+
+# Kwargs shared by the opacity and playback sliders.
+_SLIDER_KW: dict[str, object] = {
+    "density": "compact",
+    "hide_details": True,
+    "color": ACCENT,
+    "track_color": _TRACK_COLOR,
+    "thumb_label": False,
+    "style": "flex:1; margin:0; padding:0;",
+}
+
+# Underlined text field for one colour limit of the scalar bar.
+_CLIM_INPUT_STYLE = (
+    f"width:52px; flex-shrink:0; font-size:{FS_SM}; font-variant-numeric:tabular-nums; "
+    "background:transparent; border:none; "
+    "border-bottom:1px solid rgba(var(--v-border-color),var(--v-border-opacity)); "
+    "color:inherit; outline:none; padding:1px 2px; text-align:center; cursor:text;"
+)
 
 
 def build_right_panel(
@@ -43,34 +64,22 @@ def build_right_panel(
     with html.Div(
         style=f"padding:{PAD_MD} {PAD_LG}; display:flex; flex-direction:column; height:100%; overflow-y:auto; box-sizing:border-box;"
     ):
-        _section_header("mdi-eye-outline", "View", "right_view_open")
+        section_header("mdi-eye-outline", "View", "right_view_open")
 
         with html.Div(v_show="right_view_open"):
             # Single row: [camera reset] | [opacity icon] [opacity slider]
             with html.Div(
                 style=f"display:flex; align-items:center; gap:{GAP_MD}; margin-bottom:12px; padding-right:26px;"
             ):
-                with v3.VTooltip(
-                    v_if="!camera_resetting", text="Reset camera", location="bottom"
-                ):
-                    with v3.Template(v_slot_activator="{ props }"):
-                        v3.VBtn(
-                            icon="mdi-camera-retake-outline",
-                            variant="text",
-                            density="compact",
-                            size="small",
-                            disabled=("busy",),
-                            click=on_reset_camera,
-                            v_bind="props",
-                        )
-                v3.VProgressCircular(
-                    v_else=True,
-                    indeterminate=True,
-                    color=ACCENT,
-                    size="20",
-                    width="2",
-                    style="flex-shrink:0;",
+                icon_button(
+                    "Reset camera",
+                    v_if="!camera_resetting",
+                    icon="mdi-camera-retake-outline",
+                    size="small",
+                    disabled=("busy",),
+                    click=on_reset_camera,
                 )
+                _busy_spinner()
                 html.Span(
                     style=f"width:1px; height:18px; background:{SEP_NORMAL}; flex-shrink:0;"
                 )
@@ -84,26 +93,14 @@ def build_right_panel(
                             style=f"opacity:{OP_DIM}; flex-shrink:0; cursor:default;",
                             v_bind="props",
                         )
-                v3.VProgressCircular(
-                    v_else=True,
-                    indeterminate=True,
-                    color=ACCENT,
-                    size="20",
-                    width="2",
-                    style="flex-shrink:0;",
-                )
+                _busy_spinner()
                 v3.VSlider(
                     v_model=("ctrl_opacity", 0.9),
                     min=0.05,
                     max=0.95,
                     step=0.05,
-                    density="compact",
-                    hide_details=True,
-                    color=ACCENT,
-                    track_color=_TRACK_COLOR,
-                    thumb_label=False,
                     disabled=("autoplay || busy",),
-                    style="flex:1; margin:0; padding:0;",
+                    **_SLIDER_KW,
                 )
 
         v3.VDivider(style="margin-bottom:10px;")
@@ -111,7 +108,7 @@ def build_right_panel(
         # Fibers: only when the dataset has a fibre overlay.
 
         with html.Div(v_if="has_fibers"):
-            _section_header("mdi-grain", "Fibers", "right_fibers_open")
+            section_header("mdi-grain", "Fibers", "right_fibers_open")
             with html.Div(v_show="right_fibers_open", style="margin-bottom:4px;"):
                 v3.VSwitch(
                     v_model=("show_fibers", False),
@@ -127,61 +124,35 @@ def build_right_panel(
         with html.Div(
             v_if="available_scalar_fields && available_scalar_fields.length > 1"
         ):
-            _section_header(
+            section_header(
                 "mdi-layers-outline", "Scalar Field", "right_scalar_field_open"
             )
             with html.Div(v_show="right_scalar_field_open"):
-                with v3.VList(
-                    density="compact",
-                    nav=True,
-                    bg_color="transparent",
+                with _choice_list(
+                    "field in available_scalar_fields",
+                    "active_scalar_field",
+                    on_select_scalar_field,
                     style="padding:0; margin-bottom:4px; max-height:160px; overflow-y:auto;",
                 ):
-                    with html.Div(
-                        v_for="field in available_scalar_fields", key="field.name"
-                    ):
-                        with v3.VListItem(
-                            density="compact",
-                            click=(on_select_scalar_field, "[field.name]"),
-                            active=("active_scalar_field === field.name",),
-                            active_color=ACCENT,
-                            disabled=("busy",),
-                        ):
-                            with v3.Template(v_slot_title=""):
-                                html.Span(
-                                    "{{ field.label }}", style=f"font-size:{FS_MD};"
-                                )
+                    html.Span("{{ field.label }}", style=f"font-size:{FS_MD};")
             v3.VDivider(style="margin-bottom:10px;")
 
-        with html.Div(
-            style=f"display:flex; align-items:center; gap:{GAP_MD}; margin-bottom:6px; user-select:none;",
-        ):
-            with html.Div(
-                style="display:flex; align-items:center; gap:6px; flex:1; cursor:pointer;",
-                click="right_color_open = !right_color_open",
-            ):
-                v3.VIcon("mdi-palette-outline", size="small", color=ACCENT)
-                html.Span(
-                    "Color",
-                    style=f"font-size:{FS_MD}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:{OP_SUBDUED};",
-                )
-            with v3.VTooltip(text="Reverse color order", location="bottom"):
-                with v3.Template(v_slot_activator="{ props }"):
-                    v3.VBtn(
-                        icon="mdi-swap-horizontal",
-                        variant=("color_reversed ? 'tonal' : 'text'",),
-                        density="compact",
-                        size="x-small",
-                        color=(f"color_reversed ? '{ACCENT}' : ''",),
-                        disabled=("active_dataset === null || busy",),
-                        click=on_toggle_color_reversed,
-                        v_bind="props",
-                    )
-            with html.Div(
-                style="cursor:pointer;", click="right_color_open = !right_color_open"
-            ):
-                v3.VIcon("mdi-chevron-down", size="small", v_show="right_color_open")
-                v3.VIcon("mdi-chevron-right", size="small", v_show="!right_color_open")
+        # The reverse toggle sits in the header outside the collapse click target.
+        section_header(
+            "mdi-palette-outline",
+            "Color",
+            "right_color_open",
+            action=partial(
+                icon_button,
+                "Reverse color order",
+                icon="mdi-swap-horizontal",
+                variant=("color_reversed ? 'tonal' : 'text'",),
+                size="x-small",
+                color=(f"color_reversed ? '{ACCENT}' : ''",),
+                disabled=("active_dataset === null || busy",),
+                click=on_toggle_color_reversed,
+            ),
+        )
 
         with html.Div(v_show="right_color_open"):
             # Categorical palettes (no continuous field active)
@@ -189,79 +160,54 @@ def build_right_panel(
                 v_if="scalar_bar === null || scalar_bar === undefined",
                 style="margin-bottom:8px;",
             ):
-                with v3.VList(
-                    density="compact",
-                    nav=True,
-                    bg_color="transparent",
-                    style="padding:0;",
+                with _choice_list(
+                    "palette in categorical_palette_meta",
+                    "active_categorical_palette",
+                    on_select_color_scheme,
                 ):
                     with html.Div(
-                        v_for="palette in categorical_palette_meta", key="palette.name"
+                        style=f"display:flex; align-items:center; gap:{GAP_MD};"
                     ):
-                        with v3.VListItem(
-                            density="compact",
-                            click=(on_select_color_scheme, "[palette.name]"),
-                            active=("active_categorical_palette === palette.name",),
-                            active_color=ACCENT,
-                            disabled=("busy",),
+                        html.Span(
+                            "{{ palette.label }}",
+                            style=f"font-size:{FS_MD}; width:72px; flex-shrink:0;",
+                        )
+                        with html.Div(
+                            style=(
+                                f"'display:flex; gap:{GAP_XS}; ' + (color_reversed ? 'flex-direction:row-reverse;' : '')",
+                            )
                         ):
-                            with v3.Template(v_slot_title=""):
-                                with html.Div(
-                                    style=f"display:flex; align-items:center; gap:{GAP_MD};"
-                                ):
-                                    html.Span(
-                                        "{{ palette.label }}",
-                                        style=f"font-size:{FS_MD}; width:72px; flex-shrink:0;",
+                            with html.Div(
+                                v_for="(swatch, i) in palette.swatches", key="i"
+                            ):
+                                html.Div(
+                                    style=(
+                                        f"'{SWATCH_STYLE} background:' + swatch + ';'",
                                     )
-                                    with html.Div(
-                                        style=(
-                                            f"'display:flex; gap:{GAP_XS}; ' + (color_reversed ? 'flex-direction:row-reverse;' : '')",
-                                        )
-                                    ):
-                                        with html.Div(
-                                            v_for="(swatch, i) in palette.swatches",
-                                            key="i",
-                                        ):
-                                            html.Div(
-                                                style=(
-                                                    f"'{SWATCH_STYLE} background:' + swatch + ';'",
-                                                )
-                                            )
+                                )
 
             # Continuous colormaps (continuous field active)
             with html.Div(
                 v_if="scalar_bar !== null && scalar_bar !== undefined",
                 style="margin-bottom:8px;",
             ):
-                with v3.VList(
-                    density="compact",
-                    nav=True,
-                    bg_color="transparent",
-                    style="padding:0;",
+                with _choice_list(
+                    "cmap in continuous_cmap_meta",
+                    "active_continuous_cmap",
+                    on_select_color_scheme,
                 ):
                     with html.Div(
-                        v_for="cmap in continuous_cmap_meta", key="cmap.name"
+                        style=f"display:flex; align-items:center; gap:{GAP_LG};"
                     ):
-                        with v3.VListItem(
-                            density="compact",
-                            click=(on_select_color_scheme, "[cmap.name]"),
-                            active=("active_continuous_cmap === cmap.name",),
-                            active_color=ACCENT,
-                            disabled=("busy",),
-                        ):
-                            with v3.Template(v_slot_title=""):
-                                with html.Div(
-                                    style=f"display:flex; align-items:center; gap:{GAP_LG};"
-                                ):
-                                    html.Span(
-                                        "{{ cmap.label }}",
-                                        style=f"font-size:{FS_MD}; width:52px; flex-shrink:0;",
-                                    )
-                                    html.Div(
-                                        style=(
-                                            "'flex:1; height:14px; border-radius:4px; background:' + cmap.gradient + '; ' + (color_reversed ? 'transform:scaleX(-1);' : '')",
-                                        )
-                                    )
+                        html.Span(
+                            "{{ cmap.label }}",
+                            style=f"font-size:{FS_MD}; width:52px; flex-shrink:0;",
+                        )
+                        html.Div(
+                            style=(
+                                "'flex:1; height:14px; border-radius:4px; background:' + cmap.gradient + '; ' + (color_reversed ? 'transform:scaleX(-1);' : '')",
+                            )
+                        )
 
         # Regions: only for categorical datasets with a legend.
 
@@ -269,43 +215,20 @@ def build_right_panel(
             v3.VDivider(style="margin-bottom:10px;")
 
             # Header carries a "reset all" action, shown only once something is overridden.
-            with html.Div(
-                style=f"display:flex; align-items:center; gap:{GAP_MD}; margin-bottom:6px; user-select:none;",
-            ):
-                with html.Div(
-                    style="display:flex; align-items:center; gap:6px; flex:1; cursor:pointer;",
-                    click="right_regions_open = !right_regions_open",
-                ):
-                    v3.VIcon("mdi-tag-multiple-outline", size="small", color=ACCENT)
-                    html.Span(
-                        "Regions",
-                        style=f"font-size:{FS_MD}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:{OP_SUBDUED};",
-                    )
-                with v3.VTooltip(
+            section_header(
+                "mdi-tag-multiple-outline",
+                "Regions",
+                "right_regions_open",
+                action=partial(
+                    icon_button,
+                    "Reset all region colors",
                     v_if="Object.keys(category_colors_active || {}).length > 0",
-                    text="Reset all region colors",
-                    location="bottom",
-                ):
-                    with v3.Template(v_slot_activator="{ props }"):
-                        v3.VBtn(
-                            icon="mdi-backup-restore",
-                            variant="text",
-                            density="compact",
-                            size="x-small",
-                            disabled=("busy",),
-                            click=(on_reset_category_colors, "[]"),
-                            v_bind="props",
-                        )
-                with html.Div(
-                    style="cursor:pointer;",
-                    click="right_regions_open = !right_regions_open",
-                ):
-                    v3.VIcon(
-                        "mdi-chevron-down", size="small", v_show="right_regions_open"
-                    )
-                    v3.VIcon(
-                        "mdi-chevron-right", size="small", v_show="!right_regions_open"
-                    )
+                    icon="mdi-backup-restore",
+                    size="x-small",
+                    disabled=("busy",),
+                    click=(on_reset_category_colors, "[]"),
+                ),
+            )
 
             with html.Div(v_show="right_regions_open"):
                 with html.Div(
@@ -334,88 +257,58 @@ def build_right_panel(
 
         with html.Div(v_if="n_steps > 1"):
             v3.VDivider(style="margin-bottom:10px;")
-            _section_header(
-                "mdi-play-circle-outline", "Playback", "right_playback_open"
-            )
+            section_header("mdi-play-circle-outline", "Playback", "right_playback_open")
 
             with html.Div(v_show="right_playback_open"):
                 with html.Div(
                     style=f"display:flex; align-items:center; gap:{GAP_SM}; margin-bottom:4px;"
                 ):
-                    with v3.VTooltip(
-                        text=("autoplay ? 'Pause animation' : 'Play animation'",),
-                        location="bottom",
-                    ):
-                        with v3.Template(v_slot_activator="{ props }"):
-                            v3.VBtn(
-                                icon=("autoplay ? 'mdi-pause' : 'mdi-play'",),
-                                variant=("autoplay ? 'tonal' : 'text'",),
-                                density="compact",
-                                size="x-small",
-                                disabled=("loading || busy",),
-                                click=on_toggle_autoplay,
-                                v_bind="props",
-                            )
-                    with v3.VTooltip(text="Previous step", location="bottom"):
-                        with v3.Template(v_slot_activator="{ props }"):
-                            v3.VBtn(
-                                icon="mdi-chevron-left",
-                                variant="text",
-                                density="compact",
-                                size="x-small",
-                                disabled=("loading || busy || active_step === 0",),
-                                click=(
-                                    on_select_step,
-                                    "[Math.max(0, active_step - step_inc)]",
-                                ),
-                                v_bind="props",
-                            )
+                    icon_button(
+                        ("autoplay ? 'Pause animation' : 'Play animation'",),
+                        icon=("autoplay ? 'mdi-pause' : 'mdi-play'",),
+                        variant=("autoplay ? 'tonal' : 'text'",),
+                        size="x-small",
+                        disabled=("loading || busy",),
+                        click=on_toggle_autoplay,
+                    )
+                    icon_button(
+                        "Previous step",
+                        icon="mdi-chevron-left",
+                        size="x-small",
+                        disabled=("loading || busy || active_step === 0",),
+                        click=(on_select_step, "[Math.max(0, active_step - step_inc)]"),
+                    )
                     v3.VSlider(
                         v_model=("active_step", 0),
                         min=0,
                         max=("n_steps - 1",),
                         step=("step_inc",),
-                        density="compact",
-                        hide_details=True,
-                        color=ACCENT,
-                        track_color=_TRACK_COLOR,
-                        thumb_label=False,
                         disabled=("loading || busy",),
-                        style="flex:1; margin:0; padding:0;",
                         end=(on_select_step, "[active_step]"),
+                        **_SLIDER_KW,
                     )
-                    with v3.VTooltip(text="Next step", location="bottom"):
-                        with v3.Template(v_slot_activator="{ props }"):
-                            v3.VBtn(
-                                icon="mdi-chevron-right",
-                                variant="text",
-                                density="compact",
-                                size="x-small",
-                                disabled=(
-                                    "loading || busy || active_step + step_inc >= n_steps",
-                                ),
-                                click=(
-                                    on_select_step,
-                                    "[Math.min(n_steps - 1, active_step + step_inc)]",
-                                ),
-                                v_bind="props",
-                            )
+                    icon_button(
+                        "Next step",
+                        icon="mdi-chevron-right",
+                        size="x-small",
+                        disabled=(
+                            "loading || busy || active_step + step_inc >= n_steps",
+                        ),
+                        click=(
+                            on_select_step,
+                            "[Math.min(n_steps - 1, active_step + step_inc)]",
+                        ),
+                    )
                     # Playback speed: click to cycle the multiplier (applies live while playing).
-                    with v3.VTooltip(
-                        text="Playback speed (click to cycle)", location="bottom"
-                    ):
-                        with v3.Template(v_slot_activator="{ props }"):
-                            v3.VBtn(
-                                text=("playback_speed + 'x'",),
-                                variant="text",
-                                density="compact",
-                                size="x-small",
-                                disabled=("loading || busy",),
-                                click="playback_speed = [0.5, 1, 1.5, 2, 4]"
-                                "[([0.5, 1, 1.5, 2, 4].indexOf(playback_speed) + 1) % 5]",
-                                v_bind="props",
-                                style="min-width:34px; font-variant-numeric:tabular-nums;",
-                            )
+                    icon_button(
+                        "Playback speed (click to cycle)",
+                        text=("playback_speed + 'x'",),
+                        size="x-small",
+                        disabled=("loading || busy",),
+                        click="playback_speed = [0.5, 1, 1.5, 2, 4]"
+                        "[([0.5, 1, 1.5, 2, 4].indexOf(playback_speed) + 1) % 5]",
+                        style="min-width:34px; font-variant-numeric:tabular-nums;",
+                    )
 
                 html.Span(
                     "{{ step_times.length > 0 ? 't = ' + Number(step_times[active_step]).toFixed(1) : (active_step + 1) + ' / ' + n_steps }}",
@@ -426,7 +319,7 @@ def build_right_panel(
 
         with html.Div(v_if="scalar_bar !== null"):
             v3.VDivider(style="margin-bottom:10px;")
-            _section_header(
+            section_header(
                 "mdi-gradient-horizontal", "Scalar Bar", "right_scalar_bar_open"
             )
 
@@ -436,35 +329,13 @@ def build_right_panel(
                     style=f"font-size:{FS_SM}; opacity:{OP_DIM}; text-align:center; letter-spacing:0.04em; margin-bottom:5px;",
                 )
                 with html.Div(style=f"display:flex; align-items:center; gap:{GAP_LG};"):
-                    html.Input(
-                        type="text",
-                        v_model=("clim_input_min", ""),
-                        style=(
-                            f"width:52px; flex-shrink:0; font-size:{FS_SM}; font-variant-numeric:tabular-nums; "
-                            "background:transparent; border:none; "
-                            "border-bottom:1px solid rgba(var(--v-border-color),var(--v-border-opacity)); "
-                            "color:inherit; outline:none; padding:1px 2px; text-align:center; cursor:text;"
-                        ),
-                        blur=on_apply_clim,
-                        keydown="$event.key === 'Enter' && $event.target.blur()",
-                    )
+                    _clim_input("clim_input_min", on_apply_clim)
                     html.Div(
                         style=(
                             "'flex:1; height:16px; border-radius:4px; background:' + scalar_bar.gradient",
                         ),
                     )
-                    html.Input(
-                        type="text",
-                        v_model=("clim_input_max", ""),
-                        style=(
-                            f"width:52px; flex-shrink:0; font-size:{FS_SM}; font-variant-numeric:tabular-nums; "
-                            "background:transparent; border:none; "
-                            "border-bottom:1px solid rgba(var(--v-border-color),var(--v-border-opacity)); "
-                            "color:inherit; outline:none; padding:1px 2px; text-align:center; cursor:text;"
-                        ),
-                        blur=on_apply_clim,
-                        keydown="$event.key === 'Enter' && $event.target.blur()",
-                    )
+                    _clim_input("clim_input_max", on_apply_clim)
 
 
 def _category_swatch(
@@ -536,16 +407,43 @@ def _category_swatch(
                     )
 
 
-def _section_header(icon: str, label: str, state_var: str) -> None:
-    """Render a collapsible section header with icon, label, and chevron indicator."""
-    with html.Div(
-        style=f"display:flex; align-items:center; gap:{GAP_MD}; margin-bottom:6px; cursor:pointer; user-select:none;",
-        click=f"{state_var} = !{state_var}",
-    ):
-        v3.VIcon(icon, size="small", color=ACCENT)
-        html.Span(
-            label,
-            style=f"font-size:{FS_MD}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:{OP_SUBDUED}; flex:1;",
-        )
-        v3.VIcon("mdi-chevron-down", size="small", v_show=f"{state_var}")
-        v3.VIcon("mdi-chevron-right", size="small", v_show=f"!{state_var}")
+def _busy_spinner() -> None:
+    """Render the small accent spinner that replaces a control while its action runs, as the v-else of the preceding v-if element; returns None."""
+    v3.VProgressCircular(
+        v_else=True,
+        indeterminate=True,
+        color=ACCENT,
+        size="20",
+        width="2",
+        style="flex-shrink:0;",
+    )
+
+
+def _clim_input(state_key: str, on_apply_clim: object) -> None:
+    """Render one colour limit text field bound to state_key, applying on blur or Enter via on_apply_clim; returns None."""
+    html.Input(
+        type="text",
+        v_model=(state_key, ""),
+        style=_CLIM_INPUT_STYLE,
+        blur=on_apply_clim,
+        keydown="$event.key === 'Enter' && $event.target.blur()",
+    )
+
+
+@contextmanager
+def _choice_list(
+    loop: str, active_var: str, on_select: object, *, style: str = "padding:0;"
+) -> Iterator[None]:
+    """Open a compact single-choice VList over the v-for expression loop, marking the item whose name equals active_var and calling on_select with that name on click; yields inside the item title slot; style is the list CSS."""
+    var = loop.split(" in ")[0]
+    with v3.VList(density="compact", nav=True, bg_color="transparent", style=style):
+        with html.Div(v_for=loop, key=f"{var}.name"):
+            with v3.VListItem(
+                density="compact",
+                click=(on_select, f"[{var}.name]"),
+                active=(f"{active_var} === {var}.name",),
+                active_color=ACCENT,
+                disabled=("busy",),
+            ):
+                with v3.Template(v_slot_title=""):
+                    yield

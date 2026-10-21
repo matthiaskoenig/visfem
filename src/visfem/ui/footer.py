@@ -2,13 +2,13 @@
 
 from trame.widgets import html
 
-from visfem.ui.theme import ACCENT, FS_XS, OP_DIM
+from visfem.ui.theme import ACCENT, BAR_BG, BORDER_THEME, FS_XS, OP_DIM
 
 FOOTER_STYLE = (
     "display:flex; align-items:center; justify-content:center; flex-wrap:wrap; "
     "width:100%; min-height:20px; padding:2px 16px; "
-    "background-color: color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%); "
-    "border-top: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));"
+    f"background-color: {BAR_BG}; "
+    f"border-top: {BORDER_THEME};"
 )
 
 _LINK_STYLE = f"color:{ACCENT}; text-decoration:none; font-size:{FS_XS};"

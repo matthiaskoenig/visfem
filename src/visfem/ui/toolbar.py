@@ -4,6 +4,7 @@ from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
 from visfem.ui.theme import ACCENT, FS_XL, FW_SEMI, GAP_LG, LS_NORMAL, SEP_DIM
+from visfem.ui.widgets import icon_button
 
 _SEP_STYLE = (
     f"width:1px; height:20px; background:{SEP_DIM}; "
@@ -21,16 +22,12 @@ def build_toolbar(
     """Render toolbar: [left-toggle] | VisFEM ··· [theme][fullscreen][screenshot] | [VR] | [right-toggle]."""
     html.Div(style="width:15px;")
 
-    with v3.VTooltip(text="Toggle data panel", location="bottom"):
-        with v3.Template(v_slot_activator="{ props }"):
-            v3.VBtn(
-                icon="mdi-dock-left",
-                variant="text",
-                density="compact",
-                click=toggle_left_panel,
-                v_bind="props",
-                style=("left_panel_open ? '' : 'opacity:0.35'",),
-            )
+    icon_button(
+        "Toggle data panel",
+        icon="mdi-dock-left",
+        click=toggle_left_panel,
+        style=("left_panel_open ? '' : 'opacity:0.35'",),
+    )
 
     html.Span(style=_SEP_STYLE)
 
@@ -47,42 +44,30 @@ def build_toolbar(
     )
     v3.VSpacer()
 
-    with v3.VTooltip(text="Toggle theme", location="bottom"):
-        with v3.Template(v_slot_activator="{ props }"):
-            v3.VBtn(
-                icon=("dark_mode ? 'mdi-weather-sunny' : 'mdi-weather-night'",),
-                variant="text",
-                density="compact",
-                click=toggle_theme,
-                v_bind="props",
-            )
+    icon_button(
+        "Toggle theme",
+        icon=("dark_mode ? 'mdi-weather-sunny' : 'mdi-weather-night'",),
+        click=toggle_theme,
+    )
 
-    with v3.VTooltip(text="Toggle fullscreen", location="bottom"):
-        with v3.Template(v_slot_activator="{ props }"):
-            v3.VBtn(
-                icon=("fullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'",),
-                variant="text",
-                density="compact",
-                click=(
-                    "fullscreen = !fullscreen; "
-                    "fullscreen "
-                    "? $event.currentTarget.ownerDocument.documentElement.requestFullscreen() "
-                    ": $event.currentTarget.ownerDocument.exitFullscreen()"
-                ),
-                v_bind="props",
-                classes="ml-1",
-            )
+    icon_button(
+        "Toggle fullscreen",
+        icon=("fullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'",),
+        click=(
+            "fullscreen = !fullscreen; "
+            "fullscreen "
+            "? $event.currentTarget.ownerDocument.documentElement.requestFullscreen() "
+            ": $event.currentTarget.ownerDocument.exitFullscreen()"
+        ),
+        classes="ml-1",
+    )
 
-    with v3.VTooltip(text="Save screenshot", location="bottom"):
-        with v3.Template(v_slot_activator="{ props }"):
-            v3.VBtn(
-                icon="mdi-camera-outline",
-                variant="text",
-                density="compact",
-                click=take_screenshot,
-                v_bind="props",
-                classes="ml-1",
-            )
+    icon_button(
+        "Save screenshot",
+        icon="mdi-camera-outline",
+        click=take_screenshot,
+        classes="ml-1",
+    )
 
     html.Span(style=_SEP_STYLE)
 
@@ -98,15 +83,11 @@ def build_toolbar(
     #
     # html.Span(style=_SEP_STYLE)
 
-    with v3.VTooltip(text="Toggle controls panel", location="bottom"):
-        with v3.Template(v_slot_activator="{ props }"):
-            v3.VBtn(
-                icon="mdi-dock-right",
-                variant="text",
-                density="compact",
-                click=toggle_right_panel,
-                v_bind="props",
-                style=("right_panel_open ? '' : 'opacity:0.35'",),
-            )
+    icon_button(
+        "Toggle controls panel",
+        icon="mdi-dock-right",
+        click=toggle_right_panel,
+        style=("right_panel_open ? '' : 'opacity:0.35'",),
+    )
 
     html.Div(style="width:15px;")

@@ -1,5 +1,7 @@
 """Centralized design and style helpers for the VisFEM UI."""
 
+from visfem.engine.colors import BG_DARK_BOTTOM, BG_LIGHT_BOTTOM, css_rgb
+
 # Colors
 
 ACCENT = "#00897b"
@@ -14,8 +16,9 @@ TRACK_LIGHT = "rgba(0,0,0,0.12)"  # inactive slider track (light mode)
 SEP_DIM = "rgba(128,128,128,0.22)"  # toolbar dividers between button groups
 SEP_NORMAL = "rgba(128,128,128,0.30)"  # view-section inline separator
 
-BG_DARK = "rgb(20,26,26)"  # dark-mode viewport background
-BG_LIGHT = "rgb(255,255,255)"  # light-mode viewport background (white)
+# CSS colour of the div behind the VTK canvas: the bottom colour of each plotter gradient.
+BG_DARK = css_rgb(BG_DARK_BOTTOM)
+BG_LIGHT = css_rgb(BG_LIGHT_BOTTOM)
 
 # Custom Vuetify light theme (dark keeps Vuetify's stock theme).
 LIGHT_THEME_COLORS = {
@@ -83,3 +86,9 @@ SWATCH_STYLE = (
     f"display:inline-block; width:10px; height:10px; "
     f"border-radius:{RADIUS_FULL}; flex-shrink:0;"
 )
+
+# Toolbar and footer background: the surface colour darkened by a fixed mix.
+BAR_BG = "color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%)"
+
+# Hairline border in Vuetify's theme border colour.
+BORDER_THEME = "1px solid rgba(var(--v-border-color), var(--v-border-opacity))"

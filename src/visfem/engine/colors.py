@@ -3,8 +3,6 @@
 import re
 from typing import Any
 
-import pyvista.plotting.colors as pvc
-
 # ---- Background gradients ----
 
 BG_DARK_BOTTOM = (0.08, 0.10, 0.10)
@@ -13,11 +11,20 @@ BG_LIGHT_BOTTOM = (1.0, 1.0, 1.0)  # white viewport in light mode
 BG_LIGHT_TOP = (1.0, 1.0, 1.0)
 
 
+def css_rgb(rgb: tuple[float, float, float]) -> str:
+    """Return the CSS rgb() string for a unit-range (r, g, b) tuple, each channel rounded to 0..255."""
+    r, g, b = (round(c * 255) for c in rgb)
+    return f"rgb({r},{g},{b})"
+
+
 # ---- Color palettes ----
 
 
 def scheme_to_hex(scheme_id: int) -> list[str]:
     """Convert a PyVista color scheme to a list of hex color strings."""
+    # Imported here: the UI theme imports this module and stays free of the VTK stack.
+    import pyvista.plotting.colors as pvc
+
     colors = []
     for item in pvc.color_scheme_to_cycler(scheme_id):
         c = item["color"]

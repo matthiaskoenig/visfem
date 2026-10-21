@@ -20,8 +20,10 @@ from visfem.ui.left_panel import build_left_panel
 from visfem.ui.right_panel import build_right_panel
 from visfem.ui.theme import (
     ACCENT,
+    BAR_BG,
     BG_DARK,
     BG_LIGHT,
+    BORDER_THEME,
     LEFT_PANEL_WIDTH,
     LIGHT_THEME_COLORS,
     PAD_LG,
@@ -124,7 +126,7 @@ def build_ui(
 
         with layout.toolbar as toolbar:
             toolbar.density = "compact"
-            toolbar.style = "background-color: color-mix(in srgb, rgb(var(--v-theme-surface)) 88%, black 12%);"
+            toolbar.style = f"background-color: {BAR_BG};"
             toolbar.elevation = 0
             build_toolbar(
                 callbacks.on_toggle_theme,
@@ -290,7 +292,7 @@ def build_ui(
                         "display:flex; flex-direction:column; "
                         "transition:width 0.22s ease; ' + "
                         f"(xr_active || !left_panel_open ? 'width:0px;' : 'width:{LEFT_PANEL_WIDTH}; "
-                        "border-right:1px solid rgba(var(--v-border-color), var(--v-border-opacity));')",
+                        f"border-right:{BORDER_THEME};')",
                     ),
                 ):
                     build_left_panel(
@@ -396,7 +398,7 @@ def build_ui(
                         "display:flex; flex-direction:column; "
                         "transition:width 0.22s ease; ' + "
                         f"(xr_active || !right_panel_open ? 'width:0px;' : 'width:{RIGHT_PANEL_WIDTH}; "
-                        "border-left:1px solid rgba(var(--v-border-color), var(--v-border-opacity));')",
+                        f"border-left:{BORDER_THEME};')",
                     ),
                 ):
                     build_right_panel(

@@ -81,6 +81,20 @@ def xdmf_display_name(stem: str) -> str:
 # ---- Metadata ----
 
 
+def iter_descriptor_paths() -> list[Path]:
+    """Return the sorted paths of every dataset descriptor JSON file under DATASETS_DIR; a ``.meta.json`` sidecar is a cache and is left out."""
+    return [
+        p
+        for p in sorted(DATASETS_DIR.rglob("*.json"))
+        if not p.name.endswith(".meta.json")
+    ]
+
+
+def load_descriptor(path: Path) -> ProjectMetadata:
+    """Return the validated ProjectMetadata parsed from the JSON at *path*; raises ValidationError or OSError."""
+    return ProjectMetadata.model_validate_json(path.read_text(encoding="utf-8"))
+
+
 def load_project_metadata() -> dict[str, ProjectMetadata]:
     """Load and validate every dataset JSON under DATASETS_DIR; if VISFEM_DATASETS is set, only those keys.
 
@@ -92,9 +106,7 @@ def load_project_metadata() -> dict[str, ProjectMetadata]:
     if not DATASETS_DIR.is_dir():
         logger.warning(f"Datasets directory not found: {DATASETS_DIR} (set DATA_DIR)")
         return result
-    for path in sorted(DATASETS_DIR.rglob("*.json")):
-        if path.name.endswith(".meta.json"):
-            continue
+    for path in iter_descriptor_paths():
         key = path.stem
         if ALLOWED_DATASETS is not None and key not in ALLOWED_DATASETS:
             continue
@@ -104,9 +116,7 @@ def load_project_metadata() -> dict[str, ProjectMetadata]:
             )
             continue
         try:
-            result[key] = ProjectMetadata.model_validate_json(
-                path.read_text(encoding="utf-8")
-            )
+            result[key] = load_descriptor(path)
         except (ValidationError, ValueError, OSError) as e:
             reason = " ".join(line.strip() for line in str(e).splitlines()[:2])
             logger.warning(f"Skipping dataset '{path}': {reason}")

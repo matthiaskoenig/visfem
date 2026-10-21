@@ -27,7 +27,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from visfem.models import ProjectMetadata, RenderConfig, RendererName
+from visfem.models import RenderConfig, RendererName
 
 
 def _serve() -> int:
@@ -62,7 +62,12 @@ def cmd_renderers(_args: argparse.Namespace) -> int:
 
 def cmd_validate_data(_args: argparse.Namespace) -> int:
     """Validate every dataset JSON and confirm its referenced mesh files exist."""
-    from visfem.engine.discovery import DATASETS_DIR, dataset_dir
+    from visfem.engine.discovery import (
+        DATASETS_DIR,
+        dataset_dir,
+        iter_descriptor_paths,
+        load_descriptor,
+    )
     from visfem.engine.renderers import resolve_render_config
 
     if not DATASETS_DIR.is_dir():
@@ -71,11 +76,9 @@ def cmd_validate_data(_args: argparse.Namespace) -> int:
 
     errors: list[str] = []
     n_ok = 0
-    for path in sorted(DATASETS_DIR.rglob("*.json")):
-        if path.name.endswith(".meta.json"):
-            continue
+    for path in iter_descriptor_paths():
         try:
-            meta = ProjectMetadata.model_validate_json(path.read_text(encoding="utf-8"))
+            meta = load_descriptor(path)
         except ValidationError as e:
             errors.append(f"{path}: invalid metadata\n{_format_validation_error(e)}")
             continue
@@ -445,6 +448,43 @@ def _write_atomic(path: Path, data: bytes) -> None:
     tmp.replace(path)
 
 
+def _write_descriptor(dest: Path, descriptor: dict) -> None:
+    """Write *descriptor* to dest/<data_path>.json when that file is absent and print the outcome."""
+    path = dest / f"{descriptor['data_path']}.json"
+    if path.exists():
+        print(f"   descriptor already exists, leaving it as-is: {path.name}")
+    else:
+        path.write_text(json.dumps(descriptor, indent=2) + "\n")
+        print(f"   wrote dataset descriptor: {path.name}")
+
+
+def _print_fetch_header(
+    notice: str, page: str, data_dir: Path, target_label: str, target: Path
+) -> None:
+    """Print the license *notice* with its source *page*, then *data_dir* and the *target* path under *target_label*."""
+    print(f"{notice}\nSource: {page}\n")
+    print(f">> Target VisFEM data dir : {data_dir}")
+    print(f">> {target_label} will be placed in: {target}\n")
+
+
+def _print_next_steps(summary: str, data_dir: Path, launch_hint: str) -> None:
+    """Print the fetch epilogue: the *summary* line, the DATA_DIR export for *data_dir* and the *launch_hint*."""
+    print(
+        f"\n>> Done. {summary}\n\n"
+        "   Next steps:\n"
+        f'     export DATA_DIR="{data_dir}"\n'
+        "     visfem validate-data     # optional: confirm the datasets resolve\n"
+        f"     visfem                    # launch; {launch_hint}"
+    )
+
+
+def _report_download_failure(e: OSError, page: str) -> int:
+    """Print the download error *e* and the dataset *page* to stderr; returns exit code 1."""
+    print(f"error: download failed: {e}", file=sys.stderr)
+    print(f"       check your connection or see {page}", file=sys.stderr)
+    return 1
+
+
 def _extract_ircadb(zip_path: Path, dest: Path) -> int:
     """Extract per-patient .vtk meshes from the IRCADb archive into dest/patient_NN/.
 
@@ -493,13 +533,14 @@ def cmd_fetch_ircadb(args: argparse.Namespace) -> int:
     data_dir = _resolve_data_dir(args.data_dir)
     dest = data_dir / "datasets" / "ircadb"
 
-    print(
+    _print_fetch_header(
         "3D-IRCADb-01 is provided by IRCAD (Strasbourg) under its own license terms.\n"
-        "By downloading you agree to respect them and to cite the dataset.\n"
-        f"Source: {_IRCAD_PAGE}\n"
+        "By downloading you agree to respect them and to cite the dataset.",
+        _IRCAD_PAGE,
+        data_dir,
+        "IRCADb",
+        dest,
     )
-    print(f">> Target VisFEM data dir : {data_dir}")
-    print(f">> IRCADb will be placed in: {dest}\n")
     dest.mkdir(parents=True, exist_ok=True)
 
     # The archive lives in the data dir rather than a temp dir, so an
@@ -516,9 +557,7 @@ def cmd_fetch_ircadb(args: argparse.Namespace) -> int:
         try:
             _download_with_progress(_IRCAD_URL, zip_path)
         except OSError as e:
-            print(f"error: download failed: {e}", file=sys.stderr)
-            print(f"       check your connection or see {_IRCAD_PAGE}", file=sys.stderr)
-            return 1
+            return _report_download_failure(e, _IRCAD_PAGE)
 
     print(">> Extracting per-patient meshes ...")
     try:
@@ -540,19 +579,11 @@ def cmd_fetch_ircadb(args: argparse.Namespace) -> int:
         print("error: no patient meshes were extracted.", file=sys.stderr)
         return 1
 
-    descriptor = dest / "ircadb.json"
-    if descriptor.exists():
-        print(f"\n>> Descriptor already exists, leaving it as-is: {descriptor}")
-    else:
-        descriptor.write_text(json.dumps(_IRCAD_DESCRIPTOR, indent=2) + "\n")
-        print(f"\n>> Wrote dataset descriptor: {descriptor}")
-
-    print(
-        f"\n>> Done. Prepared {count} patient(s) under {dest}\n\n"
-        "   Next steps:\n"
-        f'     export DATA_DIR="{data_dir}"\n'
-        "     visfem validate-data     # optional: confirm the dataset resolves\n"
-        "     visfem                    # launch; '3D-IRCADb-01' appears in the sidebar"
+    _write_descriptor(dest, _IRCAD_DESCRIPTOR)
+    _print_next_steps(
+        f"Prepared {count} patient(s) under {dest}",
+        data_dir,
+        "'3D-IRCADb-01' appears in the sidebar",
     )
     return 0
 
@@ -746,15 +777,6 @@ def openknee_gen1_descriptor() -> dict:
     }
 
 
-def _write_descriptor(dest: Path, descriptor: dict) -> None:
-    path = dest / f"{descriptor['data_path']}.json"
-    if path.exists():
-        print(f"   descriptor already exists, leaving it as-is: {path.name}")
-    else:
-        path.write_text(json.dumps(descriptor, indent=2) + "\n")
-        print(f"   wrote dataset descriptor: {path.name}")
-
-
 def _fetch_openknee_specimen(specimen: str, dest: Path) -> int:
     """Download one specimen's 16 model surfaces into dest; returns the file count.
 
@@ -825,14 +847,15 @@ def cmd_fetch_openknee(args: argparse.Namespace) -> int:
         )
         return 2
 
-    print(
+    _print_fetch_header(
         "Open Knee(s) is provided by the Open Knee(s) Development Team (Cleveland Clinic)\n"
         "under Creative Commons terms (CC BY-SA 3.0 in the repository, CC BY 4.0 on the\n"
-        "project page). By downloading you agree to attribute and cite the dataset.\n"
-        f"Source: {_OPENKNEE_PAGE}\n"
+        "project page). By downloading you agree to attribute and cite the dataset.",
+        _OPENKNEE_PAGE,
+        data_dir,
+        "Datasets",
+        datasets,
     )
-    print(f">> Target VisFEM data dir : {data_dir}")
-    print(f">> Datasets will be placed in: {datasets}\n")
 
     try:
         license_text = _fetch_bytes(f"{_OPENKNEE_SVN}/license.txt")
@@ -856,9 +879,7 @@ def cmd_fetch_openknee(args: argparse.Namespace) -> int:
             print(f"   + openknees_gen1: {n_cells} elements")
             done.append("openknees_gen1")
     except OSError as e:
-        print(f"error: download failed: {e}", file=sys.stderr)
-        print(f"       check your connection or see {_OPENKNEE_PAGE}", file=sys.stderr)
-        return 1
+        return _report_download_failure(e, _OPENKNEE_PAGE)
     except (RuntimeError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         print(
@@ -870,38 +891,45 @@ def cmd_fetch_openknee(args: argparse.Namespace) -> int:
     if not done:
         print("nothing to do: no specimens selected and --no-gen1 given")
         return 0
-    print(
-        f"\n>> Done. Prepared {len(done)} dataset(s) under {datasets}\n\n"
-        "   Next steps:\n"
-        f'     export DATA_DIR="{data_dir}"\n'
-        "     visfem validate-data     # optional: confirm the datasets resolve\n"
-        "     visfem                    # launch; the knee datasets appear under Musculoskeletal"
+    _print_next_steps(
+        f"Prepared {len(done)} dataset(s) under {datasets}",
+        data_dir,
+        "the knee datasets appear under Musculoskeletal",
     )
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Return the visfem argument parser; each subparser sets ``func`` to its handler and the ``commands`` default names every subcommand."""
     parser = argparse.ArgumentParser(
         prog="visfem",
         description="VisFEM: web visualization of FEM models. "
         "Run with no arguments to launch the web app.",
     )
     sub = parser.add_subparsers(dest="command")
+    # Shared by both fetch commands; a parent parser keeps the option first in --help.
+    data_dir_opts = argparse.ArgumentParser(add_help=False)
+    data_dir_opts.add_argument(
+        "--data-dir",
+        help="target data directory (default: $DATA_DIR, else ./visfem_data)",
+    )
 
-    sub.add_parser("serve", help="launch the web app (default)")
+    sub.add_parser("serve", help="launch the web app (default)").set_defaults(
+        func=lambda _args: _serve()
+    )
     sub.add_parser(
         "renderers",
         help="list the built-in renderers and what each is for",
         description="List every built-in renderer with a one-line description of "
         "what it draws and when to use it.",
-    )
+    ).set_defaults(func=cmd_renderers)
     sub.add_parser(
         "schema",
         help="print a concise reference of the dataset JSON fields",
         description="Print the dataset descriptor fields, their meaning, and the "
         "valid values for enum-like fields (scales, organ systems, "
         "renderers, palettes, colormaps).",
-    )
+    ).set_defaults(func=cmd_schema)
 
     p_ex = sub.add_parser(
         "example",
@@ -914,6 +942,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[r.value for r in RendererName],
         help="which renderer to template (see `visfem renderers`)",
     )
+    p_ex.set_defaults(func=cmd_example)
 
     p_new = sub.add_parser(
         "new-dataset",
@@ -929,16 +958,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="renderer to template (default: surface; "
         "see `visfem renderers` for descriptions)",
     )
+    p_new.set_defaults(func=cmd_new_dataset)
 
     sub.add_parser(
         "validate-data",
         help="validate dataset JSONs and referenced files",
         description="Validate every dataset descriptor under your data directory "
         "and confirm the mesh files each one references exist.",
-    )
+    ).set_defaults(func=cmd_validate_data)
 
     p_fetch = sub.add_parser(
         "fetch-ircadb",
+        parents=[data_dir_opts],
         help="download the public 3D-IRCADb-01 example dataset",
         description="Download the public 3D-IRCADb-01 dataset (~3 GB) from IRCAD "
         "and lay it out as a ready-to-open VisFEM dataset. The data is "
@@ -946,17 +977,15 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="Source: " + _IRCAD_PAGE,
     )
     p_fetch.add_argument(
-        "--data-dir",
-        help="target data directory (default: $DATA_DIR, else ./visfem_data)",
-    )
-    p_fetch.add_argument(
         "--keep-archive",
         action="store_true",
         help="keep the downloaded archive under <data-dir>/downloads/ after extraction",
     )
+    p_fetch.set_defaults(func=cmd_fetch_ircadb)
 
     p_knee = sub.add_parser(
         "fetch-openknee",
+        parents=[data_dir_opts],
         help="download the Open Knee(s) knee geometries from SimTK",
         description="Download Open Knee(s) geometries from the project's public SVN "
         "repository (no SimTK account needed) and lay them out as VisFEM "
@@ -965,10 +994,6 @@ def build_parser() -> argparse.ArgumentParser:
         "FEBio model (~15 MB, converted to VTU). The data is provided by the "
         "Open Knee(s) Development Team under Creative Commons terms.",
         epilog="Source: " + _OPENKNEE_PAGE,
-    )
-    p_knee.add_argument(
-        "--data-dir",
-        help="target data directory (default: $DATA_DIR, else ./visfem_data)",
     )
     p_knee.add_argument(
         "--specimens",
@@ -981,19 +1006,9 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skip the Generation 1 FEBio model",
     )
+    p_knee.set_defaults(func=cmd_fetch_openknee)
+    parser.set_defaults(commands=tuple(sub.choices))
     return parser
-
-
-_SUBCOMMANDS = (
-    "serve",
-    "renderers",
-    "schema",
-    "example",
-    "new-dataset",
-    "validate-data",
-    "fetch-ircadb",
-    "fetch-openknee",
-)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1008,26 +1023,13 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = build_parser()
     first = argv[0]
-    if not first.startswith("-") and first not in _SUBCOMMANDS:
+    if not first.startswith("-") and first not in parser.get_default("commands"):
         print(f"visfem: unknown command '{first}'\n", file=sys.stderr)
         parser.print_help(sys.stderr)
         return 2
 
     args = parser.parse_args(argv)
-    handlers = {
-        "renderers": cmd_renderers,
-        "schema": cmd_schema,
-        "example": cmd_example,
-        "new-dataset": cmd_new_dataset,
-        "validate-data": cmd_validate_data,
-        "fetch-ircadb": cmd_fetch_ircadb,
-        "fetch-openknee": cmd_fetch_openknee,
-    }
-    handler = handlers.get(args.command)
-    if handler is None:
-        parser.print_help()
-        return 1
-    return handler(args)
+    return int(args.func(args))
 
 
 if __name__ == "__main__":

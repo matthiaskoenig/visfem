@@ -4,9 +4,9 @@ import asyncio
 import base64
 import contextlib
 import importlib.resources
-import math
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pyvista as pv
 from trame.app import TrameApp
@@ -22,19 +22,32 @@ from visfem.engine.colors import (
     set_override,
 )
 from visfem.engine.discovery import (
+    active_timeseries_path,
     dataset_dir,
     discover_xdmf,
     grasp_phase_pvd,
     group_by_organ_system,
     load_project_metadata,
     patient_numbers,
+    patient_subdir,
     pvd_file_path,
 )
 from visfem.engine.palettes import CATEGORICAL_META, CONTINUOUS_META
-from visfem.engine.playback import autoplay_loop, vtkjs_warmup
-from visfem.engine.scene import apply_opacity, push_scene, update_scalar_range
+from visfem.engine.playback import (
+    autoplay_loop,
+    clear_overlay,
+    keyframe_increment,
+    vtkjs_warmup,
+)
+from visfem.engine.scene import (
+    TrameCtrl,
+    apply_opacity,
+    push_scene,
+    update_scalar_range,
+)
 from visfem.engine.selection import (
     recolor_categories,
+    resolve_cmap,
     select_color_scheme,
     select_dataset,
     select_patient,
@@ -45,12 +58,11 @@ from visfem.engine.selection import (
 from visfem.engine.xr_manager import XRManager
 from visfem.log import get_logger
 from visfem.mesh import get_metadata, preload_all_meshes, vtk_series_steps
-from visfem.models import MeshMetadata
+from visfem.models import MeshMetadata, ProjectMetadata
 from visfem.ui.layout import UICallbacks, build_ui
 
 logger = get_logger(__name__)
 
-_TARGET_FRAMES: int = 30  # max rendered frames for autoplay
 _FRAME_SLEEP: float = 0.2  # seconds between frames (scalar-field timeseries)
 # GRASP phase series redraws fully per phase; slower cadence makes the contrast
 # wash-in watchable rather than a fast flicker.
@@ -316,9 +328,7 @@ class VisfemApp(TrameApp):
         field = self.state.active_scalar_field
         if not field:
             return
-        cmap = str(self.state.active_continuous_cmap)
-        if self.state.color_reversed:
-            cmap += "_r"
+        cmap = resolve_cmap(self.state)
         scalar_bar = update_scalar_range(self.plotter, self.ctrl, field, [lo, hi], cmap)
         if scalar_bar:
             self.state.clim_override = [lo, hi]
@@ -371,6 +381,34 @@ class VisfemApp(TrameApp):
         finally:
             self.state.busy = False
 
+    async def _busy_render(
+        self,
+        what: str,
+        render: Callable[..., object],
+        *args: object,
+        prepare: Callable[[], None] | None = None,
+        needs_dataset: bool = True,
+    ) -> None:
+        """Run one busy-guarded engine call: *what* names the action for the error message, *prepare* applies the handler's state changes inside the claim, *render* receives the plotter, ctrl, state, project metadata, xdmf metadata and *args, and *needs_dataset* skips everything when no dataset is active; returns None."""
+        if needs_dataset and self.state.active_dataset is None:
+            return
+        with self._claim_busy(what) as claimed:
+            if not claimed:
+                return
+            if prepare is not None:
+                prepare()
+            # Push the busy flag and the prepared state before the render blocks the loop.
+            self.state.flush()
+            await asyncio.sleep(0.05)
+            render(
+                self.plotter,
+                self.ctrl,
+                self.state,
+                self._project_metadata,
+                self._xdmf_meta,
+                *args,
+            )
+
     async def _switch(self, what: str, render: Callable[[], vtkActor | None]) -> None:
         """Common path of the dataset, file and patient switches: overlay on, render, warm up.
 
@@ -392,9 +430,7 @@ class VisfemApp(TrameApp):
             await self._start_vtkjs_warmup()
         except Exception as e:  # noqa: BLE001 - the UI boundary: report, never leave the view locked
             self._show_error(f"Could not load {what}", e)
-            with self.state:
-                self.state.loading = False
-                self.state.busy = False
+            clear_overlay(self.state)
 
     def _resolve_active_path(self) -> Path | None:
         """Return the XDMF/PVD file path for the currently active dataset."""
@@ -416,14 +452,10 @@ class VisfemApp(TrameApp):
         # (phase resolved by the `step` passed to load_mesh during warmup).
         patient = self.state.active_patient
         if patient is not None:
-            pvd = grasp_phase_pvd(dataset_dir(meta) / f"patient_{int(patient):02d}")
+            pvd = grasp_phase_pvd(patient_subdir(dataset_dir(meta), patient))
             if pvd is not None:
                 return pvd
-        if meta.mesh_format == "PVD":
-            return pvd_file_path(meta)
-        stem: str | None = self.state.active_xdmf
-        xdmf_files = discover_xdmf(dataset_dir(meta))
-        return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
+        return active_timeseries_path(meta, self.state, dataset_dir(meta))
 
     async def _start_vtkjs_warmup(self) -> None:
         """Finish a dataset switch: hold the overlay while the client paints, then warm the step cache for a series.
@@ -437,23 +469,16 @@ class VisfemApp(TrameApp):
             self.state.step_inc = 1
             # Keep the overlay up while the client paints the new geometry.
             await asyncio.sleep(self._render_settle())
-            with self.state:
-                self.state.loading = False
-                self.state.busy = False
+            clear_overlay(self.state)
             return
-        inc = math.ceil(n_steps / _TARGET_FRAMES)
-        self.state.step_inc = inc
+        self.state.step_inc = keyframe_increment(n_steps)
         path = self._resolve_active_path()
         if path is None:
-            with self.state:
-                self.state.loading = False
-                self.state.busy = False
+            clear_overlay(self.state)
             return
         gen = self._warmup_gen
         self._warmup_task = asyncio.ensure_future(
-            vtkjs_warmup(
-                gen, lambda: self._warmup_gen, self.state, path, _TARGET_FRAMES
-            )
+            vtkjs_warmup(gen, lambda: self._warmup_gen, self.state, path)
         )
 
     @change("ctrl_opacity")
@@ -549,119 +574,87 @@ class VisfemApp(TrameApp):
 
     async def select_scalar_field(self, field: str) -> None:
         """Re-render the current dataset with the given scalar field."""
-        with self._claim_busy("switch the field") as claimed:
-            if not claimed:
-                return
+
+        def prepare() -> None:
+            """Stop playback and warmup and rewind to step 0 with no range override; returns None."""
             self.state.autoplay = False
             self._cancel_warmup()
             self.state.active_step = 0
             self.state.clim_override = None
-            self.state.flush()
-            await asyncio.sleep(0.05)
-            select_scalar_field(
-                self.plotter,
-                self.ctrl,
-                self.state,
-                self._project_metadata,
-                self._xdmf_meta,
-                field,
-            )
+
+        await self._busy_render(
+            "switch the field",
+            select_scalar_field,
+            field,
+            prepare=prepare,
+            needs_dataset=False,
+        )
 
     async def select_step(self, step: int) -> None:
         """Navigate the current XDMF dataset to a different timestep."""
-        with self._claim_busy("change the time step") as claimed:
-            if not claimed:
-                return
-            self.state.flush()
-            await asyncio.sleep(0.05)
-            select_step(
-                self.plotter,
-                self.ctrl,
-                self.state,
-                self._project_metadata,
-                self._xdmf_meta,
-                int(step),
-            )
+
+        def render(
+            plotter: pv.Plotter,
+            ctrl: TrameCtrl,
+            state: Any,
+            project_metadata: dict[str, ProjectMetadata],
+            xdmf_meta: dict[str, MeshMetadata],
+        ) -> None:
+            """Call select_step on *plotter*, *ctrl*, *state*, *project_metadata* and *xdmf_meta* with the step coerced inside the busy claim, where a bad value is reported; returns None."""
+            select_step(plotter, ctrl, state, project_metadata, xdmf_meta, int(step))
+
+        await self._busy_render("change the time step", render, needs_dataset=False)
 
     async def toggle_color_reversed(self) -> None:
         """Flip the color order of the active palette or colormap and re-render."""
-        if self.state.active_dataset is None:
-            return
-        with self._claim_busy("reverse the colours") as claimed:
-            if not claimed:
-                return
+
+        def prepare() -> None:
+            """Flip the colour order and drop the range override; returns None."""
             self.state.color_reversed = not self.state.color_reversed
             self.state.clim_override = None
-            self.state.flush()
-            await asyncio.sleep(0.05)
-            select_color_scheme(
-                self.plotter,
-                self.ctrl,
-                self.state,
-                self._project_metadata,
-                self._xdmf_meta,
-            )
+
+        await self._busy_render(
+            "reverse the colours", select_color_scheme, prepare=prepare
+        )
 
     async def select_color_scheme(self, name: str) -> None:
         """Update the active palette/colormap and re-render the current scene."""
-        if self.state.active_dataset is None:
-            return
-        with self._claim_busy("change the colour scheme") as claimed:
-            if not claimed:
-                return
+
+        def prepare() -> None:
+            """Store *name* as the colormap of a scalar scene or the palette of a categorical one and drop the range override; returns None."""
             if self.state.scalar_bar is not None:
                 self.state.active_continuous_cmap = name
             else:
                 self.state.active_categorical_palette = name
             self.state.clim_override = None
-            self.state.flush()
-            await asyncio.sleep(0.05)
-            select_color_scheme(
-                self.plotter,
-                self.ctrl,
-                self.state,
-                self._project_metadata,
-                self._xdmf_meta,
-            )
+
+        await self._busy_render(
+            "change the colour scheme", select_color_scheme, prepare=prepare
+        )
 
     async def set_category_color(self, name: str, color: str) -> None:
         """Override one category's colour and recolour the scene in place."""
-        if self.state.active_dataset is None or not name:
+        if not name:
             return
-        with self._claim_busy("change the category colour") as claimed:
-            if not claimed:
-                return
-            set_override(self.state, name, color)
-            self.state.flush()
-            await asyncio.sleep(0.05)
-            recolor_categories(
-                self.plotter,
-                self.ctrl,
-                self.state,
-                self._project_metadata,
-                self._xdmf_meta,
-            )
+        await self._busy_render(
+            "change the category colour",
+            recolor_categories,
+            prepare=lambda: set_override(self.state, name, color),
+        )
 
     async def reset_category_colors(self, name: str | None = None) -> None:
         """Clear one category's override, or every override in scope when name is None."""
-        if self.state.active_dataset is None:
-            return
-        with self._claim_busy("reset the category colours") as claimed:
-            if not claimed:
-                return
+
+        def prepare() -> None:
+            """Clear the override of *name*, or every override in scope when name is None; returns None."""
             if name:
                 set_override(self.state, name, None)
             else:
                 clear_overrides(self.state)
-            self.state.flush()
-            await asyncio.sleep(0.05)
-            recolor_categories(
-                self.plotter,
-                self.ctrl,
-                self.state,
-                self._project_metadata,
-                self._xdmf_meta,
-            )
+
+        await self._busy_render(
+            "reset the category colours", recolor_categories, prepare=prepare
+        )
 
     def toggle_autoplay(self) -> None:
         """Start or stop automatic step playback."""

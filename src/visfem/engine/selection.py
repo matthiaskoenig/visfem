@@ -8,6 +8,8 @@ kept for latency on step/field/palette changes, falling back to a registry
 re-render.
 """
 
+import contextlib
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -16,12 +18,13 @@ from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.engine.colors import apply_overrides_to_state, region_colors
 from visfem.engine.discovery import (
+    active_timeseries_path,
     dataset_dir,
     discover_xdmf,
     grasp_phase_count,
     grasp_phase_pvd,
     meta_to_state,
-    pvd_file_path,
+    patient_subdir,
 )
 from visfem.engine.palettes import CATEGORICAL_PALETTES
 from visfem.engine.renderers import (
@@ -34,6 +37,7 @@ from visfem.engine.renderers import (
     resolve_render_config,
 )
 from visfem.engine.scene import (
+    RenderResult,
     TrameCtrl,
     clear_scene,
     field_label,
@@ -67,22 +71,20 @@ def _resolve_palette(state: Any) -> list[str]:
     return list(reversed(colors)) if getattr(state, "color_reversed", False) else colors
 
 
-def _timeseries_path(
-    meta: ProjectMetadata,
-    state: Any,
-    xdmf_files: dict[str, Path],
-) -> Path | None:
-    """Return the active timeseries file path for PVD or XDMF datasets."""
-    if meta.mesh_format == "PVD":
-        return pvd_file_path(meta)
-    stem: str | None = state.active_xdmf
-    return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
-
-
-def _resolve_cmap(state: Any) -> str:
+def resolve_cmap(state: Any) -> str:
     """Return the active continuous colormap name from state."""
     cmap = str(state.active_continuous_cmap)
     return cmap + "_r" if getattr(state, "color_reversed", False) else cmap
+
+
+@contextlib.contextmanager
+def _trame_busy(state: Any) -> Iterator[None]:
+    """Set ``trame__busy`` on *state* for the block and clear it on exit; yields None."""
+    state.trame__busy = True
+    try:
+        yield
+    finally:
+        state.trame__busy = False
 
 
 def _reset_selection_state(state: Any) -> None:
@@ -121,7 +123,7 @@ def _build_context(
         xdmf_meta=xdmf_meta,
         opacity=float(state.ctrl_opacity),
         palette=_resolve_palette(state),
-        cmap=_resolve_cmap(state),
+        cmap=resolve_cmap(state),
         field=field,
         step=step,
         reset_camera=reset_camera,
@@ -137,7 +139,7 @@ def _scalar_field_view_args(
         "categorical_fields": frozenset(cfg.categorical_fields),
         "zone_labels": cfg.region_labels,
         "palette": _resolve_palette(state),
-        "cmap": _resolve_cmap(state),
+        "cmap": resolve_cmap(state),
         "percentile": cfg.percentile_clamp if cfg.percentile_clamp is not None else 95,
     }
 
@@ -159,6 +161,55 @@ def _apply_scalar_field_legend(
     original = [item.get("color") for item in legend]
     if colors != original:
         update_actor_palette(plotter, ctrl, colors, len(colors))
+
+
+def _try_scalar_field_fast_path(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    state: Any,
+    meta: ProjectMetadata,
+    cfg: RenderConfig,
+) -> bool:
+    """Swap the active scalar array and LUT in place on the scalar_field actor of *plotter* and *ctrl* from *state*, *meta* and *cfg*, and return True on success or False when the renderer is a different one or no actor exists (caller does a full redraw)."""
+    if cfg.renderer != RendererName.SCALAR_FIELD or get_active_actor() is None:
+        return False
+    legend, scalar_bar = update_scalar_field_view(
+        plotter,
+        ctrl,
+        dataset_dir(meta),
+        field=state.active_scalar_field,
+        **_scalar_field_view_args(meta, cfg, state),
+    )
+    _apply_scalar_field_legend(plotter, ctrl, state, legend, scalar_bar)
+    return True
+
+
+def _redraw(
+    plotter: pv.Plotter,
+    ctrl: TrameCtrl,
+    state: Any,
+    meta: ProjectMetadata,
+    cfg: RenderConfig,
+    ddir: Path,
+    xdmf_meta: dict[str, MeshMetadata],
+    *,
+    field: str | None = None,
+    step: int = 0,
+) -> RenderResult:
+    """Render the scene of *meta* and *cfg* from *ddir* on *plotter* and *ctrl* through the registry with *state* and *xdmf_meta* at *field* and *step*, camera kept, and return the RenderResult for the caller to apply."""
+    ctx = _build_context(
+        plotter,
+        ctrl,
+        state,
+        meta,
+        cfg,
+        ddir,
+        xdmf_meta,
+        field=field,
+        step=step,
+        reset_camera=False,
+    )
+    return dispatch_render(ctx)
 
 
 def select_dataset(
@@ -183,9 +234,8 @@ def select_dataset(
     state.active_categorical_palette = cfg.categorical_palette
     state.active_continuous_cmap = cfg.continuous_cmap
 
-    state.trame__busy = True
     fiber_actor: vtkActor | None = None
-    try:
+    with _trame_busy(state):
         # Patient-driven datasets clear the scene now; rendering happens on patient select.
         if is_patient_renderer(cfg):
             clear_scene(plotter, state.dark_mode)
@@ -218,8 +268,6 @@ def select_dataset(
         fiber_actor = result.fiber_actor
         state.has_fibers = fiber_actor is not None
         state.active_meta = meta_to_state(meta)
-    finally:
-        state.trame__busy = False
     return fiber_actor
 
 
@@ -237,14 +285,13 @@ def select_xdmf(
     state.active_patient = None
     _reset_selection_state(state)
     state.active_xdmf = stem
-    state.trame__busy = True
-    try:
+    with _trame_busy(state):
         meta = project_metadata[key]
         cfg = resolve_render_config(meta, dataset_dir(meta))
         if discover_xdmf(dataset_dir(meta)).get(stem) is None:
             logger.error(f"XDMF file not found: {stem} in {key}")
             return
-        # _timeseries_path reads state.active_xdmf to pick this stem.
+        # renderers._timeseries_path reads state.active_xdmf to pick this stem.
         ctx = _build_context(
             plotter, ctrl, state, meta, cfg, dataset_dir(meta), xdmf_meta
         )
@@ -252,8 +299,6 @@ def select_xdmf(
         result = dispatch_render(ctx)
         apply_result_to_state(state, result)
         state.active_meta = meta_to_state(meta)
-    finally:
-        state.trame__busy = False
 
 
 def select_scalar_field(
@@ -266,54 +311,27 @@ def select_scalar_field(
 ) -> None:
     """Re-render the current dataset with a different scalar field."""
     state.active_scalar_field = field
-    state.trame__busy = True
-    try:
+    with _trame_busy(state):
         meta = project_metadata[state.active_dataset]
         cfg = resolve_render_config(meta, dataset_dir(meta))
-
-        if cfg.renderer == RendererName.SCALAR_FIELD:
-            # Fast-path: swap the active scalar array in place when an actor exists.
-            if get_active_actor() is not None:
-                legend, scalar_bar = update_scalar_field_view(
-                    plotter,
-                    ctrl,
-                    dataset_dir(meta),
-                    field=field,
-                    **_scalar_field_view_args(meta, cfg, state),
-                )
-                _apply_scalar_field_legend(plotter, ctrl, state, legend, scalar_bar)
-                return
-            ctx = _build_context(
-                plotter,
-                ctrl,
-                state,
-                meta,
-                cfg,
-                dataset_dir(meta),
-                xdmf_meta,
-                field=field,
-                reset_camera=False,
-            )
-            result = dispatch_render(ctx)
-            apply_result_to_state(state, result)
-        else:
-            # XDMF / PVD time series: full redraw at the current step with the new field.
-            ctx = _build_context(
-                plotter,
-                ctrl,
-                state,
-                meta,
-                cfg,
-                dataset_dir(meta),
-                xdmf_meta,
-                field=field,
-                step=int(state.active_step),
-                reset_camera=False,
-            )
-            result = dispatch_render(ctx)
-            apply_result_to_state(state, result)
-    finally:
-        state.trame__busy = False
+        if _try_scalar_field_fast_path(plotter, ctrl, state, meta, cfg):
+            return
+        # A static scalar_field mesh redraws at step 0; a time series at the current step.
+        step = (
+            0 if cfg.renderer == RendererName.SCALAR_FIELD else int(state.active_step)
+        )
+        result = _redraw(
+            plotter,
+            ctrl,
+            state,
+            meta,
+            cfg,
+            dataset_dir(meta),
+            xdmf_meta,
+            field=field,
+            step=step,
+        )
+        apply_result_to_state(state, result)
 
 
 def select_step(
@@ -326,8 +344,7 @@ def select_step(
 ) -> None:
     """Navigate the current time-series dataset to a different timestep."""
     state.active_step = step
-    state.trame__busy = True
-    try:
+    with _trame_busy(state):
         meta = project_metadata[state.active_dataset]
         ddir = dataset_dir(meta)
         cfg = resolve_render_config(meta, ddir)
@@ -337,19 +354,10 @@ def select_step(
         if cfg.renderer == RendererName.PVD_PHASE_SERIES:
             if state.active_patient is None:
                 return
-            patient_dir = ddir / f"patient_{int(state.active_patient):02d}"
-            ctx = _build_context(
-                plotter,
-                ctrl,
-                state,
-                meta,
-                cfg,
-                patient_dir,
-                xdmf_meta,
-                step=step,
-                reset_camera=False,
+            patient_dir = patient_subdir(ddir, state.active_patient)
+            result = _redraw(
+                plotter, ctrl, state, meta, cfg, patient_dir, xdmf_meta, step=step
             )
-            result = dispatch_render(ctx)
             apply_result_to_state(state, result)
             return
 
@@ -358,32 +366,22 @@ def select_step(
         # Flat VTK series or LS-DYNA d3plot: each step is a distinct whole mesh —
         # render it via the registry (no manifest path / in-place fast-path).
         if cfg.series or cfg.database:
-            ctx = _build_context(
-                plotter,
-                ctrl,
-                state,
-                meta,
-                cfg,
-                ddir,
-                xdmf_meta,
-                field=field,
-                step=step,
-                reset_camera=False,
+            result = _redraw(
+                plotter, ctrl, state, meta, cfg, ddir, xdmf_meta, field=field, step=step
             )
-            result = dispatch_render(ctx)
             state.mesh_stats = result.mesh_stats
             if result.scalar_bar_info is not None:
                 state.scalar_bar = result.scalar_bar_info
             return
 
         # XDMF / PVD scalar series: try the in-place step fast-path, else full redraw.
-        path = _timeseries_path(meta, state, discover_xdmf(ddir))
+        path = active_timeseries_path(meta, state, ddir)
         if path is None:
             logger.error(
                 f"No timeseries file found for dataset '{state.active_dataset}'"
             )
             return
-        cmap = _resolve_cmap(state)
+        cmap = resolve_cmap(state)
         success, stats, scalar_bar = update_xdmf_step(
             plotter,
             ctrl,
@@ -394,26 +392,14 @@ def select_step(
             cmap=cmap,
         )
         if not success:
-            ctx = _build_context(
-                plotter,
-                ctrl,
-                state,
-                meta,
-                cfg,
-                ddir,
-                xdmf_meta,
-                field=field,
-                step=step,
-                reset_camera=False,
+            result = _redraw(
+                plotter, ctrl, state, meta, cfg, ddir, xdmf_meta, field=field, step=step
             )
-            result = dispatch_render(ctx)
             stats = result.mesh_stats
             scalar_bar = result.scalar_bar_info
         state.mesh_stats = stats
         if scalar_bar is not None:
             state.scalar_bar = scalar_bar
-    finally:
-        state.trame__busy = False
 
 
 def select_patient(
@@ -429,10 +415,9 @@ def select_patient(
     state.active_patient = patient
     state.scalar_bar = None
     _reset_selection_state(state)
-    state.trame__busy = True
-    try:
+    with _trame_busy(state):
         meta = project_metadata[dataset_key]
-        patient_dir = dataset_dir(meta) / f"patient_{patient:02d}"
+        patient_dir = patient_subdir(dataset_dir(meta), patient)
         cfg = resolve_render_config(meta, dataset_dir(meta))
 
         # All patient renderers (organs, phase series, single surface) render from
@@ -450,8 +435,6 @@ def select_patient(
         apply_overrides_to_state(state, result.legend_items)
         state.mesh_stats = result.mesh_stats
         state.active_meta = meta_to_state(meta)
-    finally:
-        state.trame__busy = False
 
 
 def _recolor_active_actor(plotter: pv.Plotter, ctrl: TrameCtrl, state: Any) -> bool:
@@ -508,20 +491,10 @@ def select_color_scheme(
     # dataset dir. Timeseries keep the active field/step.
     ddir = dataset_dir(meta)
     if state.active_patient is not None:
-        ddir = ddir / f"patient_{int(state.active_patient):02d}"
+        ddir = patient_subdir(ddir, state.active_patient)
 
-    state.trame__busy = True
-    try:
-        # scalar_field: fast in-place LUT/field swap when an actor exists.
-        if cfg.renderer == RendererName.SCALAR_FIELD and get_active_actor() is not None:
-            legend, scalar_bar = update_scalar_field_view(
-                plotter,
-                ctrl,
-                dataset_dir(meta),
-                field=state.active_scalar_field,
-                **_scalar_field_view_args(meta, cfg, state),
-            )
-            _apply_scalar_field_legend(plotter, ctrl, state, legend, scalar_bar)
+    with _trame_busy(state):
+        if _try_scalar_field_fast_path(plotter, ctrl, state, meta, cfg):
             return
 
         # Categorical renderers: fast-path swap the LUT on the active actor.
@@ -529,7 +502,7 @@ def select_color_scheme(
             return
 
         # Otherwise full re-render at the current field/step, keeping the camera.
-        ctx = _build_context(
+        result = _redraw(
             plotter,
             ctrl,
             state,
@@ -539,9 +512,5 @@ def select_color_scheme(
             xdmf_meta,
             field=state.active_scalar_field,
             step=int(state.active_step),
-            reset_camera=False,
         )
-        result = dispatch_render(ctx)
         apply_result_to_state(state, result)
-    finally:
-        state.trame__busy = False

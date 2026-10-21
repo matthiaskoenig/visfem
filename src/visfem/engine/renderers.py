@@ -133,7 +133,7 @@ class RenderContext:
     xdmf_meta: dict[str, MeshMetadata]
     opacity: float
     palette: list[str]  # already resolved (see selection._resolve_palette)
-    cmap: str  # already resolved (see selection._resolve_cmap)
+    cmap: str  # already resolved (see selection.resolve_cmap)
     field: str | None = None
     step: int = 0
     reset_camera: bool = True

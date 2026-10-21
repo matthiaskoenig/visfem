@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -162,6 +163,23 @@ def pvd_file_path(meta: ProjectMetadata) -> Path | None:
     if meta.mesh_format == "PVD":
         return DATASETS_DIR / meta.data_path
     return None
+
+
+def patient_subdir(ddir: Path, patient: int) -> Path:
+    """Return the ``patient_NN`` folder for *patient* under the dataset directory *ddir*."""
+    return ddir / f"patient_{int(patient):02d}"
+
+
+def active_timeseries_path(
+    meta: ProjectMetadata, state: Any, ddir: Path
+) -> Path | None:
+    """Return the active timeseries file of *meta*: its PVD for a PVD dataset, else the XDMF in *ddir* named by ``state.active_xdmf``, else the first XDMF in *ddir*, else None."""
+    if meta.mesh_format == "PVD":
+        return pvd_file_path(meta)
+    # The glob runs only for XDMF datasets; a PVD dataset returns above.
+    xdmf_files = discover_xdmf(ddir)
+    stem: str | None = state.active_xdmf
+    return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
 
 
 def grasp_phase_pvd(patient_dir: Path) -> Path | None:

@@ -15,20 +15,33 @@ from visfem.models import MeshMetadata, ProjectMetadata
 
 logger = get_logger(__name__)
 
+TARGET_FRAMES: int = 30  # max rendered frames for autoplay
+
+
+def keyframe_increment(n_steps: int, n_frames: int = TARGET_FRAMES) -> int:
+    """Return the step stride that spreads *n_steps* steps over at most *n_frames* keyframes."""
+    return math.ceil(n_steps / n_frames)
+
+
+def clear_overlay(state: Any) -> None:
+    """Clear the loading and busy flags on *state* and flush them to the client; returns None."""
+    with state:
+        state.loading = False
+        state.busy = False
+
 
 async def vtkjs_warmup(
     gen: int,
     get_gen: Callable[[], int],
     state: Any,
     path: Path,
-    n_frames: int,
 ) -> None:
     """Warm the server-side mesh LRU cache for all keyframes, then clear loading state."""
     n_steps = int(state.n_steps)
     if n_steps <= 1:
         return
     loop = asyncio.get_running_loop()
-    inc = math.ceil(n_steps / n_frames)
+    inc = keyframe_increment(n_steps)
     steps = list(range(0, n_steps, inc))
     try:
         for step in steps:
@@ -44,9 +57,7 @@ async def vtkjs_warmup(
                 )
     finally:
         if get_gen() == gen:
-            with state:
-                state.loading = False
-                state.busy = False
+            clear_overlay(state)
 
 
 async def autoplay_loop(

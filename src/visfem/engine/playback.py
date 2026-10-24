@@ -6,8 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import pyvista as pv
-
+from visfem.engine.scene import Scene
 from visfem.engine.selection import select_step
 from visfem.log import get_logger
 from visfem.mesh import load_mesh
@@ -62,13 +61,13 @@ async def vtkjs_warmup(
 
 async def autoplay_loop(
     state: Any,
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: Any,
     project_metadata: dict[str, ProjectMetadata],
     xdmf_meta: dict[str, MeshMetadata],
     frame_sleep: float,
 ) -> None:
-    """Advance *state.active_step* by *state.step_inc* through select_step with *plotter*, *ctrl*, *project_metadata* and *xdmf_meta*, wrapping to step 0, every *frame_sleep* / *state.playback_speed* seconds until *state.autoplay* clears or a step fails."""
+    """Advance *state.active_step* by *state.step_inc* through select_step with *scene*, *ctrl*, *project_metadata* and *xdmf_meta*, wrapping to step 0, every *frame_sleep* / *state.playback_speed* seconds until *state.autoplay* clears or a step fails."""
     try:
         while state.autoplay:
             step = int(state.active_step)
@@ -76,9 +75,7 @@ async def autoplay_loop(
             inc = int(state.step_inc)
             next_step = 0 if step + inc >= n else step + inc
             try:
-                select_step(
-                    plotter, ctrl, state, project_metadata, xdmf_meta, next_step
-                )
+                select_step(scene, ctrl, state, project_metadata, xdmf_meta, next_step)
             except Exception as e:
                 logger.exception(
                     "autoplay: step %d of %s failed", next_step, state.active_dataset

@@ -7,12 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import pyvista as pv
-
 from visfem.engine.colors import apply_overrides_to_state, region_colors
 from visfem.engine.discovery import discover_xdmf, grasp_phase_pvd, pvd_file_path
 from visfem.engine.scene import (
     RenderResult,
+    Scene,
     TrameCtrl,
     _load_multi_part_vtk,
     _render_labeled_parts,
@@ -116,7 +115,7 @@ def resolve_mesh_file(ddir: Path, cfg: RenderConfig) -> str | None:
 class RenderContext:
     """Inputs for one renderer call, built per draw by the dispatch layer."""
 
-    plotter: pv.Plotter
+    scene: Scene
     ctrl: TrameCtrl
     state: Any  # Trame state (dark_mode, palette/cmap selection, ...)
     ddir: Path  # dataset dir (or patient dir for patient renderers)
@@ -153,7 +152,7 @@ def render_surface(ctx: RenderContext) -> RenderResult:
         )
         return RenderResult()
     return redraw_stl_surface(
-        ctx.plotter, ctx.ctrl, ctx.ddir, filename=filename, **_common(ctx)
+        ctx.scene, ctx.ctrl, ctx.ddir, filename=filename, **_common(ctx)
     )
 
 
@@ -164,7 +163,7 @@ def render_region_id(ctx: RenderContext) -> RenderResult:
         logger.error("region_id renderer requires mesh_file and region_array")
         return RenderResult()
     return _render_region_array_mesh(
-        ctx.plotter,
+        ctx.scene,
         ctx.ctrl,
         ctx.ddir / cfg.mesh_file,
         cfg.region_array,
@@ -183,10 +182,10 @@ def render_multi_part(ctx: RenderContext) -> RenderResult:
     meshes = _load_multi_part_vtk(ctx.ddir, parts, cfg.part_extensions)
     colors = region_colors(len(parts), ctx.palette)
     labels = [label for _, label in parts]
-    clear_scene(ctx.plotter, ctx.state.dark_mode)
+    clear_scene(ctx.scene, ctx.state.dark_mode)
     tube = cfg.tube
     return _render_labeled_parts(
-        ctx.plotter,
+        ctx.scene,
         ctx.ctrl,
         meshes,
         labels,
@@ -204,7 +203,7 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
     if ctx.cfg.database:
         # LS-DYNA d3plot: the database dir is the mesh path and load_mesh streams one frame per step.
         return redraw_xdmf(
-            ctx.plotter,
+            ctx.scene,
             ctx.ctrl,
             ctx.ddir,
             ctx.xdmf_meta,
@@ -225,7 +224,7 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
             return RenderResult()
         step = max(0, min(ctx.step, len(files) - 1))
         return redraw_xdmf(
-            ctx.plotter,
+            ctx.scene,
             ctx.ctrl,
             files[step],
             ctx.xdmf_meta,
@@ -242,7 +241,7 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
         logger.error(f"timeseries renderer requires a PVD or XDMF file in {ctx.ddir}")
         return RenderResult()
     return redraw_xdmf(
-        ctx.plotter,
+        ctx.scene,
         ctx.ctrl,
         path,
         ctx.xdmf_meta,
@@ -264,7 +263,7 @@ def render_pvd_phase_series(ctx: RenderContext) -> RenderResult:
         )
         return RenderResult()
     return redraw_region_surface_step(
-        ctx.plotter,
+        ctx.scene,
         ctx.ctrl,
         pvd,
         dark_mode=ctx.state.dark_mode,
@@ -278,7 +277,7 @@ def render_pvd_phase_series(ctx: RenderContext) -> RenderResult:
 
 def render_patient_organs(ctx: RenderContext) -> RenderResult:
     """Render the per-organ .vtk files (ircadb family) in the patient dir ctx.ddir; return the RenderResult."""
-    return redraw_ircadb(ctx.plotter, ctx.ctrl, ctx.ddir, **_common(ctx))
+    return redraw_ircadb(ctx.scene, ctx.ctrl, ctx.ddir, **_common(ctx))
 
 
 def render_scalar_field(ctx: RenderContext) -> RenderResult:
@@ -296,7 +295,7 @@ def render_scalar_field(ctx: RenderContext) -> RenderResult:
         )
         return RenderResult()
     return redraw_scalar_field(
-        ctx.plotter,
+        ctx.scene,
         ctx.ctrl,
         ctx.ddir,
         dark_mode=ctx.state.dark_mode,

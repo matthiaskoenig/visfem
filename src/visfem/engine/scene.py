@@ -43,15 +43,30 @@ class RenderResult:
     fiber_actor: vtkActor | None = None
 
 
-_PERCENTILE_CLAMP: int = 95  # upper colour limit percentile for continuous fields
+@dataclass
+class Scene:
+    """One plotter and the actors its in-place updates act on."""
 
-_active_actor: vtkActor | None = None
-_xdmf_mesh: pv.DataSet | None = None
-_xdmf_actor: vtkActor | None = None
-# Skin shown by _xdmf_actor and its volume point/cell ids (None for a surface frame).
-_xdmf_surface: pv.PolyData | None = None
-_xdmf_point_ids: np.ndarray | None = None
-_xdmf_cell_ids: np.ndarray | None = None
+    plotter: pv.Plotter
+    active_actor: vtkActor | None = None  # main mesh actor of the current dataset
+    xdmf_mesh: pv.DataSet | None = None  # full frame of the live time series
+    xdmf_actor: vtkActor | None = None
+    # Skin shown by xdmf_actor and its volume point/cell ids (None for a surface frame).
+    xdmf_surface: pv.PolyData | None = None
+    xdmf_point_ids: np.ndarray | None = None
+    xdmf_cell_ids: np.ndarray | None = None
+
+    def forget_actors(self) -> None:
+        """Drop every tracked actor and mesh."""
+        self.active_actor = None
+        self.xdmf_mesh = None
+        self.xdmf_actor = None
+        self.xdmf_surface = None
+        self.xdmf_point_ids = None
+        self.xdmf_cell_ids = None
+
+
+_PERCENTILE_CLAMP: int = 95  # upper colour limit percentile for continuous fields
 
 
 _MAG_SUFFIX = "__mag"
@@ -72,11 +87,6 @@ def _refresh_magnitudes(mesh: pv.DataSet) -> None:
             field = name[: -len(_MAG_SUFFIX)]
             if field in mesh.array_names:
                 _set_magnitude(mesh, field)
-
-
-def get_active_actor() -> vtkActor | None:
-    """Return the tracked main mesh actor, or None before a dataset loads."""
-    return _active_actor
 
 
 class TrameCtrl(Protocol):
@@ -153,44 +163,37 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
 # Scene state
 
 
-def _set_background(plotter: pv.Plotter, dark_mode: bool) -> None:
-    """Set the gradient background of *plotter* for *dark_mode*."""
+def _set_background(scene: Scene, dark_mode: bool) -> None:
+    """Set the gradient background of *scene* for *dark_mode*."""
     # typeshed leaves these functools.wraps wrappers unbound; the ignores here and in push_scene cover that.
     if dark_mode:
-        plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
+        scene.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
     else:
-        plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)  # type: ignore[arg-type]
+        scene.plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)  # type: ignore[arg-type]
 
 
-def clear_scene(plotter: pv.Plotter, dark_mode: bool) -> None:
-    """Remove every actor from *plotter*, reset the scene state and set the background for *dark_mode*."""
-    global _active_actor, _xdmf_mesh, _xdmf_actor
-    global _xdmf_surface, _xdmf_point_ids, _xdmf_cell_ids
-    _active_actor = None
-    _xdmf_mesh = None
-    _xdmf_actor = None
-    _xdmf_surface = None
-    _xdmf_point_ids = None
-    _xdmf_cell_ids = None
+def clear_scene(scene: Scene, dark_mode: bool) -> None:
+    """Remove every actor from *scene*, drop its tracked actors and set the background for *dark_mode*."""
+    scene.forget_actors()
     # Removing an actor makes the local-mode client drop its geometry.
-    for actor in list(plotter.renderer.actors.values()):
-        plotter.renderer.RemoveActor(actor)
-    _set_background(plotter, dark_mode)
+    for actor in list(scene.plotter.renderer.actors.values()):
+        scene.plotter.renderer.RemoveActor(actor)
+    _set_background(scene, dark_mode)
 
 
-def apply_opacity(plotter: pv.Plotter, opacity: float) -> None:
+def apply_opacity(scene: Scene, opacity: float) -> None:
     """Set *opacity* on every vtkActor in the renderer."""
-    for actor in plotter.renderer.actors.values():
+    for actor in scene.plotter.renderer.actors.values():
         if isinstance(actor, vtkActor):
             actor.GetProperty().SetOpacity(opacity)
 
 
-def push_scene(plotter: pv.Plotter, ctrl: TrameCtrl, reset_camera: bool = True) -> None:
-    """Render *plotter*, reset the camera when *reset_camera* and push the scene to the client."""
+def push_scene(scene: Scene, ctrl: TrameCtrl, reset_camera: bool = True) -> None:
+    """Render *scene*, reset the camera when *reset_camera* and push the scene to the client."""
     # Each renderer and in-place update calls this once, at its end.
-    plotter.render()
+    scene.plotter.render()
     if reset_camera:
-        plotter.reset_camera()  # type: ignore[call-arg]
+        scene.plotter.reset_camera()  # type: ignore[call-arg]
         ctrl.view_push_camera()
     # Full push (ui.layout._make_push_scene): after a dataset switch a local-mode delta can hit a stale content-hash.
     push = getattr(ctrl, "view_push_scene", None)
@@ -218,20 +221,20 @@ def _build_continuous_lut(cmap: str, lo: float, hi: float) -> pv.LookupTable:
 
 
 def update_actor_palette(
-    plotter: pv.Plotter, ctrl: TrameCtrl, colors: list[str], n: int
+    scene: Scene, ctrl: TrameCtrl, colors: list[str], n: int
 ) -> None:
     """Swap the active actor's categorical LUT to the first *n* of *colors* in place and push the scene."""
-    if _active_actor is None:
+    if scene.active_actor is None:
         return
-    mapper = _active_actor.GetMapper()
+    mapper = scene.active_actor.GetMapper()
     mapper.SetLookupTable(_build_categorical_lut(colors, n))
     mapper.SetScalarRange(0, max(n - 1, 1))
     mapper.Modified()
-    push_scene(plotter, ctrl, reset_camera=False)
+    push_scene(scene, ctrl, reset_camera=False)
 
 
 def update_scalar_field_view(
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: TrameCtrl,
     ddir: Path,
     mesh_file: str,
@@ -243,10 +246,10 @@ def update_scalar_field_view(
     percentile: int = _PERCENTILE_CLAMP,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """Switch the active actor's mapper to *field* in place and return (legend, scalar bar)."""
-    if _active_actor is None:
+    if scene.active_actor is None:
         return [], None
 
-    mapper = _active_actor.GetMapper()
+    mapper = scene.active_actor.GetMapper()
     mesh = load_mesh(ddir / mesh_file)  # served from the load_mesh cache
 
     if field in categorical_fields:
@@ -261,7 +264,7 @@ def update_scalar_field_view(
         mapper.SetLookupTable(_build_categorical_lut(colors, n))
         mapper.SetScalarRange(0, max(n - 1, 1))
         mapper.Modified()
-        push_scene(plotter, ctrl, reset_camera=False)
+        push_scene(scene, ctrl, reset_camera=False)
         legend = [
             {"names": zone_labels.get(z, [f"Zone {z}"]), "color": colors[i]}
             for i, z in enumerate(zone_ids)
@@ -277,19 +280,19 @@ def update_scalar_field_view(
     mapper.SetLookupTable(_build_continuous_lut(cmap, clim[0], clim[1]))
     mapper.SetScalarRange(*clim)
     mapper.Modified()
-    push_scene(plotter, ctrl, reset_camera=False)
+    push_scene(scene, ctrl, reset_camera=False)
     return [], _scalar_bar_dict(field, clim, cmap)
 
 
 def update_scalar_range(
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: TrameCtrl,
     field: str,
     clim: list[float],
     cmap: str,
 ) -> "dict | None":
     """Set the active actor's scalar range to *clim* in place and return the scalar bar dict."""
-    actor = _xdmf_actor if _xdmf_actor is not None else _active_actor
+    actor = scene.xdmf_actor if scene.xdmf_actor is not None else scene.active_actor
     if actor is None:
         return None
     mapper = actor.GetMapper()
@@ -298,7 +301,7 @@ def update_scalar_range(
         lut.SetTableRange(clim[0], clim[1])
     mapper.SetScalarRange(clim[0], clim[1])
     mapper.Modified()
-    push_scene(plotter, ctrl, reset_camera=False)
+    push_scene(scene, ctrl, reset_camera=False)
     return _scalar_bar_dict(field, clim, cmap)
 
 
@@ -306,7 +309,7 @@ def update_scalar_range(
 
 
 def redraw_xdmf(
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: TrameCtrl,
     path: Path,
     xdmf_meta: dict[str, MeshMetadata],
@@ -319,11 +322,10 @@ def redraw_xdmf(
     mesh_meta: "MeshMetadata | None" = None,
 ) -> RenderResult:
     """Render step *step* of the time series at *path* and return the RenderResult."""
-    global _xdmf_mesh, _xdmf_actor, _xdmf_surface, _xdmf_point_ids, _xdmf_cell_ids
-    clear_scene(plotter, dark_mode)
+    clear_scene(scene, dark_mode)
     mesh = load_mesh(path, step=step)
 
-    _xdmf_mesh = mesh
+    scene.xdmf_mesh = mesh
     # A flat-series file passes mesh_meta; an XDMF/PVD manifest is keyed by stem.
     if mesh_meta is None:
         mesh_meta = xdmf_meta.get(path.stem)
@@ -347,10 +349,10 @@ def redraw_xdmf(
     if field and mesh_meta and field in mesh_meta.scalar_bounds:
         clim = mesh_meta.scalar_bounds[field]
 
-    # The actor shows the skin; _xdmf_mesh keeps the full frame that update_xdmf_step size-checks each next frame against.
-    _xdmf_surface, _xdmf_point_ids, _xdmf_cell_ids = skin_with_ids(mesh)
-    _xdmf_actor = plotter.add_mesh(
-        _xdmf_surface,
+    # The actor shows the skin; xdmf_mesh keeps the full frame that update_xdmf_step size-checks each next frame against.
+    scene.xdmf_surface, scene.xdmf_point_ids, scene.xdmf_cell_ids = skin_with_ids(mesh)
+    scene.xdmf_actor = scene.plotter.add_mesh(
+        scene.xdmf_surface,
         scalars=colour_by,
         # cmap is a colormap name; PyVista types it as a Literal of known names.
         cmap=cast("ColormapOptions", cmap),
@@ -361,7 +363,7 @@ def redraw_xdmf(
         opacity=opacity,
         render=False,
     )
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    push_scene(scene, ctrl, reset_camera=reset_camera)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
 
     scalar_bar: dict | None = None
@@ -380,7 +382,7 @@ def redraw_xdmf(
 
 
 def update_xdmf_step(
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: TrameCtrl,
     path: Path,
     xdmf_meta: dict[str, MeshMetadata],
@@ -389,43 +391,43 @@ def update_xdmf_step(
     cmap: str,
 ) -> tuple[bool, dict[str, Any] | None, dict[str, Any] | None]:
     """Copy step *step* onto the live frame and its skin in place and return (updated, stats, scalar bar)."""
-    if _xdmf_mesh is None or _xdmf_actor is None:
+    if scene.xdmf_mesh is None or scene.xdmf_actor is None:
         return False, None, None
 
     new_mesh = load_mesh(path, step=step)
 
     if (
-        new_mesh.n_points != _xdmf_mesh.n_points
-        or new_mesh.n_cells != _xdmf_mesh.n_cells
+        new_mesh.n_points != scene.xdmf_mesh.n_points
+        or new_mesh.n_cells != scene.xdmf_mesh.n_cells
     ):
         return False, None, None
 
     for name in new_mesh.array_names:
-        _xdmf_mesh[name] = np.array(new_mesh[name], copy=True)
-    _xdmf_mesh.points = np.array(new_mesh.points, copy=True)
+        scene.xdmf_mesh[name] = np.array(new_mesh[name], copy=True)
+    scene.xdmf_mesh.points = np.array(new_mesh.points, copy=True)
     # The copied arrays are raw; the mapper colours vector fields by the derived magnitude.
-    _refresh_magnitudes(_xdmf_mesh)
-    _xdmf_mesh.Modified()
+    _refresh_magnitudes(scene.xdmf_mesh)
+    scene.xdmf_mesh.Modified()
 
     # Map the frame onto the shown skin; a surface frame is its own skin with ids None.
     if (
-        _xdmf_surface is not None
-        and _xdmf_point_ids is not None
-        and _xdmf_cell_ids is not None
+        scene.xdmf_surface is not None
+        and scene.xdmf_point_ids is not None
+        and scene.xdmf_cell_ids is not None
     ):
         for name in new_mesh.point_data:
-            _xdmf_surface.point_data[name] = np.asarray(new_mesh.point_data[name])[
-                _xdmf_point_ids
+            scene.xdmf_surface.point_data[name] = np.asarray(new_mesh.point_data[name])[
+                scene.xdmf_point_ids
             ]
         for name in new_mesh.cell_data:
-            _xdmf_surface.cell_data[name] = np.asarray(new_mesh.cell_data[name])[
-                _xdmf_cell_ids
+            scene.xdmf_surface.cell_data[name] = np.asarray(new_mesh.cell_data[name])[
+                scene.xdmf_cell_ids
             ]
-        _xdmf_surface.points = np.asarray(new_mesh.points)[_xdmf_point_ids]
-        _refresh_magnitudes(_xdmf_surface)
-        _xdmf_surface.Modified()
-    _xdmf_actor.GetMapper().Modified()
-    push_scene(plotter, ctrl, reset_camera=False)
+        scene.xdmf_surface.points = np.asarray(new_mesh.points)[scene.xdmf_point_ids]
+        _refresh_magnitudes(scene.xdmf_surface)
+        scene.xdmf_surface.Modified()
+    scene.xdmf_actor.GetMapper().Modified()
+    push_scene(scene, ctrl, reset_camera=False)
 
     stats = {"n_cells": new_mesh.n_cells, "n_points": new_mesh.n_points}
     scalar_bar: dict | None = None
@@ -447,7 +449,7 @@ def update_xdmf_step(
 
 
 def redraw_ircadb(
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: TrameCtrl,
     patient_dir: Path,
     dark_mode: bool,
@@ -457,7 +459,7 @@ def redraw_ircadb(
 ) -> RenderResult:
     """Render every organ mesh in *patient_dir* as one merged actor and return the RenderResult."""
     organs = ircadb_organ_names(patient_dir)
-    clear_scene(plotter, dark_mode)
+    clear_scene(scene, dark_mode)
 
     parts: list[pv.DataSet] = []
     loaded_organs: list[str] = []
@@ -482,9 +484,8 @@ def redraw_ircadb(
     colors = region_colors(n, _palette)
     stats: dict[str, int] | None = None
     if parts:
-        global _active_actor
         merged = pv.merge(parts)
-        _active_actor = plotter.add_mesh(
+        scene.active_actor = scene.plotter.add_mesh(
             as_surface(merged),
             scalars="region_id",
             cmap=colors,
@@ -498,8 +499,8 @@ def redraw_ircadb(
             render=False,
         )
         stats = {"n_cells": merged.n_cells, "n_points": merged.n_points}
-    apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    apply_opacity(scene, opacity)
+    push_scene(scene, ctrl, reset_camera=reset_camera)
     legend = [
         {"names": [format_organ_name(organ)], "color": colors[i]}
         for i, organ in enumerate(loaded_organs)
@@ -508,7 +509,7 @@ def redraw_ircadb(
 
 
 def _render_region_array_mesh(
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: TrameCtrl,
     mesh_path: Path,
     region_array: str,
@@ -548,10 +549,8 @@ def _render_region_array_mesh(
     )
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     colors = region_colors(len(unique_ids), _palette)
-
-    global _active_actor
-    clear_scene(plotter, dark_mode)
-    _active_actor = plotter.add_mesh(
+    clear_scene(scene, dark_mode)
+    scene.active_actor = scene.plotter.add_mesh(
         surface,
         scalars="region_id",
         cmap=colors,
@@ -573,7 +572,7 @@ def _render_region_array_mesh(
         centers = mesh.extract_cells(cell_idx).cell_centers()  # type: ignore[arg-type]
         centers[fiber.array] = mesh.cell_data[fiber.array][cell_idx]
         glyphs = centers.glyph(orient=fiber.array, scale=False, factor=fiber.scale)
-        fiber_actor = plotter.add_mesh(
+        fiber_actor = scene.plotter.add_mesh(
             glyphs,
             color="black",
             show_scalar_bar=False,
@@ -582,8 +581,8 @@ def _render_region_array_mesh(
         )
         fiber_actor.SetVisibility(False)
 
-    apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    apply_opacity(scene, opacity)
+    push_scene(scene, ctrl, reset_camera=reset_camera)
 
     legend = [
         {"names": label_map.get(rid, [f"Region {rid}"]), "color": colors[i]}
@@ -594,7 +593,7 @@ def _render_region_array_mesh(
 
 
 def redraw_stl_surface(
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: TrameCtrl,
     dataset_dir: Path,
     dark_mode: bool,
@@ -611,10 +610,8 @@ def redraw_stl_surface(
 
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
     color = _palette[0] if _palette else "#d62728"
-
-    global _active_actor
-    clear_scene(plotter, dark_mode)
-    _active_actor = plotter.add_mesh(
+    clear_scene(scene, dark_mode)
+    scene.active_actor = scene.plotter.add_mesh(
         as_surface(mesh),
         color=color,
         opacity=opacity,
@@ -623,15 +620,15 @@ def redraw_stl_surface(
         copy_mesh=True,
         render=False,
     )
-    apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    apply_opacity(scene, opacity)
+    push_scene(scene, ctrl, reset_camera=reset_camera)
 
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
     return RenderResult(mesh_stats=stats)
 
 
 def _render_region_mesh(
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: TrameCtrl,
     mesh: pv.DataSet,
     dark_mode: bool,
@@ -642,9 +639,7 @@ def _render_region_mesh(
 ) -> RenderResult:
     """Clear the scene, render *mesh* coloured per ``region_id`` body, or in one colour when *solid* or the array is absent, and return the RenderResult."""
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
-
-    global _active_actor
-    clear_scene(plotter, dark_mode)
+    clear_scene(scene, dark_mode)
     surface = as_surface(mesh)
 
     # solid keeps the GRASP phase animation one colour; the body count differs per phase.
@@ -652,7 +647,7 @@ def _render_region_mesh(
         region_ids = mesh.cell_data["region_id"].astype(int)
         n = int(region_ids.max()) + 1
         colors = region_colors(n, _palette)
-        _active_actor = plotter.add_mesh(
+        scene.active_actor = scene.plotter.add_mesh(
             surface,
             scalars="region_id",
             cmap=colors,
@@ -667,7 +662,7 @@ def _render_region_mesh(
         )
         legend = [{"names": [f"Region {i + 1}"], "color": colors[i]} for i in range(n)]
     else:
-        _active_actor = plotter.add_mesh(
+        scene.active_actor = scene.plotter.add_mesh(
             surface,
             color=_palette[0],
             opacity=opacity,
@@ -678,14 +673,14 @@ def _render_region_mesh(
         )
         legend = []
 
-    apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    apply_opacity(scene, opacity)
+    push_scene(scene, ctrl, reset_camera=reset_camera)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
     return RenderResult(legend_items=legend, mesh_stats=stats)
 
 
 def redraw_region_surface_step(
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: TrameCtrl,
     pvd_path: Path,
     dark_mode: bool,
@@ -699,12 +694,12 @@ def redraw_region_surface_step(
     # Phases differ in topology, so each is a full redraw; solid defaults on against colour flicker.
     mesh = load_mesh(pvd_path, step=step)
     return _render_region_mesh(
-        plotter, ctrl, mesh, dark_mode, opacity, palette, reset_camera, solid=solid
+        scene, ctrl, mesh, dark_mode, opacity, palette, reset_camera, solid=solid
     )
 
 
 def redraw_scalar_field(
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: TrameCtrl,
     dataset_dir: Path,
     dark_mode: bool,
@@ -739,15 +734,13 @@ def redraw_scalar_field(
         surface.cell_data["_zone_id"] = (
             zone_id if cell_ids is None else zone_id[cell_ids]
         )
-
-    global _active_actor
-    clear_scene(plotter, dark_mode)
+    clear_scene(scene, dark_mode)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
 
     if is_categorical:
         n = len(zone_ids)
         colors = region_colors(n, _palette)
-        _active_actor = plotter.add_mesh(
+        scene.active_actor = scene.plotter.add_mesh(
             surface,
             scalars="_zone_id",
             cmap=colors,
@@ -760,8 +753,8 @@ def redraw_scalar_field(
             interpolate_before_map=False,
             render=False,
         )
-        apply_opacity(plotter, opacity)
-        push_scene(plotter, ctrl, reset_camera=reset_camera)
+        apply_opacity(scene, opacity)
+        push_scene(scene, ctrl, reset_camera=reset_camera)
         legend = [
             {"names": zone_labels.get(z, [f"Zone {z}"]), "color": colors[i]}
             for i, z in enumerate(zone_ids)
@@ -771,7 +764,7 @@ def redraw_scalar_field(
     data = mesh.cell_data[field]
     # The upper limit at the percentile keeps outliers from washing out the ramp.
     clim = [float(data.min()), float(np.percentile(data, percentile))]
-    _active_actor = plotter.add_mesh(
+    scene.active_actor = scene.plotter.add_mesh(
         surface,
         scalars=field,
         cmap=cast("ColormapOptions", cmap),
@@ -782,8 +775,8 @@ def redraw_scalar_field(
         copy_mesh=True,
         render=False,
     )
-    apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    apply_opacity(scene, opacity)
+    push_scene(scene, ctrl, reset_camera=reset_camera)
     return RenderResult(
         mesh_stats=stats, scalar_bar_info=_scalar_bar_dict(field, clim, cmap)
     )
@@ -827,7 +820,7 @@ def _subsample_lines(mesh: pv.PolyData, stride: int) -> pv.PolyData:
 
 
 def _render_labeled_parts(
-    plotter: pv.Plotter,
+    scene: Scene,
     ctrl: TrameCtrl,
     meshes: list[pv.DataSet],
     labels: list[str],
@@ -839,7 +832,6 @@ def _render_labeled_parts(
     tube_stride: int = 1,
 ) -> RenderResult:
     """Merge *meshes* into one actor coloured per part, tubing radius meshes when *tubify* after subsampling by *tube_stride*, and return the RenderResult."""
-    global _active_actor
     total_cells = 0
     total_points = 0
     processed: list[pv.DataSet] = []
@@ -863,7 +855,7 @@ def _render_labeled_parts(
     for m in meshes[1:]:
         merged = merged.merge(m)
 
-    _active_actor = plotter.add_mesh(
+    scene.active_actor = scene.plotter.add_mesh(
         as_surface(merged),
         scalars="region_id",
         cmap=colors,
@@ -876,8 +868,8 @@ def _render_labeled_parts(
         interpolate_before_map=False,
         render=False,
     )
-    apply_opacity(plotter, opacity)
-    push_scene(plotter, ctrl, reset_camera=reset_camera)
+    apply_opacity(scene, opacity)
+    push_scene(scene, ctrl, reset_camera=reset_camera)
 
     legend = [{"names": [label], "color": colors[i]} for i, label in enumerate(labels)]
     stats = {"n_cells": total_cells, "n_points": total_points}

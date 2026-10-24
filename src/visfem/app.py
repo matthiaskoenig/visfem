@@ -44,6 +44,7 @@ from visfem.engine.playback import (
     vtkjs_warmup,
 )
 from visfem.engine.scene import (
+    Scene,
     TrameCtrl,
     apply_opacity,
     push_scene,
@@ -148,6 +149,7 @@ class VisfemApp(TrameApp):
         # typeshed types functools.wraps-built Plotter methods as unbound; the ignores cover that.
         self.plotter.enable_depth_peeling(number_of_peels=4)  # type: ignore[call-arg]
         self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
+        self.scene = Scene(self.plotter)
         # Physical scale stays default: SetPhysicalScale is server-only; the JS selectstart handler scales XR metres by 1000 to VTK mm.
 
     @staticmethod
@@ -254,7 +256,7 @@ class VisfemApp(TrameApp):
             self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
         else:
             self.plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)  # type: ignore[arg-type]
-        push_scene(self.plotter, self.ctrl, reset_camera=False)
+        push_scene(self.scene, self.ctrl, reset_camera=False)
 
     async def reset_camera(self) -> None:
         """Restore the camera to the initial pose captured at dataset load."""
@@ -269,7 +271,7 @@ class VisfemApp(TrameApp):
                 await asyncio.sleep(0.05)
                 self.plotter.camera_position = self._initial_camera
                 self.ctrl.view_push_camera()
-                push_scene(self.plotter, self.ctrl, reset_camera=False)
+                push_scene(self.scene, self.ctrl, reset_camera=False)
                 # Fixed hold: the server learns the end of the client's re-render only through this timer.
                 await asyncio.sleep(0.4)
             finally:
@@ -316,7 +318,7 @@ class VisfemApp(TrameApp):
         if not field:
             return
         cmap = resolve_cmap(self.state)
-        scalar_bar = update_scalar_range(self.plotter, self.ctrl, field, [lo, hi], cmap)
+        scalar_bar = update_scalar_range(self.scene, self.ctrl, field, [lo, hi], cmap)
         if scalar_bar:
             self.state.clim_override = [lo, hi]
             self.state.scalar_bar = scalar_bar
@@ -373,7 +375,7 @@ class VisfemApp(TrameApp):
         prepare: Callable[[], None] | None = None,
         needs_dataset: bool = True,
     ) -> None:
-        """Run *render* with the plotter, ctrl, state, both metadata maps and *args* under the busy claim; *prepare* applies state first, *what* names the action in the error, *needs_dataset* requires an active dataset."""
+        """Run *render* with the scene, ctrl, state, both metadata maps and *args* under the busy claim; *prepare* applies state first, *what* names the action in the error, *needs_dataset* requires an active dataset."""
         if needs_dataset and self.state.active_dataset is None:
             return
         with self._claim_busy(what) as claimed:
@@ -385,7 +387,7 @@ class VisfemApp(TrameApp):
             self.state.flush()
             await asyncio.sleep(0.05)
             render(
-                self.plotter,
+                self.scene,
                 self.ctrl,
                 self.state,
                 self._project_metadata,
@@ -403,7 +405,7 @@ class VisfemApp(TrameApp):
         await asyncio.sleep(0.05)
         try:
             self._fiber_actor = render()
-            apply_opacity(self.plotter, float(self.state.ctrl_opacity))
+            apply_opacity(self.scene, float(self.state.ctrl_opacity))
             self._initial_camera = self.plotter.camera_position
             await self._start_vtkjs_warmup()
         except Exception as e:  # noqa: BLE001 - UI boundary: report and release the view
@@ -471,8 +473,8 @@ class VisfemApp(TrameApp):
         except asyncio.CancelledError:
             return
         try:
-            apply_opacity(self.plotter, opacity)
-            push_scene(self.plotter, self.ctrl, reset_camera=False)
+            apply_opacity(self.scene, opacity)
+            push_scene(self.scene, self.ctrl, reset_camera=False)
         finally:
             self.state.opacity_adjusting = False
             self.state.flush()
@@ -496,14 +498,14 @@ class VisfemApp(TrameApp):
         if self._fiber_actor is None:
             return
         self._fiber_actor.SetVisibility(bool(show_fibers))
-        push_scene(self.plotter, self.ctrl, reset_camera=False)
+        push_scene(self.scene, self.ctrl, reset_camera=False)
 
     async def select_dataset(self, key: str) -> None:
         """Switch to dataset *key*."""
         await self._switch(
             f"dataset '{key}'",
             lambda: select_dataset(
-                self.plotter,
+                self.scene,
                 self.ctrl,
                 self.state,
                 self._project_metadata,
@@ -518,7 +520,7 @@ class VisfemApp(TrameApp):
         def render() -> None:
             """Render XDMF file *stem* of dataset *key*."""
             select_xdmf(
-                self.plotter,
+                self.scene,
                 self.ctrl,
                 self.state,
                 self._project_metadata,
@@ -535,7 +537,7 @@ class VisfemApp(TrameApp):
         def render() -> None:
             """Render patient *patient* of dataset *dataset_key*."""
             select_patient(
-                self.plotter,
+                self.scene,
                 self.ctrl,
                 self.state,
                 self._project_metadata,
@@ -567,14 +569,14 @@ class VisfemApp(TrameApp):
         """Show time step *step* of the active dataset."""
 
         def render(
-            plotter: pv.Plotter,
+            scene: Scene,
             ctrl: TrameCtrl,
             state: Any,
             project_metadata: dict[str, ProjectMetadata],
             xdmf_meta: dict[str, MeshMetadata],
         ) -> None:
-            """Call select_step with the coerced *step* on *plotter*, *ctrl*, *state*, *project_metadata* and *xdmf_meta*."""
-            select_step(plotter, ctrl, state, project_metadata, xdmf_meta, int(step))
+            """Call select_step with the coerced *step* on *scene*, *ctrl*, *state*, *project_metadata* and *xdmf_meta*."""
+            select_step(scene, ctrl, state, project_metadata, xdmf_meta, int(step))
 
         await self._busy_render("change the time step", render, needs_dataset=False)
 
@@ -648,7 +650,7 @@ class VisfemApp(TrameApp):
             self._autoplay_task = asyncio.ensure_future(
                 autoplay_loop(
                     self.state,
-                    self.plotter,
+                    self.scene,
                     self.ctrl,
                     self._project_metadata,
                     self._xdmf_meta,

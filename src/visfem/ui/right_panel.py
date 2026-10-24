@@ -354,7 +354,7 @@ def _category_swatch(
                     "? ' box-shadow:0 0 0 2px rgba(127,127,127,0.55);' : '')",
                 ),
             )
-        with v3.VCard(style="padding:8px;"):
+        with v3.VCard(style="padding:8px;", elevation=0, border=True):
             html.Div(
                 "{{ item.names[0] }}",
                 style=f"font-size:{FS_SM}; opacity:{OP_SUBDUED}; margin-bottom:6px; max-width:230px;",
@@ -368,13 +368,14 @@ def _category_swatch(
                     hide_inputs=False,
                     show_swatches=False,
                     width="230",
+                    elevation=0,
                 )
                 with html.Div(
                     style=f"display:flex; align-items:center; gap:{GAP_SM}; margin-top:6px;"
                 ):
                     v3.VBtn(
                         text="Reset",
-                        variant="text",
+                        variant="outlined",
                         density="compact",
                         size="small",
                         disabled=("busy",),
@@ -383,7 +384,7 @@ def _category_swatch(
                     )
                     v3.VBtn(
                         text="Apply",
-                        variant="tonal",
+                        variant="flat",
                         color=ACCENT,
                         density="compact",
                         size="small",

@@ -1,6 +1,7 @@
 """Trame web application for FEM mesh visualization.
 
-Usage: visfem, or python -m visfem.app. VISFEM_PRELOAD=1 preloads every mesh.
+Usage: visfem, or python -m visfem.app. VISFEM_PRELOAD=1 preloads every mesh;
+VISFEM_LOG_LEVEL sets the log level (default WARNING).
 """
 
 import asyncio

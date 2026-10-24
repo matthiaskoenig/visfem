@@ -1,25 +1,27 @@
-"""Logging setup using rich for output formatting."""
+"""Logging setup: one RichHandler on the visfem logger, level from VISFEM_LOG_LEVEL."""
 
 import logging
+import os
 
 from rich.logging import RichHandler
 
-from visfem.console import console
+_ROOT = "visfem"
 
 
-def get_logger(name: str, level: int = logging.WARNING) -> logging.Logger:
-    """Return the logger for name at level with a RichHandler attached."""
-    formatter = logging.Formatter(
-        fmt="%(message)s",
-        datefmt="[%X]",
-    )
+def _configure() -> logging.Logger:
+    """Attach one RichHandler to the visfem logger at the level named by VISFEM_LOG_LEVEL (default WARNING); returns that logger."""
+    root = logging.getLogger(_ROOT)
+    if root.handlers:
+        return root
+    level = os.environ.get("VISFEM_LOG_LEVEL", "WARNING").upper()
+    root.setLevel(logging.getLevelNamesMapping().get(level, logging.WARNING))
+    handler = RichHandler(markup=False, rich_tracebacks=True, show_time=False)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    root.addHandler(handler)
+    return root
 
-    handler = RichHandler(
-        markup=False, rich_tracebacks=True, show_time=False, console=console
-    )
-    handler.setFormatter(formatter)
 
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
-    logger.addHandler(handler)
-    return logger
+def get_logger(name: str) -> logging.Logger:
+    """Return the logger for name; records propagate to the visfem logger configured on first call."""
+    _configure()
+    return logging.getLogger(name)

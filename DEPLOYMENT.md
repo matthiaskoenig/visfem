@@ -282,5 +282,7 @@ public.
 - [`deploy/landing/`](deploy/landing/): the static landing page.
 - `src/visfem/engine/discovery.py`: reads `DATA_DIR` and the `VISFEM_DATASETS`
   allowlist.
+- `src/visfem/log.py`: reads `VISFEM_LOG_LEVEL` (default `WARNING`), the level of
+  the container log.
 - `src/visfem/app.py` + `src/visfem/ui/layout.py`: handle the `?model=<key>` URL
   parameter and on-demand mesh loading.

@@ -32,17 +32,17 @@ keywords = [
 	"FEM",
 ]
 dependencies = [
-	"rich>=14.2.0",
-	"pydantic>=2.12.5",
-	"meshio>=5.3.5",
-	"pyvista>=0.47.1",
-	"trame>=3.12.0",
-	"h5py>=3.16.0",
-	"imageio>=2.37.3",
-	"trame-vuetify>=3.2.1",
-	"trame-vtk>=2.11.6",
-	"numpy>=2.4.3",
-	"ipykernel>=7.2.0",
+	"rich>=13.0",
+	"pydantic>=2.0",
+	"meshio>=5.3",
+	"pyvista>=0.47",  # extract_surface(algorithm=...)
+	"vtk>=9.2.2",
+	"trame>=3.12",
+	"trame-client>=3.12.2",
+	"trame-vuetify>=3.2",
+	"trame-vtk>=2.11",
+	"h5py>=3.0",
+	"numpy>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -54,7 +54,7 @@ dev = [
     "tox>=4.31.0",
     "pytest>=8.4.2",
     "pytest-cov>=7.0.0",
-    "pydicom>=3.0.0",
+    "ipykernel>=7.0",  # kernel for notebooks/visfem.ipynb
 ]
 
 [project.urls]

@@ -17,3 +17,8 @@ commit_args = ""
 
 [[tool.bumpversion.files]]
 filename = "./src/visfem/__init__.py"
+
+[[tool.bumpversion.files]]
+filename = "CITATION.cff"
+search = "version: {current_version}"
+replace = "version: {new_version}"

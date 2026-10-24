@@ -67,6 +67,23 @@ Download = "https://pypi.org/project/visfem"
 [tool.hatch.version]
 path = "./src/visfem/__init__.py"
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+	"/.github",
+	"/.zenodo.json",
+	"/DEPLOYMENT.md",
+	"/Dockerfile",
+	"/RELEASE.md",
+	"/compose.deploy.yml",
+	"/data/datasets/.gitignore",
+	"/deploy",
+	"/docker-compose.yml",
+	"/docs",
+	"/notebooks",
+	"/release-notes",
+	"/setup",
+]
+
 [project.scripts]
 visfem = "visfem.cli:main"
 

@@ -1,7 +1,7 @@
 # Release information
 
 ## make release
-* update release notes in `release-notes` with commit
+* update release notes in `release-notes` and `date-released` in `CITATION.cff` with commit
 * make sure all tests run (`tox -p`)
 * check formating and linting (`ruff check`)
 * test bump version (`uvx bump-my-version bump [major|minor|patch] --dry-run -vv`)
@@ -18,7 +18,7 @@ uv pip install visfem
 ```bash
 # install core dependencies
 uv sync
-# inst[uv.lock](uv.lock)all dev dependencies
+# install dev dependencies
 uv pip install -r pyproject.toml --extra dev
 uv tool install tox --with tox-uv
 ```
@@ -32,7 +32,7 @@ Run all tests in parallel
 ```bash
 tox run-parallel
 ```
-Continuous integration runs only `py3.14`, on linux, macos and windows, and `mypy`; the complete `envlist`, including python 3.13, runs locally with `tox run-parallel` before a pull request is opened.
+Continuous integration runs `py3.14` on linux, macos and windows, `py3.13` on linux, and `mypy`; the complete `envlist` runs locally with `tox run-parallel` before a pull request is opened.
 
 # Setup pre-commit
 ```bash

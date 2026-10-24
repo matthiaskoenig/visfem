@@ -1,6 +1,6 @@
 name: CI-CD
 
-on: [push]
+on: [push, pull_request]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -15,10 +15,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # continuous integration tests the newest python on every platform,
-        # python 3.13 is tested locally with `tox run-parallel`, see RELEASE.md
+        # the newest python on every platform, the oldest supported python on linux
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.14"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.13"
 
     steps:
     - uses: actions/checkout@v6
@@ -45,7 +47,7 @@ jobs:
         python-version: ["3.14"]
     environment:
       name: pypi
-      url: https://pypi.org/p/<your-pypi-project-name>
+      url: https://pypi.org/p/visfem
     permissions:
       id-token: write
       contents: write
@@ -64,7 +66,6 @@ jobs:
         python -m pip install hatch twine
 
     - name: Build package
-      # run: python setup.py sdist bdist_wheel
       run: hatch build
     - name: Check the package
       run: twine check dist/*

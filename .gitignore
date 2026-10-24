@@ -14,7 +14,13 @@ wheels
 __pycache__
 .pytest_cache
 visfem.code-workspace
-notebooks/.ipynb_checkpoints/demo-checkpoint.ipynb
+notebooks/.ipynb_checkpoints/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
 
 # Data lives outside the repo; keep data/datasets/ as an anchor
 data/*

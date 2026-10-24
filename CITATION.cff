@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it as below.
+type: software
+title: "VisFEM: Web visualization of FEM models"
+version: 0.1.0
+date-released: 2026-05-05
+doi: 10.5281/zenodo.19220183
+license: MIT
+repository-code: https://github.com/matthiaskoenig/visfem
+url: https://app.visfem.de
+keywords:
+  - finite element method
+  - scientific visualization
+  - web visualization
+  - biomechanics
+  - PyVista
+  - Trame
+authors:
+  - family-names: Elias
+    given-names: Michelle
+    orcid: https://orcid.org/0009-0005-7959-3164
+    affiliation: Humboldt-Universität zu Berlin, Faculty of Life Sciences, Department of Biology, Institute of Theoretical Biology, Systems Medicine of the Liver, Unter den Linden 6, 10099 Berlin, Germany
+  - family-names: König
+    given-names: Matthias
+    orcid: https://orcid.org/0000-0003-1725-179X
+    affiliation: Humboldt-Universität zu Berlin, Faculty of Life Sciences, Department of Biology, Institute of Theoretical Biology, Systems Medicine of the Liver, Unter den Linden 6, 10099 Berlin, Germany; University Hospital Schleswig-Holstein, Campus Lübeck, First Department of Medicine, Ratzeburger Allee 160, 23538 Lübeck, Germany

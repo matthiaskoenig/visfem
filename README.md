@@ -87,9 +87,10 @@ Cite the software repository as:
 
 ## License
 
-* Source Code: [MIT](https://opensource.org/license/MIT)
+* Source code: [MIT](https://opensource.org/license/MIT)
 * Documentation: [CC BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)
-* Models: [CC BY-SA 4.0](http://creativecommons.org/licenses/by-sa/4.0/)
+
+The example datasets keep the licenses of their providers, listed under Example data.
 
 The software ships as is; the MIT license in `LICENSE` disclaims all warranties,
 including merchantability and fitness for a particular purpose.

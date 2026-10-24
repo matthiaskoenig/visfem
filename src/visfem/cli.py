@@ -82,7 +82,7 @@ def cmd_validate_data(_args: argparse.Namespace) -> int:
 
         # PVD datasets point data_path at the .pvd file itself; others at a dir.
         ddir = dataset_dir(meta)
-        if meta.mesh_format.upper() == "PVD":
+        if meta.is_pvd:
             from visfem.engine.discovery import pvd_file_path
 
             pvd = pvd_file_path(meta)
@@ -284,7 +284,7 @@ _EXAMPLES: dict[RendererName, dict] = {
     ),
 }
 
-# Inline guidance written into a scaffolded template (Pydantic ignores _comment keys).
+# Inline guidance written into a scaffolded template; the models drop keys that start with an underscore.
 _TEMPLATE_HELP = {
     "_comment": "Edit the fields below, drop your meshes in this folder, then run: visfem validate-data",
     "_comment_data_path": "folder under datasets/ holding the meshes (usually this dataset's name)",

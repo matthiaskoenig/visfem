@@ -155,7 +155,7 @@ def dataset_dir(meta: ProjectMetadata) -> Path:
 
 def pvd_file_path(meta: ProjectMetadata) -> Path | None:
     """Return the PVD file path for PVD-format datasets, else None."""
-    if meta.mesh_format == "PVD":
+    if meta.is_pvd:
         return DATASETS_DIR / meta.data_path
     return None
 
@@ -169,7 +169,7 @@ def active_timeseries_path(
     meta: ProjectMetadata, state: Any, ddir: Path
 ) -> Path | None:
     """Return the active timeseries file of *meta*: its PVD for a PVD dataset, else the XDMF in *ddir* named by ``state.active_xdmf``, else the first XDMF in *ddir*, else None."""
-    if meta.mesh_format == "PVD":
+    if meta.is_pvd:
         return pvd_file_path(meta)
     xdmf_files = discover_xdmf(ddir)
     stem: str | None = state.active_xdmf

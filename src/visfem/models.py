@@ -3,16 +3,33 @@
 import hashlib
 import json
 from enum import StrEnum
+from pathlib import PurePosixPath
+from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+class _Strict(BaseModel):
+    """Base of the JSON models: unknown keys are errors, keys starting with an underscore are comments and are dropped."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_comments(cls, data: object) -> object:
+        """Return data without the keys that start with an underscore."""
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if not str(k).startswith("_")}
+        return data
+
 
 # MeshMetadata
 
 
-class FieldInfo(BaseModel):
+class FieldInfo(_Strict):
     """Descriptor for one scalar/vector/tensor field on a mesh."""
 
-    center: str  # "point" or "cell"
+    center: Literal["point", "cell"]
     shape: list[int]  # [1] scalar, [3] vector, [3, 3] tensor
 
 
@@ -20,7 +37,7 @@ Bounds3D = tuple[float, float, float, float, float, float]
 """(xmin, xmax, ymin, ymax, zmin, zmax) bounding box."""
 
 
-class MeshMetadata(BaseModel):
+class MeshMetadata(_Strict):
     """Per-mesh metadata generated from the mesh file and cached as a .meta.json sidecar."""
 
     # a sidecar whose hash differs from MESH_METADATA_HASH is regenerated
@@ -92,21 +109,21 @@ class RendererName(StrEnum):
     PATIENT_ORGANS = "patient_organs"  # per-patient .vtk file per organ (ircadb)
 
 
-class PartSpec(BaseModel):
+class PartSpec(_Strict):
     """One named part for the multi_part renderer."""
 
     stem: str  # path stem relative to the dataset dir (may contain subdirs)
     label: str
 
 
-class ScalarField(BaseModel):
+class ScalarField(_Strict):
     """One selectable scalar field with a display label."""
 
     name: str
     label: str | None = None  # None: humanised copy of name
 
 
-class FiberOptions(BaseModel):
+class FiberOptions(_Strict):
     """Fibre glyph overlay for the region_id renderer."""
 
     array: str = "Fiber"  # vector cell array that orients the glyphs
@@ -114,7 +131,7 @@ class FiberOptions(BaseModel):
     scale: float = 1.5
 
 
-class TubeOptions(BaseModel):
+class TubeOptions(_Strict):
     """Tubing options for the multi_part renderer (vessel centrelines)."""
 
     enabled: bool = True
@@ -122,7 +139,7 @@ class TubeOptions(BaseModel):
     stride: int = Field(default=1, ge=1)  # subsample line cells before tubing
 
 
-class RenderConfig(BaseModel):
+class RenderConfig(_Strict):
     """Per-dataset render config from the optional JSON `render` block; engine.renderers.resolve_render_config infers omitted fields from mesh_format and file discovery."""
 
     renderer: RendererName | None = None
@@ -134,8 +151,8 @@ class RenderConfig(BaseModel):
     part_extensions: list[str] = [".ply", ".vtk", ".vtu", ".stl", ".obj"]
 
     # colouring
-    categorical_palette: str = "paired"
-    continuous_cmap: str = "viridis"
+    categorical_palette: str = "paired"  # key of palettes.CATEGORICAL_PALETTES
+    continuous_cmap: str = "viridis"  # key of palettes.CONTINUOUS_CMAPS
     region_array: str | None = None  # integer cell array (Material / PartId)
     # region id -> display name(s); overrides labels_file
     region_labels: dict[int, list[str]] = {}
@@ -159,8 +176,32 @@ class RenderConfig(BaseModel):
     # scalar_field renderer
     # fields drawn as discrete zones with a region legend
     categorical_fields: list[str] = []
-    # upper clamp percentile for continuous fields; None: 95
-    percentile_clamp: int | None = None
+    # upper clamp percentile for continuous fields
+    percentile_clamp: int = Field(default=95, ge=1, le=100)
+
+    @field_validator("categorical_palette")
+    @classmethod
+    def _known_palette(cls, name: str) -> str:
+        """Return name when it is a key of CATEGORICAL_PALETTES; raises ValueError otherwise."""
+        from visfem.engine.palettes import CATEGORICAL_PALETTES
+
+        if name not in CATEGORICAL_PALETTES:
+            raise ValueError(
+                f"unknown palette '{name}', one of: {', '.join(CATEGORICAL_PALETTES)}"
+            )
+        return name
+
+    @field_validator("continuous_cmap")
+    @classmethod
+    def _known_cmap(cls, name: str) -> str:
+        """Return name when it is a key of CONTINUOUS_CMAPS; raises ValueError otherwise."""
+        from visfem.engine.palettes import CONTINUOUS_CMAPS
+
+        if name not in CONTINUOUS_CMAPS:
+            raise ValueError(
+                f"unknown colormap '{name}', one of: {', '.join(CONTINUOUS_CMAPS)}"
+            )
+        return name
 
     @model_validator(mode="after")
     def _coerce_field_labels(self) -> "RenderConfig":
@@ -171,10 +212,12 @@ class RenderConfig(BaseModel):
         return self
 
 
-class ProjectMetadata(BaseModel):
+class ProjectMetadata(_Strict):
     """Hand-authored per-dataset descriptor with the scientific context shown in the UI, stored in data/datasets/**/*.json."""
 
-    data_path: str
+    data_path: (
+        str  # relative to the datasets dir: a folder, or the .pvd file of a PVD dataset
+    )
     labels_file: str | None = None
     name: str
     pi: str
@@ -182,7 +225,7 @@ class ProjectMetadata(BaseModel):
     biological_scale: BiologicalScale
     organ_system: list[OrganSystem]  # multi-system datasets list several (e.g. IRCADb)
     description: str = Field(max_length=500)
-    mesh_format: str  # e.g. "VTK", "XDMF+HDF5", "VTU"
+    mesh_format: str  # display label, e.g. "VTK", "XDMF+HDF5", "VTU (per-phase)"
     references: list[str] = []  # DOIs, URLs, or citations
     spp_project: str | None = None  # SPP2311 project title
     spp_badge: bool = False  # show the SPP2311 badge even when spp_project is None
@@ -191,3 +234,17 @@ class ProjectMetadata(BaseModel):
     # sort position within the organ group or subgroup; None: by name
     sort_order: int | None = None
     render: RenderConfig | None = None  # render config; None: every field inferred
+
+    @field_validator("data_path")
+    @classmethod
+    def _relative_path(cls, value: str) -> str:
+        """Return value when it is a relative path without parent references; raises ValueError otherwise."""
+        path = PurePosixPath(value)
+        if not value.strip() or path.is_absolute() or ".." in path.parts:
+            raise ValueError("must be a relative path inside the datasets dir")
+        return value
+
+    @property
+    def is_pvd(self) -> bool:
+        """Return True when mesh_format names a PVD dataset, whose data_path is the .pvd file."""
+        return self.mesh_format.upper() == "PVD"

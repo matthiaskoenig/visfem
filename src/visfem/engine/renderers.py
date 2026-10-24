@@ -49,10 +49,9 @@ def _first_patient_dir(ddir: Path) -> Path | None:
 
 def _infer_renderer(meta: ProjectMetadata, ddir: Path) -> RendererName:
     """Return the renderer inferred from meta.mesh_format and the layout of ddir."""
-    fmt = meta.mesh_format.upper()
-    if fmt == "PVD":
+    if meta.is_pvd:
         return RendererName.TIMESERIES
-    if "XDMF" in fmt or discover_xdmf(ddir):
+    if "XDMF" in meta.mesh_format.upper() or discover_xdmf(ddir):
         return RendererName.TIMESERIES
     if _has_patient_dirs(ddir):
         pdir = _first_patient_dir(ddir)
@@ -308,14 +307,14 @@ def render_scalar_field(ctx: RenderContext) -> RenderResult:
         zone_labels=cfg.region_labels,
         palette=ctx.palette,
         cmap=ctx.cmap,
-        percentile=cfg.percentile_clamp if cfg.percentile_clamp is not None else 95,
+        percentile=cfg.percentile_clamp,
         reset_camera=ctx.reset_camera,
     )
 
 
 def _timeseries_path(ctx: RenderContext) -> Path | None:
     """Return the active timeseries file for ctx, or None."""
-    if ctx.meta.mesh_format.upper() == "PVD":
+    if ctx.meta.is_pvd:
         return pvd_file_path(ctx.meta)
     xdmf_files = discover_xdmf(ctx.ddir)
     stem = getattr(ctx.state, "active_xdmf", None)

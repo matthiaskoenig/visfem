@@ -131,7 +131,7 @@ def _scalar_field_view_args(
         "zone_labels": cfg.region_labels,
         "palette": _resolve_palette(state),
         "cmap": resolve_cmap(state),
-        "percentile": cfg.percentile_clamp if cfg.percentile_clamp is not None else 95,
+        "percentile": cfg.percentile_clamp,
     }
 
 

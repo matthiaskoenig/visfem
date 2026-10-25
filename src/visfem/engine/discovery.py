@@ -1,6 +1,7 @@
 """Dataset discovery and project metadata helpers."""
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -78,6 +79,9 @@ def xdmf_display_name(stem: str) -> str:
 
 # ---- Metadata ----
 
+# A dataset key is the stem of its descriptor; it reaches URLs and the client.
+DATASET_KEY = re.compile(r"[A-Za-z0-9_.-]+")
+
 
 def iter_descriptor_paths() -> list[Path]:
     """Return the sorted paths of every dataset descriptor JSON under DATASETS_DIR."""
@@ -103,6 +107,13 @@ def load_project_metadata() -> dict[str, ProjectMetadata]:
     for path in iter_descriptor_paths():
         key = path.stem
         if ALLOWED_DATASETS is not None and key not in ALLOWED_DATASETS:
+            continue
+        if not DATASET_KEY.fullmatch(key):
+            logger.warning(
+                "Skipping '%s': dataset key '%s' allows only letters, digits, '_', '.' and '-'",
+                path,
+                key,
+            )
             continue
         if key in result:
             logger.warning(

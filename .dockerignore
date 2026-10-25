@@ -1,11 +1,21 @@
+# the image holds the package source and the trame setup, see Dockerfile
+.git/
+.github
 .venv/
+.tox/
+.idea/
+.vscode/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
 __pycache__/
 *.pyc
-.github
-.git/
-.tox/
 data/
+visfem_data/
 deploy/server/
 docs/
+site/
+dist/
 exploration/
+notebooks/
 tests

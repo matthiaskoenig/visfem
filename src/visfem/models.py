@@ -9,6 +9,14 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+def _check_relative(value: str) -> str:
+    """Return value when it is a relative path without parent references; raises ValueError otherwise."""
+    path = PurePosixPath(value)
+    if not value.strip() or path.is_absolute() or ".." in path.parts:
+        raise ValueError("must be a relative path inside the datasets dir")
+    return value
+
+
 class _Strict(BaseModel):
     """Base of the JSON models: unknown keys are errors, keys starting with an underscore are comments and are dropped."""
 
@@ -115,6 +123,8 @@ class PartSpec(_Strict):
     stem: str  # path stem relative to the dataset dir (may contain subdirs)
     label: str
 
+    _relative_stem = field_validator("stem")(_check_relative)
+
 
 class ScalarField(_Strict):
     """One selectable scalar field with a display label."""
@@ -179,6 +189,14 @@ class RenderConfig(_Strict):
     # upper clamp percentile for continuous fields
     percentile_clamp: int = Field(default=95, ge=1, le=100)
 
+    @field_validator("mesh_file", "mesh_candidates", "series", "database")
+    @classmethod
+    def _relative_paths(cls, value: str | list[str] | None) -> str | list[str] | None:
+        """Return value when every path in it stays inside the dataset dir; raises ValueError otherwise."""
+        if isinstance(value, list):
+            return [_check_relative(v) for v in value]
+        return value if value is None else _check_relative(value)
+
     @field_validator("categorical_palette")
     @classmethod
     def _known_palette(cls, name: str) -> str:
@@ -235,14 +253,11 @@ class ProjectMetadata(_Strict):
     sort_order: int | None = None
     render: RenderConfig | None = None  # render config; None: every field inferred
 
-    @field_validator("data_path")
+    @field_validator("data_path", "labels_file")
     @classmethod
-    def _relative_path(cls, value: str) -> str:
+    def _relative_path(cls, value: str | None) -> str | None:
         """Return value when it is a relative path without parent references; raises ValueError otherwise."""
-        path = PurePosixPath(value)
-        if not value.strip() or path.is_absolute() or ".." in path.parts:
-            raise ValueError("must be a relative path inside the datasets dir")
-        return value
+        return value if value is None else _check_relative(value)
 
     @property
     def is_pvd(self) -> bool:

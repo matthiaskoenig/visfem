@@ -172,12 +172,25 @@ visfem.de {
 }
 
 app.visfem.de {
+	# the trame client reads its connection settings from the URL as well; a
+	# link must not point a visitor's browser at another session server
+	@session_override expression `{query.sessionURL} != "" || {query.sessionManagerURL} != "" || {query.secret} != ""`
+	respond @session_override "Bad Request" 400
+
+	header {
+		# the browser connects to this host only, the app is never framed
+		Content-Security-Policy "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
 	reverse_proxy 127.0.0.1:8080
 }
 EOF
 ```
 
-This serves the static landing page on `visfem.de` and forwards `app.visfem.de` traffic to the app container. Validate and load it:
+This serves the static landing page on `visfem.de` and forwards `app.visfem.de` traffic to the app container. The app block rejects links which override the session settings of the trame client and sends the security headers; `connect-src 'self'` keeps the browser from opening a WebSocket to any other host. Validate and load it:
 
 ```bash
 caddy validate --config /etc/caddy/Caddyfile
@@ -217,7 +230,8 @@ docker compose -f compose.deploy.yml up -d --build # rebuild after code/config c
 
 - `restart: unless-stopped` brings the container back after a reboot or crash.
 - Update the code with `git pull`, then rebuild (`docker compose -f compose.deploy.yml up -d --build`). Staged data and the landing page stay in place.
-- Concurrency: set in [`setup/launcher.json`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/launcher.json), field `resources` → `port_range`. Each visitor holds one port from the range; the port count is the session cap. The default `[9001, 9006]` is 6 sessions. Widening the range (e.g. `[9001, 9020]`) needs a rebuild: `launcher.json` is baked into the image. `"timeout": 60` in the same file reclaims an idle session after 60 seconds. Memory scales with sessions and dataset size; check `docker stats visfem` under real use before widening.
+- Concurrency: set in [`setup/launcher.json`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/launcher.json), field `resources` → `port_range`. Each visitor holds one port from the range; the port count is the session cap. The default `[9001, 9006]` is 6 sessions. Widening the range (e.g. `[9001, 9020]`) needs a rebuild: `launcher.json` is baked into the image. `"timeout": 60` in the same file is how long the launcher waits for a new session to start. A session ends 30 seconds after its last client disconnected, set by `--timeout` in [`setup/apps.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/apps.yml); a session which is requested but never connected holds its port for that long, too. Memory scales with sessions and dataset size; check `docker stats visfem` under real use before widening.
+- Abuse: anybody can request sessions from the launcher without logging in, and 6 requests take every port for 30 seconds. Caddy has no rate limiting built in; if sessions run out without real visitors, rate limit `/paraview` with the [caddy-ratelimit](https://github.com/mholt/caddy-ratelimit) module or put the site behind basic auth (Appendix A). Adding `mem_limit`, `cpus` and `pids_limit` to `compose.deploy.yml` caps what the container can take from the server.
 
 ---
 
@@ -248,7 +262,9 @@ Reload Caddy (`sudo systemctl reload caddy`). Remove the block and reload to go 
 
 - [`Dockerfile`](https://github.com/matthiaskoenig/visfem/blob/develop/Dockerfile): builds the app image from the `kitware/trame:uv` base (Python 3.13) and installs OSMesa for software 3D rendering.
 - [`compose.deploy.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/compose.deploy.yml): the production Compose file (image name, port binding, data mount, and the `DATA_DIR` / `TRAME_USE_HOST` / `VISFEM_DATASETS` settings).
-- [`setup/launcher.json`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/launcher.json): the trame launcher config (concurrency `port_range`, idle `timeout`), baked into the image at build.
+- [`setup/launcher.json`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/launcher.json): the trame launcher config (concurrency `port_range`, start `timeout`), baked into the image at build.
+- [`setup/apps.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/apps.yml): the session command of the launcher, `visfem` with the idle `--timeout`.
+- [`setup/requirements.txt`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/requirements.txt): the pinned dependencies of the image, exported from `uv.lock`, see [Deployment requirements](development.md#deployment-requirements).
 - [`deploy/landing/`](https://github.com/matthiaskoenig/visfem/tree/develop/deploy/landing): the static landing page.
 - `src/visfem/engine/discovery.py`: reads `DATA_DIR` and the `VISFEM_DATASETS` allowlist.
 - `src/visfem/log.py`: reads `VISFEM_LOG_LEVEL` (default `WARNING`), the level of the container log.

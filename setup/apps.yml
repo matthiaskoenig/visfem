@@ -1,2 +1,5 @@
 trame:
   app: visfem
+  # a session process exits 30 s after its last client left (trame default 300 s),
+  # so sessions which were started but never connected free their port quickly
+  args: ["--timeout", "30"]

@@ -182,7 +182,7 @@ The `documentation` workflow runs both steps, so the files are regenerated with 
 The container of the [deployment](deployment.md) installs the app from `setup/requirements.txt`, which is exported from `uv.lock`. Regenerate it whenever the dependencies change, never edit it by hand:
 
 ```bash
-uv export --frozen --no-dev --no-editable -o setup/requirements.txt
+uv export --frozen --no-dev --no-editable --no-emit-project -o setup/requirements.txt
 ```
 
 ## Release

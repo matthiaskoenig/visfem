@@ -21,10 +21,15 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import IO, TYPE_CHECKING
 
 from pydantic import ValidationError
 
 from visfem.models import RenderConfig, RendererName
+
+if TYPE_CHECKING:
+    import http.client
+    import urllib.request
 
 
 def _serve() -> int:
@@ -60,6 +65,7 @@ def cmd_renderers(_args: argparse.Namespace) -> int:
 def cmd_validate_data(_args: argparse.Namespace) -> int:
     """Validate every dataset JSON and check its mesh files exist; returns 1 on a problem, else 0."""
     from visfem.engine.discovery import (
+        DATASET_KEY,
         DATASETS_DIR,
         dataset_dir,
         iter_descriptor_paths,
@@ -74,6 +80,11 @@ def cmd_validate_data(_args: argparse.Namespace) -> int:
     errors: list[str] = []
     n_ok = 0
     for path in iter_descriptor_paths():
+        if not DATASET_KEY.fullmatch(path.stem):
+            errors.append(
+                f"{path}: dataset key '{path.stem}' allows only letters, digits, '_', '.' and '-'"
+            )
+            continue
         try:
             meta = load_descriptor(path)
         except ValidationError as e:
@@ -335,6 +346,11 @@ _IRCAD_PAGE = "https://www.ircad.fr/research/data-sets/liver-segmentation-3d-irc
 _USER_AGENT = "visfem-fetch"
 _HTTP_TIMEOUT = 60.0  # seconds without any data before a download is abandoned
 
+# Upper bounds of the unpacked IRCADb archive members, far above the real sizes
+# (a patient zip holds tens of MB); a corrupt or hostile archive cannot fill memory or disk.
+_MAX_PATIENT_ZIP = 1 << 30  # 1 GiB
+_MAX_MESH = 512 << 20  # 512 MiB
+
 # Descriptor written next to the fetched meshes
 _IRCAD_DESCRIPTOR: dict = {
     "data_path": "ircadb",
@@ -356,6 +372,32 @@ _IRCAD_DESCRIPTOR: dict = {
         "database. IRCAD, Strasbourg, France, Tech. Rep (2010)",
     ],
 }
+
+
+def _urlopen(req: urllib.request.Request) -> http.client.HTTPResponse:
+    """Open *req* and return the response; a redirect away from https raises urllib.error.URLError."""
+    import urllib.error
+    import urllib.request
+
+    class _HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
+        """Redirect handler which refuses a redirect to anything but https."""
+
+        def redirect_request(
+            self,
+            req: urllib.request.Request,
+            fp: IO[bytes],
+            code: int,
+            msg: str,
+            headers: http.client.HTTPMessage,
+            newurl: str,
+        ) -> urllib.request.Request | None:
+            """Return the redirected request for an https *newurl*; raises URLError otherwise."""
+            if not newurl.lower().startswith("https://"):
+                raise urllib.error.URLError(f"refusing the redirect to {newurl}")
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+    opener = urllib.request.build_opener(_HttpsOnlyRedirect)
+    return opener.open(req, timeout=_HTTP_TIMEOUT)
 
 
 def _resolve_data_dir(arg: str | None) -> Path:
@@ -387,7 +429,7 @@ def _download_with_progress(url: str, dest: Path) -> None:
         headers["Range"] = f"bytes={offset}-"
     req = urllib.request.Request(url, headers=headers)
     try:
-        resp = urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT)
+        resp = _urlopen(req)
     except urllib.error.HTTPError as e:
         if e.code != 416 or not offset:
             raise
@@ -474,10 +516,18 @@ def _report_download_failure(e: OSError, page: str) -> int:
 
 
 def _extract_ircadb(zip_path: Path, dest: Path) -> int:
-    """Extract each patient's .vtk meshes from *zip_path* to dest/patient_NN/; returns the patient count."""
+    """Extract each patient's .vtk meshes from *zip_path* to dest/patient_NN/; returns the patient count; raises ValueError for an oversized member."""
     import io
     import re
+    import shutil
     import zipfile
+
+    def checked(archive: zipfile.ZipFile, name: str, limit: int) -> str:
+        """Return member *name* of *archive*; raises ValueError when it unpacks to more than *limit* bytes."""
+        # ZipExtFile stops at file_size and checks the CRC, so the header size bounds the data.
+        if archive.getinfo(name).file_size > limit:
+            raise ValueError(f"archive member {name} exceeds {limit >> 20} MiB")
+        return name
 
     count = 0
     with zipfile.ZipFile(zip_path) as outer:
@@ -496,17 +546,22 @@ def _extract_ircadb(zip_path: Path, dest: Path) -> int:
         for n in sorted(mesh_zips):
             pdir = dest / f"patient_{n:02d}"
             pdir.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(io.BytesIO(outer.read(mesh_zips[n]))) as inner:
+            # The per-patient zip is read into memory, a zip needs a seekable file.
+            inner_zip = checked(outer, mesh_zips[n], _MAX_PATIENT_ZIP)
+            with zipfile.ZipFile(io.BytesIO(outer.read(inner_zip))) as inner:
                 n_vtk = 0
                 for name in inner.namelist():
                     if not name.lower().endswith(".vtk"):
                         continue
-                    # Inner zip members may carry a MESHES_VTK/ prefix.
+                    # Inner zip members may carry a MESHES_VTK/ prefix; the bare name also stops a zip slip.
                     target = pdir / Path(name).name
-                    target.write_bytes(inner.read(name))
+                    member = checked(inner, name, _MAX_MESH)
+                    with inner.open(member) as src, target.open("wb") as dst:
+                        shutil.copyfileobj(src, dst)
                     n_vtk += 1
             if n in licenses:
-                (pdir / "LICENSE.txt").write_bytes(outer.read(licenses[n]))
+                license_member = checked(outer, licenses[n], _MAX_MESH)
+                (pdir / "LICENSE.txt").write_bytes(outer.read(license_member))
             print(f"   + patient_{n:02d}: {n_vtk} meshes")
             count += 1
     return count
@@ -662,7 +717,7 @@ def _fetch_bytes(url: str) -> bytes:
 
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     try:
-        with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
+        with _urlopen(req) as resp:
             data = bytes(resp.read())
             length = resp.headers.get("Content-Length")
     except http.client.HTTPException as e:  # IncompleteRead on a dropped connection
@@ -983,8 +1038,14 @@ def main(argv: list[str] | None = None) -> int:
     """Run the CLI on *argv* (default sys.argv[1:]) and return the exit code."""
     argv = sys.argv[1:] if argv is None else argv
 
-    # No args or `serve` launches the app; an unknown first token exits with the help.
-    if not argv or argv[0] == "serve":
+    # No args, `serve` or options of the trame server launch the app; the trame
+    # launcher of the deployment starts `visfem --host ... --port ... --server`.
+    # An unknown first token exits with the help.
+    if (
+        not argv
+        or argv[0] == "serve"
+        or (argv[0].startswith("-") and argv[0] not in ("-h", "--help"))
+    ):
         return _serve()
 
     parser = build_parser()

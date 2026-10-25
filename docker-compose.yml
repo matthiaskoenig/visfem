@@ -1,6 +1,6 @@
 # Build
 #  Dependency export
-#    uv export --frozen --no-dev --no-editable -o setup/requirements.txt
+#    uv export --frozen --no-dev --no-editable --no-emit-project -o setup/requirements.txt
 #  Image build
 #    docker compose up --build
 
@@ -16,7 +16,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"     # local test, not reachable from other machines
     restart: unless-stopped
     volumes:
       - ./data:/data:ro

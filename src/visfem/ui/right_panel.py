@@ -110,13 +110,20 @@ def build_right_panel(
         with html.Div(v_if="has_fibers"):
             section_header("mdi-grain", "Fibers", "right_fibers_open")
             with html.Div(v_show="right_fibers_open", style="margin-bottom:4px;"):
-                v3.VSwitch(
+                # the label takes the body size of the panel rows; the thumb
+                # overhangs the track, the margin keeps it inside the panel padding
+                with v3.VSwitch(
                     v_model=("show_fibers", False),
-                    label="Show fiber glyphs",
                     density="compact",
                     hide_details=True,
                     color=ACCENT,
-                )
+                    style="margin-left:6px;",
+                ):
+                    with v3.Template(v_slot_label=""):
+                        html.Span(
+                            "Show fiber glyphs",
+                            style=f"font-size:{FS_MD}; margin-left:8px;",
+                        )
             v3.VDivider(style="margin-bottom:10px;")
 
         # Scalar Field: only for multi-field datasets.

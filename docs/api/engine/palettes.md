@@ -1,0 +1,3 @@
+# palettes
+
+::: visfem.engine.palettes

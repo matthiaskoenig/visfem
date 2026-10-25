@@ -1,0 +1,9 @@
+# The documentation is available as markdown for agents and language models:
+#   https://visfem.de/docs/llms.txt      index of all pages
+#   https://visfem.de/docs/llms-full.txt the complete documentation
+# Every page is served as markdown next to its html, e.g. /docs/usage.md for /docs/usage/.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://visfem.de/docs/sitemap.xml

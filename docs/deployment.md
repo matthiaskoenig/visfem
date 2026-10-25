@@ -1,16 +1,13 @@
-# VisFEM Deployment Guide
+# Deployment
 
 Host VisFEM on a Linux server:
 
 - Landing page  → `https://visfem.de/`
 - Web app       → `https://app.visfem.de/`
 
-The setup is three pieces behind Caddy: a static landing page, the app in Docker,
-and Caddy routing by hostname and handling HTTPS.
+The setup is three pieces behind Caddy: a static landing page, the app in Docker, and Caddy routing by hostname and handling HTTPS.
 
-`visfem.de` is served by GitHub Pages from the repo's `docs/` folder. Section 2
-repoints the `visfem.de` DNS record from GitHub Pages to the server IP. Once the
-server is live, retire the GitHub Pages site.
+Until the server is live, `visfem.de` is served by GitHub Pages: the `documentation` workflow publishes the interim landing page of [`deploy/pages/`](https://github.com/matthiaskoenig/visfem/tree/develop/deploy/pages) at the root and this documentation below [`/docs/`](https://visfem.de/docs/), see [Documentation](development.md#documentation). Section 2 repoints the `visfem.de` DNS record from GitHub Pages to the server IP. Before that switch, move the custom domain of the GitHub Pages site to `docs.visfem.de` and set `site_url` in `zensical.toml` accordingly, so the documentation stays online.
 
 ---
 
@@ -31,10 +28,8 @@ server is live, retire the GitHub Pages site.
                                              /opt/visfem/data/datasets/
 ```
 
-- Landing page: static files ([`deploy/landing/`](deploy/landing/)). Tiles link to
-  the app with `?model=<name>` to open a specific model.
-- Web app: Docker container `visfem`. Each visitor gets an isolated backend process;
-  concurrency is set in [`setup/launcher.json`](setup/launcher.json) (section 9).
+- Landing page: static files ([`deploy/landing/`](https://github.com/matthiaskoenig/visfem/tree/develop/deploy/landing)). Tiles link to the app with `?model=<name>` to open a specific model.
+- Web app: Docker container `visfem`. Each visitor gets an isolated backend process; concurrency is set in [`setup/launcher.json`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/launcher.json) (section 9).
 - Caddy: routes by hostname and manages Let's Encrypt certificates.
 
 Requirements:
@@ -58,8 +53,7 @@ Create two A records pointing at the server IP, one per hostname Caddy routes on
 | A    | `visfem.de`      | `<server IP>`   |
 | A    | `app.visfem.de`  | `<server IP>`   |
 
-If `visfem.de` points at GitHub Pages, change it to the server IP.
-`app.visfem.de` is new. Add matching `AAAA` records if the server has IPv6.
+If `visfem.de` points at GitHub Pages, change it to the server IP. `app.visfem.de` is new. Add matching `AAAA` records if the server has IPv6.
 
 Caddy issues certificates once both names resolve to the server. Verify:
 
@@ -100,8 +94,7 @@ sudo apt update
 sudo apt install -y caddy
 ```
 
-Caddy runs as a systemd service and reads `/etc/caddy/Caddyfile` (written in
-section 7). Confirm with `systemctl status caddy`.
+Caddy runs as a systemd service and reads `/etc/caddy/Caddyfile` (written in section 7). Confirm with `systemctl status caddy`.
 
 ---
 
@@ -127,8 +120,7 @@ Copy the dataset files from the lab NAS into the repo's data folder.
 rsync -av <nas>:/path/to/data/datasets/  /opt/visfem/data/datasets/
 ```
 
-Stage all datasets. The allowlist in `compose.deploy.yml` (section 6) selects the
-public subset.
+Stage all datasets. The allowlist in `compose.deploy.yml` (section 6) selects the public subset.
 
 ---
 
@@ -139,17 +131,13 @@ cd /opt/visfem
 docker compose -f compose.deploy.yml up -d --build
 ```
 
-This reads [`compose.deploy.yml`](compose.deploy.yml) and:
+This reads [`compose.deploy.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/compose.deploy.yml) and:
 
-- builds the image `visfem:local` from the [`Dockerfile`](Dockerfile);
-- starts the container `visfem` on `127.0.0.1:8080`, the loopback port Caddy
-  proxies to;
+- builds the image `visfem:local` from the [`Dockerfile`](https://github.com/matthiaskoenig/visfem/blob/develop/Dockerfile);
+- starts the container `visfem` on `127.0.0.1:8080`, the loopback port Caddy proxies to;
 - mounts `./data` read-only and points the app at it via `DATA_DIR`;
-- sets `TRAME_USE_HOST: "wss://app.visfem.de"`, the public address the browser opens
-  its WebSocket to;
-- restricts the public app to the datasets listed in `VISFEM_DATASETS`, a
-  comma-separated allowlist of dataset keys (a key is a descriptor's `.json`
-  filename stem, e.g. `heart`). Unlisted datasets stay hidden.
+- sets `TRAME_USE_HOST: "wss://app.visfem.de"`, the public address the browser opens its WebSocket to;
+- restricts the public app to the datasets listed in `VISFEM_DATASETS`, a comma-separated allowlist of dataset keys (a key is a descriptor's `.json` filename stem, e.g. `heart`). Unlisted datasets stay hidden.
 
 Confirm it is up:
 
@@ -158,8 +146,7 @@ docker compose -f compose.deploy.yml ps        # STATUS: Up
 curl -I http://127.0.0.1:8080/                 # HTTP/1.1 200
 ```
 
-Change a setting by editing [`compose.deploy.yml`](compose.deploy.yml) and re-running
-`docker compose -f compose.deploy.yml up -d`.
+Change a setting by editing [`compose.deploy.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/compose.deploy.yml) and re-running `docker compose -f compose.deploy.yml up -d`.
 
 ---
 
@@ -172,8 +159,7 @@ sudo mkdir -p /var/www/landing
 sudo cp -r /opt/visfem/deploy/landing/. /var/www/landing/
 ```
 
-The landing page ([`deploy/landing/`](deploy/landing/)) ships with tiles that point at
-`https://app.visfem.de/?model=...`.
+The landing page ([`deploy/landing/`](https://github.com/matthiaskoenig/visfem/tree/develop/deploy/landing)) ships with tiles that point at `https://app.visfem.de/?model=...`.
 
 Back up any existing Caddy config, then write the new one:
 
@@ -191,16 +177,14 @@ app.visfem.de {
 EOF
 ```
 
-This serves the static landing page on `visfem.de` and forwards `app.visfem.de`
-traffic to the app container. Validate and load it:
+This serves the static landing page on `visfem.de` and forwards `app.visfem.de` traffic to the app container. Validate and load it:
 
 ```bash
 caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-Caddy obtains and renews Let's Encrypt certificates for both names automatically,
-provided the section 2 DNS points at this server and ports 80/443 are open.
+Caddy obtains and renews Let's Encrypt certificates for both names automatically, provided the section 2 DNS points at this server and ports 80/443 are open.
 
 ---
 
@@ -210,8 +194,7 @@ provided the section 2 DNS points at this server and ports 80/443 are open.
 - `https://app.visfem.de/` loads the app; selecting a dataset renders its mesh.
 - Clicking a landing-page tile opens the app with that model loaded.
 
-The first request to each hostname may take a few seconds while Caddy fetches the
-certificate. Logs:
+The first request to each hostname may take a few seconds while Caddy fetches the certificate. Logs:
 
 ```bash
 cd /opt/visfem && docker compose -f compose.deploy.yml logs -f    # app
@@ -233,16 +216,8 @@ docker compose -f compose.deploy.yml up -d --build # rebuild after code/config c
 ```
 
 - `restart: unless-stopped` brings the container back after a reboot or crash.
-- Update the code with `git pull`, then rebuild
-  (`docker compose -f compose.deploy.yml up -d --build`). Staged data and the
-  landing page stay in place.
-- Concurrency: set in [`setup/launcher.json`](setup/launcher.json), field
-  `resources` → `port_range`. Each visitor holds one port from the range; the port
-  count is the session cap. The default `[9001, 9006]` is 6 sessions. Widening the
-  range (e.g. `[9001, 9020]`) needs a rebuild: `launcher.json` is baked into the
-  image. `"timeout": 60` in the same file reclaims an idle session after 60 seconds.
-  Memory scales with sessions and dataset size; check `docker stats visfem` under
-  real use before widening.
+- Update the code with `git pull`, then rebuild (`docker compose -f compose.deploy.yml up -d --build`). Staged data and the landing page stay in place.
+- Concurrency: set in [`setup/launcher.json`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/launcher.json), field `resources` → `port_range`. Each visitor holds one port from the range; the port count is the session cap. The default `[9001, 9006]` is 6 sessions. Widening the range (e.g. `[9001, 9020]`) needs a rebuild: `launcher.json` is baked into the image. `"timeout": 60` in the same file reclaims an idle session after 60 seconds. Memory scales with sessions and dataset size; check `docker stats visfem` under real use before widening.
 
 ---
 
@@ -265,24 +240,16 @@ app.visfem.de {
 }
 ```
 
-Reload Caddy (`sudo systemctl reload caddy`). Remove the block and reload to go
-public.
+Reload Caddy (`sudo systemctl reload caddy`). Remove the block and reload to go public.
 
 ---
 
 ## Appendix B: deployment files in the repo
 
-- [`Dockerfile`](Dockerfile): builds the app image from the `kitware/trame:uv` base
-  (Python 3.13) and installs OSMesa for software 3D rendering.
-- [`compose.deploy.yml`](compose.deploy.yml): the production Compose file (image
-  name, port binding, data mount, and the `DATA_DIR` / `TRAME_USE_HOST` /
-  `VISFEM_DATASETS` settings).
-- [`setup/launcher.json`](setup/launcher.json): the trame launcher config
-  (concurrency `port_range`, idle `timeout`), baked into the image at build.
-- [`deploy/landing/`](deploy/landing/): the static landing page.
-- `src/visfem/engine/discovery.py`: reads `DATA_DIR` and the `VISFEM_DATASETS`
-  allowlist.
-- `src/visfem/log.py`: reads `VISFEM_LOG_LEVEL` (default `WARNING`), the level of
-  the container log.
-- `src/visfem/app.py` + `src/visfem/ui/layout.py`: handle the `?model=<key>` URL
-  parameter and on-demand mesh loading.
+- [`Dockerfile`](https://github.com/matthiaskoenig/visfem/blob/develop/Dockerfile): builds the app image from the `kitware/trame:uv` base (Python 3.13) and installs OSMesa for software 3D rendering.
+- [`compose.deploy.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/compose.deploy.yml): the production Compose file (image name, port binding, data mount, and the `DATA_DIR` / `TRAME_USE_HOST` / `VISFEM_DATASETS` settings).
+- [`setup/launcher.json`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/launcher.json): the trame launcher config (concurrency `port_range`, idle `timeout`), baked into the image at build.
+- [`deploy/landing/`](https://github.com/matthiaskoenig/visfem/tree/develop/deploy/landing): the static landing page.
+- `src/visfem/engine/discovery.py`: reads `DATA_DIR` and the `VISFEM_DATASETS` allowlist.
+- `src/visfem/log.py`: reads `VISFEM_LOG_LEVEL` (default `WARNING`), the level of the container log.
+- `src/visfem/app.py` and `src/visfem/ui/layout.py`: handle the `?model=<key>` URL parameter and on-demand mesh loading.

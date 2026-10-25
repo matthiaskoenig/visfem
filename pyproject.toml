@@ -8,6 +8,8 @@ dynamic = ["version"]
 description = "VisFEM: Web visualization of FEM models"
 readme = "README.md"
 requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
 	{name="Michelle Elias", email="michelleelias66@gmail.com"},
 	{name="Matthias König", email="konigmatt@googlemail.com"}
@@ -18,7 +20,6 @@ maintainers = [
 classifiers = [
 	"Development Status :: 4 - Beta",
 	"Intended Audience :: Science/Research",
-	"License :: OSI Approved :: MIT License",
 	"Operating System :: OS Independent",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -61,30 +62,31 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/matthiaskoenig/visfem"
+Homepage = "https://visfem.de"
+Documentation = "https://visfem.de/docs/"
 Repository = "https://github.com/matthiaskoenig/visfem"
-Documentation = "https://github.com/matthiaskoenig/visfem"
 Issues = "https://github.com/matthiaskoenig/visfem/issues"
+Changelog = "https://github.com/matthiaskoenig/visfem/tree/develop/release-notes"
 Download = "https://pypi.org/project/visfem"
 
 [tool.hatch.version]
 path = "./src/visfem/__init__.py"
 
 [tool.hatch.build.targets.sdist]
-exclude = [
-	"/.github",
-	"/.zenodo.json",
-	"/DEPLOYMENT.md",
-	"/Dockerfile",
-	"/RELEASE.md",
-	"/compose.deploy.yml",
-	"/data/datasets/.gitignore",
-	"/deploy",
-	"/docker-compose.yml",
-	"/docs",
-	"/notebooks",
-	"/release-notes",
-	"/setup",
+# the source distribution holds what is needed to build, test and document the
+# package; not the deployment, the notebooks, the CI configuration or the lock file
+include = [
+    "/src",
+    "/tests",
+    "/docs",
+    "/scripts",
+    "/release-notes",
+    "/README.md",
+    "/LICENSE",
+    "/CITATION.cff",
+    "/zensical.toml",
+    "/tox.ini",
+    "/.ruff.toml",
 ]
 
 [project.scripts]

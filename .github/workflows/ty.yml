@@ -1,0 +1,38 @@
+name: ty
+
+on:
+  push:
+    # feature branches are checked through their pull request
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ty:
+    # required by the branch protection, see .github/rulesets/develop.json
+    name: ty
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e  # v10.3.2
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - name: Type check with tox
+        env:
+          # render diagnostics as GitHub Actions workflow annotations
+          TY_OUTPUT_FORMAT: github
+        run:
+          uvx --with tox-uv tox -e ty

@@ -1,0 +1,3 @@
+# footer
+
+::: visfem.ui.footer

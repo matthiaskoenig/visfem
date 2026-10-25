@@ -1,6 +1,6 @@
 """Left panel with the dataset tree and the active dataset info."""
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 from trame.widgets import html
@@ -381,7 +381,7 @@ def _row(
     v_if: str | None = None,
     icon_style: str | None = None,
     label_upper: bool = True,
-) -> Iterator[None]:
+) -> Generator[None]:
     """Open a metadata row with icon and label, gated by the Vue expression v_if, and yield inside its value column; icon_style replaces the default icon style, label_upper uppercases the label; yields None."""
     with html.Div(v_if=v_if, style=_ROW_STYLE):
         v3.VIcon(icon, size=ICON_SM, style=icon_style or _ROW_ICON_STYLE)

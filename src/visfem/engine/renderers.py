@@ -148,7 +148,8 @@ def render_surface(ctx: RenderContext) -> RenderResult:
     filename = resolve_mesh_file(ctx.ddir, ctx.cfg)
     if filename is None:
         logger.error(
-            f"surface renderer requires mesh_file or an existing mesh candidate in {ctx.ddir}"
+            "surface renderer requires mesh_file or an existing mesh candidate in %s",
+            ctx.ddir,
         )
         return RenderResult()
     return redraw_stl_surface(
@@ -219,7 +220,9 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
         files = _series_paths(ctx.ddir, ctx.cfg.series)
         if not files:
             logger.error(
-                f"timeseries renderer requires at least one file matching series '{ctx.cfg.series}' in {ctx.ddir}"
+                "timeseries renderer requires at least one file matching series '%s' in %s",
+                ctx.cfg.series,
+                ctx.ddir,
             )
             return RenderResult()
         step = max(0, min(ctx.step, len(files) - 1))
@@ -238,7 +241,7 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
         )
     path = _timeseries_path(ctx)
     if path is None:
-        logger.error(f"timeseries renderer requires a PVD or XDMF file in {ctx.ddir}")
+        logger.error("timeseries renderer requires a PVD or XDMF file in %s", ctx.ddir)
         return RenderResult()
     return redraw_xdmf(
         ctx.scene,
@@ -259,7 +262,7 @@ def render_pvd_phase_series(ctx: RenderContext) -> RenderResult:
     pvd = grasp_phase_pvd(ctx.ddir)
     if pvd is None:
         logger.error(
-            f"pvd_phase_series renderer requires a phase-series PVD in {ctx.ddir}"
+            "pvd_phase_series renderer requires a phase-series PVD in %s", ctx.ddir
         )
         return RenderResult()
     return redraw_region_surface_step(

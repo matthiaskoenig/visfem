@@ -98,7 +98,7 @@ def load_project_metadata() -> dict[str, ProjectMetadata]:
     """Return ProjectMetadata for each readable, valid dataset JSON under DATASETS_DIR, keyed by file stem and filtered by ALLOWED_DATASETS."""
     result: dict[str, ProjectMetadata] = {}
     if not DATASETS_DIR.is_dir():
-        logger.warning(f"Datasets directory missing: {DATASETS_DIR} (set DATA_DIR)")
+        logger.warning("Datasets directory missing: %s (set DATA_DIR)", DATASETS_DIR)
         return result
     for path in iter_descriptor_paths():
         key = path.stem
@@ -106,14 +106,16 @@ def load_project_metadata() -> dict[str, ProjectMetadata]:
             continue
         if key in result:
             logger.warning(
-                f"Skipping '{path}': dataset key '{key}' is already loaded from another JSON"
+                "Skipping '%s': dataset key '%s' is already loaded from another JSON",
+                path,
+                key,
             )
             continue
         try:
             result[key] = load_descriptor(path)
         except (ValidationError, ValueError, OSError) as e:
             reason = " ".join(line.strip() for line in str(e).splitlines()[:2])
-            logger.warning(f"Skipping dataset '{path}': {reason}")
+            logger.warning("Skipping dataset '%s': %s", path, reason)
     return result
 
 

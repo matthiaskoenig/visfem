@@ -2,15 +2,27 @@
 line-length = 88
 indent-width = 4
 
+# oldest supported version, see `project.requires-python`
 target-version = "py313"
 
 
 [lint]
-# Pyflakes and the pycodestyle errors, plus import sorting (I), modern syntax
-# (UP), bugbear (B), comprehensions (C4), simplifications (SIM), blind excepts
-# (BLE: every `except Exception` must carry a noqa with its reason) and ruff's
-# own checks (RUF).
-select = ["E4", "E7", "E9", "F", "I", "UP", "B", "C4", "SIM", "BLE", "RUF"]
+# Pyflakes (`F`) and a subset of pycodestyle (`E`), plus:
+#   W    pycodestyle warnings
+#   I    import sorting
+#   D    docstrings (google convention, see [lint.pydocstyle])
+#   UP   pyupgrade, keeps the code on current python syntax
+#   B    bugbear, likely bugs and design problems
+#   C4   comprehensions
+#   SIM  simplifications
+#   RET  return statements
+#   G    logging format, lazy `%s` instead of f-strings
+#   PIE  misc lints
+#   BLE  blind excepts, every `except Exception` carries a noqa with its reason
+#   RUF  ruff specific rules
+select = [
+    "E4", "E7", "E9", "F", "W", "I", "D", "UP", "B", "C4", "SIM", "RET", "G", "PIE", "BLE", "RUF",
+]
 # SIM117: the Trame UI is built from nested `with` blocks on purpose.
 ignore = ["SIM117"]
 

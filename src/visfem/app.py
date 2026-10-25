@@ -8,7 +8,7 @@ import asyncio
 import base64
 import contextlib
 import importlib.resources
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
 
@@ -103,7 +103,10 @@ class VisfemApp(TrameApp):
                     self._xdmf_meta[name] = get_metadata(path)
                 except Exception as e:  # noqa: BLE001 - skip the corrupt file and keep serving
                     logger.warning(
-                        f"Dataset '{key}': skipping '{path.name}', metadata read failed: {e}"
+                        "Dataset '%s': skipping '%s', metadata read failed: %s",
+                        key,
+                        path.name,
+                        e,
                     )
         self._patients_by_dataset: dict[str, list[int]] = {}
         for key, meta in self._project_metadata.items():
@@ -146,9 +149,10 @@ class VisfemApp(TrameApp):
     def _setup_plotter(self) -> None:
         """Initialize an empty off-screen plotter."""
         self.plotter = pv.Plotter(off_screen=True, theme=pv.themes.DarkTheme())
-        # typeshed types functools.wraps-built Plotter methods as unbound; the ignores cover that.
-        self.plotter.enable_depth_peeling(number_of_peels=4)  # type: ignore[call-arg]
-        self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
+        # typeshed types the functools.wraps wrappers of Plotter as unbound methods,
+        # the renderers are called directly where possible.
+        self.plotter.enable_depth_peeling(number_of_peels=4)  # ty: ignore[missing-argument]
+        self.plotter.renderers.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
         self.scene = Scene(self.plotter)
         # Physical scale stays default: SetPhysicalScale is server-only; the JS selectstart handler scales XR metres by 1000 to VTK mm.
 
@@ -253,9 +257,9 @@ class VisfemApp(TrameApp):
         """Toggle between dark and light mode."""
         self.state.dark_mode = not self.state.dark_mode
         if self.state.dark_mode:
-            self.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
+            self.plotter.renderers.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
         else:
-            self.plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)  # type: ignore[arg-type]
+            self.plotter.renderers.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)
         push_scene(self.scene, self.ctrl, reset_camera=False)
 
     async def reset_camera(self) -> None:
@@ -353,7 +357,7 @@ class VisfemApp(TrameApp):
             self.state.error_open = True
 
     @contextlib.contextmanager
-    def _claim_busy(self, what: str) -> Iterator[bool]:
+    def _claim_busy(self, what: str) -> Generator[bool]:
         """Claim the busy flag and yield True, or yield False while held; an exception in the block is shown as "Failed to *what*" and swallowed."""
         # The claim precedes every await; a second fast click sees the flag.
         if self.state.busy:

@@ -74,7 +74,7 @@ _XDMF_TO_MESHIO_CELLTYPE: dict[str, str] = {
 # Add PolyLine to meshio's XDMF type map
 if "PolyLine" not in _xdmf_common.xdmf_to_meshio_type:
     _xdmf_common.xdmf_to_meshio_type["PolyLine"] = "line"
-    _xdmf_common.meshio_to_xdmf_type["line"] = ("PolyLine",)
+    _xdmf_common.meshio_to_xdmf_type["line"] = ["PolyLine"]
 
 
 # Mesh caches: static meshes and time-series steps are kept for the life of the process
@@ -117,7 +117,7 @@ def _filter_to_max_dim_cells(cells: list) -> list:
     filtered = [block for block in cells if _CELL_DIM.get(block.type, 0) == max_dim]
     dropped = [block.type for block in cells if _CELL_DIM.get(block.type, 0) < max_dim]
     if dropped:
-        logger.debug(f"Filtered out lower-dimensional cell blocks: {dropped}")
+        logger.debug("Filtered out lower-dimensional cell blocks: %s", dropped)
     return filtered
 
 
@@ -279,19 +279,19 @@ def _sidecar_cached(sidecar: Path, build: Callable[[], dict]) -> MeshMetadata:
                 sidecar.read_text(encoding="utf-8")
             )
             if cached.schema_hash == MESH_METADATA_HASH:
-                logger.debug(f"Cache hit: '{sidecar.name}'")
+                logger.debug("Cache hit: '%s'", sidecar.name)
                 return cached
-            logger.debug(f"Schema changed, regenerating '{sidecar.name}'")
+            logger.debug("Schema changed, regenerating '%s'", sidecar.name)
         except (ValueError, KeyError):
-            logger.debug(f"Invalid sidecar, regenerating '{sidecar.name}'")
+            logger.debug("Invalid sidecar, regenerating '%s'", sidecar.name)
 
     meta = MeshMetadata.model_validate({**build(), "schema_hash": MESH_METADATA_HASH})
     try:
         sidecar.write_text(meta.model_dump_json(indent=2))
-        logger.debug(f"Cached metadata to '{sidecar.name}'")
+        logger.debug("Cached metadata to '%s'", sidecar.name)
     except OSError as e:
         # A read-only data mount fails the write; the sidecar is rebuilt on the next start
-        logger.warning(f"Sidecar write failed for '{sidecar.name}': {e}")
+        logger.warning("Sidecar write failed for '%s': %s", sidecar.name, e)
     return meta
 
 
@@ -302,7 +302,7 @@ def get_metadata(path: Path) -> MeshMetadata:
 
 def _raw_metadata(path: Path) -> dict:
     """Return the raw metadata dict of *path*: the format-specific summary completed with global scalar bounds."""
-    logger.debug(f"Computing metadata for '{path.name}'")
+    logger.debug("Computing metadata for '%s'", path.name)
     fmt = _detect_format(path)
     if fmt == "pvd_timeseries":
         raw = _metadata_pvd(path, fmt)
@@ -466,7 +466,7 @@ def metadata_for_series(paths: list[Path]) -> MeshMetadata:
     fields = _boundable_fields(base["fields"])
     if fields:
         logger.info(
-            f"Computing global field bounds for VTK series ({len(paths)} frames)…"
+            "Computing global field bounds for VTK series (%s frames)…", len(paths)
         )
         frames = (cast(pv.DataSet, pv.read(str(p))) for p in paths)
         base["scalar_bounds"] = _accumulate_bounds(
@@ -497,7 +497,7 @@ def _raw_d3plot_metadata(ddir: Path) -> dict:
 
     fields = _boundable_fields(base["fields"])
     if fields:
-        logger.info(f"Computing global field bounds for d3plot ({len(times)} frames)…")
+        logger.info("Computing global field bounds for d3plot (%s frames)…", len(times))
         # The scan reads every frame (~0.3 s each)
         frames = (_load_d3plot_frame(ddir, k) for k in range(len(times)))
         base["scalar_bounds"] = _accumulate_bounds(
@@ -611,7 +611,7 @@ def _pvd_samples(path: Path, names: list[str]) -> Iterator[_Sample]:
             mesh = cast(pv.DataSet, pv.read(str(vtu_path)))
             yield from _mesh_samples([mesh], names)
         except Exception as e:  # noqa: BLE001 - an unreadable file is logged and the bounds scan continues
-            logger.warning(f"Skipping '{vtu_path.name}' during bounds scan: {e}")
+            logger.warning("Skipping '%s' during bounds scan: %s", vtu_path.name, e)
 
 
 def _static_samples(path: Path, names: list[str]) -> Iterator[_Sample]:
@@ -620,7 +620,7 @@ def _static_samples(path: Path, names: list[str]) -> Iterator[_Sample]:
         mesh = _load_static(path)
         yield from _mesh_samples([mesh], names)
     except Exception as e:  # noqa: BLE001 - bounds are optional; the mesh may still render
-        logger.warning(f"Failed to load '{path.name}' for bounds scan: {e}")
+        logger.warning("Failed to load '%s' for bounds scan: %s", path.name, e)
 
 
 def _compute_scalar_bounds(
@@ -634,7 +634,9 @@ def _compute_scalar_bounds(
     if not boundable:
         return {}
 
-    logger.info(f"Computing global field bounds for '{path.name}' ({n_steps} step(s))…")
+    logger.info(
+        "Computing global field bounds for '%s' (%s step(s))…", path.name, n_steps
+    )
 
     if fmt == "timeseries_xdmf":
         samples = _timeseries_xdmf_samples(path, boundable, n_steps)
@@ -656,10 +658,12 @@ def _load_pvd(path: Path, step: int = 0) -> pv.DataSet:
     if not entries:
         raise ValueError(f"PVD file lists zero DataSet entries: {path.name}")
     if step >= len(entries):
-        logger.warning(f"Step {step} out of range ({len(entries)} steps), using last.")
+        logger.warning(
+            "Step %s out of range (%s steps), using last.", step, len(entries)
+        )
         step = len(entries) - 1
     _, vtu_path = entries[step]
-    logger.debug(f"[pvd] loading step {step}: '{vtu_path.name}'")
+    logger.debug("[pvd] loading step %s: '%s'", step, vtu_path.name)
     return cast(pv.DataSet, pv.read(str(vtu_path)))
 
 
@@ -692,8 +696,10 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
             children = collection.findall("Grid")
             if step >= len(children):
                 logger.warning(
-                    f"Step {step} out of range for field '{field_name}' "
-                    f"({len(children)} steps available), skipping."
+                    "Step %s out of range for field '%s' (%s steps available), skipping.",
+                    step,
+                    field_name,
+                    len(children),
                 )
                 continue
             attr = children[step].find("Attribute")
@@ -716,13 +722,16 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
                     pvmesh.cell_data[field_name] = field_array
             except KeyError:
                 logger.warning(
-                    f"HDF5 key '{hdf5_key}' missing, skipping field '{field_name}'."
+                    "HDF5 key '%s' missing, skipping field '%s'.", hdf5_key, field_name
                 )
 
     logger.debug(
-        f"Loaded '{path.name}' step {step}: "
-        f"{pvmesh.n_points} points, {pvmesh.n_cells} cells, "
-        f"fields: {list(pvmesh.point_data.keys()) + list(pvmesh.cell_data.keys())}"
+        "Loaded '%s' step %s: %s points, %s cells, fields: %s",
+        path.name,
+        step,
+        pvmesh.n_points,
+        pvmesh.n_cells,
+        list(pvmesh.point_data.keys()) + list(pvmesh.cell_data.keys()),
     )
     return pvmesh
 
@@ -739,7 +748,7 @@ def _xdmf_reader(path: Path) -> _XdmfEntry:
     entry = _xdmf_readers.get(path)
     if entry is None:
         reader = meshio.xdmf.TimeSeriesReader(path)
-        logger.debug(f"Opening '{path.name}' ({reader.num_steps} steps)")
+        logger.debug("Opening '%s' (%s steps)", path.name, reader.num_steps)
         points, cells = reader.read_points_cells()
         entry = _xdmf_readers[path] = (reader, points, _filter_to_max_dim_cells(cells))
     return entry
@@ -762,9 +771,9 @@ def _load_timeseries_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
 def _load_static(path: Path) -> pv.DataSet:
     """Return the static mesh at *path*, read by PyVista for native formats and by meshio for the rest."""
     if path.suffix.lower() in _PYVISTA_NATIVE:
-        logger.debug(f"[pyvista] loading '{path.name}'")
+        logger.debug("[pyvista] loading '%s'", path.name)
         return cast(pv.DataSet, pv.read(str(path)))
-    logger.debug(f"[meshio] loading '{path.name}'")
+    logger.debug("[meshio] loading '%s'", path.name)
     # meshio's STL probe computes 84 + num_triangles * 50 in a fixed-width int; large STLs overflow it with a benign RuntimeWarning
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -783,25 +792,25 @@ def _detached_copy(cached: pv.DataSet) -> pv.DataSet:
 def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     """Return timestep *step* of the mesh at *path* (a file or a d3plot database directory) as a detached PyVista dataset."""
     fmt = _detect_format(path)
-    logger.debug(f"Loading '{path.name}' as '{fmt}' step {step}")
+    logger.debug("Loading '%s' as '%s' step %s", path.name, fmt, step)
 
     if fmt in ("pyvista_native", "meshio_fallback"):
         if path not in _static_cache:
-            logger.info(f"[mesh cache miss] loading '{path.name}' from disk")
+            logger.info("[mesh cache miss] loading '%s' from disk", path.name)
             _static_cache[path] = _load_static(path)
         else:
-            logger.info(f"[mesh cache hit] '{path.name}' served from memory")
+            logger.info("[mesh cache hit] '%s' served from memory", path.name)
         return _detached_copy(_static_cache[path])
 
     key = (path, step)
     with _step_cache_lock:
         if key in _step_cache:
             logger.info(
-                f"[mesh cache hit] '{path.name}' step {step} served from memory"
+                "[mesh cache hit] '%s' step %s served from memory", path.name, step
             )
             return _detached_copy(_step_cache[key])
 
-    logger.info(f"[mesh cache miss] loading '{path.name}' step {step} from disk")
+    logger.info("[mesh cache miss] loading '%s' step %s from disk", path.name, step)
     if fmt == "pvd_timeseries":
         mesh = _load_pvd(path, step)
     elif fmt == "fenics_xdmf":
@@ -868,36 +877,36 @@ def preload_all_meshes(project_metadata: dict) -> None:
                     continue
                 try:
                     load_mesh(path, 0)
-                    logger.warning(f"  cached {path.name}")
+                    logger.warning("  cached %s", path.name)
                 except Exception as e:  # noqa: BLE001 - preload is best effort
-                    logger.warning(f"  failed {path.name}: {e}")
+                    logger.warning("  failed %s: %s", path.name, e)
 
         # Per-patient PVD phase series (GRASP MRI): step 0 of each
         for phase_pvd in sorted(ddir.rglob("*.pvd")):
             try:
                 load_mesh(phase_pvd, 0)
                 logger.warning(
-                    f"  cached {phase_pvd.parent.name}/{phase_pvd.name} step 0"
+                    "  cached %s/%s step 0", phase_pvd.parent.name, phase_pvd.name
                 )
             except Exception as e:  # noqa: BLE001 - preload is best effort
-                logger.warning(f"  failed {phase_pvd.name}: {e}")
+                logger.warning("  failed %s: %s", phase_pvd.name, e)
 
         # XDMF time-series: step 0 only
         for stem, path in discover_xdmf(ddir).items():
             try:
                 load_mesh(path, 0)
-                logger.warning(f"  cached {stem} step 0")
+                logger.warning("  cached %s step 0", stem)
             except Exception as e:  # noqa: BLE001 - preload is best effort
-                logger.warning(f"  failed {stem}: {e}")
+                logger.warning("  failed %s: %s", stem, e)
 
         # PVD time-series: step 0 only
         pvd = pvd_file_path(meta)
         if pvd and pvd.exists():
             try:
                 load_mesh(pvd, 0)
-                logger.warning(f"  cached {pvd.stem} step 0")
+                logger.warning("  cached %s step 0", pvd.stem)
             except Exception as e:  # noqa: BLE001 - preload is best effort
-                logger.warning(f"  failed {pvd.stem}: {e}")
+                logger.warning("  failed %s: %s", pvd.stem, e)
 
     logger.warning("Preload complete.")
 

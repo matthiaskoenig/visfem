@@ -1,7 +1,7 @@
 """Dataset selection handlers that dispatch through the renderer registry."""
 
 import contextlib
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -68,7 +68,7 @@ def resolve_cmap(state: Any) -> str:
 
 
 @contextlib.contextmanager
-def _trame_busy(state: Any) -> Iterator[None]:
+def _trame_busy(state: Any) -> Generator[None]:
     """Set ``trame__busy`` on *state* for the block and clear it on exit."""
     state.trame__busy = True
     try:
@@ -275,7 +275,7 @@ def select_xdmf(
         meta = project_metadata[key]
         cfg = resolve_render_config(meta, dataset_dir(meta))
         if discover_xdmf(dataset_dir(meta)).get(stem) is None:
-            logger.error(f"XDMF file not found: {stem} in {key}")
+            logger.error("XDMF file not found: %s in %s", stem, key)
             return
         # renderers._timeseries_path reads state.active_xdmf to pick this stem.
         ctx = _build_context(
@@ -362,7 +362,7 @@ def select_step(
         path = active_timeseries_path(meta, state, ddir)
         if path is None:
             logger.error(
-                f"No timeseries file found for dataset '{state.active_dataset}'"
+                "No timeseries file found for dataset '%s'", state.active_dataset
             )
             return
         cmap = resolve_cmap(state)

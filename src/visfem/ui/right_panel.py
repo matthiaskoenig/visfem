@@ -1,6 +1,6 @@
 """Right panel: view, fibers, scalar field, color, regions, playback and scalar bar sections."""
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from functools import partial
 
@@ -424,7 +424,7 @@ def _clim_input(state_key: str, on_apply_clim: object) -> None:
 @contextmanager
 def _choice_list(
     loop: str, active_var: str, on_select: object, *, style: str = "padding:0;"
-) -> Iterator[None]:
+) -> Generator[None]:
     """Open a single-choice VList over the v-for expression loop with CSS style; the item whose name equals active_var is active, a click calls on_select with the name, and the body yields inside the item title slot."""
     var = loop.split(" in ")[0]
     with v3.VList(density="compact", nav=True, bg_color="transparent", style=style):

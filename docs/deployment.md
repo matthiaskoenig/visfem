@@ -96,6 +96,23 @@ sudo apt install -y caddy
 
 Caddy runs as a systemd service and reads `/etc/caddy/Caddyfile` (written in section 7). Confirm with `systemctl status caddy`.
 
+The Caddyfile of section 7 rate limits the session requests with the [caddy-ratelimit](https://github.com/mholt/caddy-ratelimit) module, which the Caddy package does not include. Build a Caddy with the module in Docker, which needs no Go toolchain on the server, and let the package run it instead of its own binary ([custom builds of the Debian package](https://caddyserver.com/docs/build#package-support-files-for-custom-builds-for-debianubunturaspbian)):
+
+```bash
+cd /tmp
+docker run --rm -v "$PWD:/out" caddy:2.11.7-builder xcaddy build v2.11.7 \
+  --with github.com/mholt/caddy-ratelimit@5625512f24f6f59d6f64fb3aafe5eecff0b286db \
+  --output /out/caddy
+sudo dpkg-divert --divert /usr/bin/caddy.default --rename /usr/bin/caddy
+sudo mv ./caddy /usr/bin/caddy.custom
+sudo update-alternatives --install /usr/bin/caddy caddy /usr/bin/caddy.default 10
+sudo update-alternatives --install /usr/bin/caddy caddy /usr/bin/caddy.custom 50
+sudo systemctl restart caddy
+caddy list-modules | grep rate_limit     # http.handlers.rate_limit
+```
+
+The module is pinned to a commit, it has no recent release. A package upgrade only replaces `/usr/bin/caddy.default`; for a new Caddy version, build again with the new version in the image tag and the `xcaddy build` argument, then `sudo mv ./caddy /usr/bin/caddy.custom` and restart.
+
 ---
 
 ## 4. Code checkout
@@ -137,7 +154,8 @@ This reads [`compose.deploy.yml`](https://github.com/matthiaskoenig/visfem/blob/
 - starts the container `visfem` on `127.0.0.1:8080`, the loopback port Caddy proxies to;
 - mounts `./data` read-only and points the app at it via `DATA_DIR`;
 - sets `TRAME_USE_HOST: "wss://app.visfem.de"`, the public address the browser opens its WebSocket to;
-- restricts the public app to the datasets listed in `VISFEM_DATASETS`, a comma-separated allowlist of dataset keys (a key is a descriptor's `.json` filename stem, e.g. `heart`). Unlisted datasets stay hidden.
+- restricts the public app to the datasets listed in `VISFEM_DATASETS`, a comma-separated allowlist of dataset keys (a key is a descriptor's `.json` filename stem, e.g. `heart`). Unlisted datasets stay hidden;
+- bounds the mesh cache of every session with `VISFEM_MESH_CACHE_MB` and the memory, processor time and processes of the container with `mem_limit`, `cpus` and `pids_limit` (section 9).
 
 Confirm it is up:
 
@@ -172,6 +190,22 @@ visfem.de {
 }
 
 app.visfem.de {
+	# every page load starts a session process with a POST to the launcher at
+	# /paraview/; a client (an IPv4 address or an IPv6 /64) may start 4 per
+	# minute, Caddy answers more with 429 and a Retry-After header
+	rate_limit {
+		zone sessions {
+			match {
+				method POST
+				path /paraview /paraview/*
+			}
+			key {remote_host}
+			ipv6_prefix 64
+			events 4
+			window 1m
+		}
+	}
+
 	# the trame client reads its connection settings from the URL as well; a
 	# link must not point a visitor's browser at another session server
 	@session_override expression `{query.sessionURL} != "" || {query.sessionManagerURL} != "" || {query.secret} != ""`
@@ -190,7 +224,7 @@ app.visfem.de {
 EOF
 ```
 
-This serves the static landing page on `visfem.de` and forwards `app.visfem.de` traffic to the app container. The app block rejects links which override the session settings of the trame client and sends the security headers; `connect-src 'self'` keeps the browser from opening a WebSocket to any other host. Validate and load it:
+This serves the static landing page on `visfem.de` and forwards `app.visfem.de` traffic to the app container. The app block limits how many sessions a client can start, rejects links which override the session settings of the trame client and sends the security headers; `connect-src 'self'` keeps the browser from opening a WebSocket to any other host. Validate and load it:
 
 ```bash
 caddy validate --config /etc/caddy/Caddyfile
@@ -230,8 +264,9 @@ docker compose -f compose.deploy.yml up -d --build # rebuild after code/config c
 
 - `restart: unless-stopped` brings the container back after a reboot or crash.
 - Update the code with `git pull`, then rebuild (`docker compose -f compose.deploy.yml up -d --build`). Staged data and the landing page stay in place.
-- Concurrency: set in [`setup/launcher.json`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/launcher.json), field `resources` → `port_range`. Each visitor holds one port from the range; the port count is the session cap. The default `[9001, 9006]` is 6 sessions. Widening the range (e.g. `[9001, 9020]`) needs a rebuild: `launcher.json` is baked into the image. `"timeout": 60` in the same file is how long the launcher waits for a new session to start. A session ends 30 seconds after its last client disconnected, set by `--timeout` in [`setup/apps.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/apps.yml); a session which is requested but never connected holds its port for that long, too. Memory scales with sessions and dataset size; check `docker stats visfem` under real use before widening.
-- Abuse: anybody can request sessions from the launcher without logging in, and 6 requests take every port for 30 seconds. Caddy has no rate limiting built in; if sessions run out without real visitors, rate limit `/paraview` with the [caddy-ratelimit](https://github.com/mholt/caddy-ratelimit) module or put the site behind basic auth (Appendix A). Adding `mem_limit`, `cpus` and `pids_limit` to `compose.deploy.yml` caps what the container can take from the server.
+- Concurrency: set in [`setup/launcher.json`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/launcher.json), field `resources` → `port_range`. Each visitor holds one port from the range; the port count is the session cap. The default `[9001, 9006]` is 6 sessions. Widening the range (e.g. `[9001, 9020]`) needs a rebuild: `launcher.json` is baked into the image. `"timeout": 60` in the same file is how long the launcher waits for a new session to start. A session ends 30 seconds after its last client disconnected, set by `--timeout` in [`setup/apps.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/apps.yml); a session which is requested but never connected holds its port for that long, too.
+- Memory: every session is a process of its own, ~350 MB after the start, plus its mesh cache, plus the mesh on display. `VISFEM_MESH_CACHE_MB` in `compose.deploy.yml` bounds the cache of each session to 1024 MB, enough for the 30 keyframes of `heart_iv` (905 MB), the largest public series, to play from memory; a session viewing it takes ~1.3 GB, the static `tibia_simulation` ~1 GB. Beyond the limit the least recently used meshes are read from disk again. `mem_limit: 12g` caps the container at 6 sessions of up to ~1.7 GB, `cpus` and `pids_limit` cap its processor time and processes. Check `docker stats visfem` under real use; when widening the port range, raise `mem_limit` by ~1.7 GB per session and keep it below the memory of the server.
+- Abuse: anybody can request sessions from the launcher without logging in. The `rate_limit` block of the Caddyfile (section 7) lets one client start 4 sessions per minute, counting an IPv4 address or an IPv6 /64 network as one client; as a session which is never connected frees its port after 30 seconds, one client holds at most 4 of the 6 ports at a time and 2 on average. Requests from many addresses can still take every port; then put the site behind basic auth (Appendix A) until the requests stop.
 
 ---
 
@@ -261,7 +296,7 @@ Reload Caddy (`sudo systemctl reload caddy`). Remove the block and reload to go 
 ## Appendix B: deployment files in the repo
 
 - [`Dockerfile`](https://github.com/matthiaskoenig/visfem/blob/develop/Dockerfile): builds the app image from the `kitware/trame:uv` base (Python 3.14) and installs OSMesa for software 3D rendering.
-- [`compose.deploy.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/compose.deploy.yml): the production Compose file (image name, port binding, data mount, and the `DATA_DIR` / `TRAME_USE_HOST` / `VISFEM_DATASETS` settings).
+- [`compose.deploy.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/compose.deploy.yml): the production Compose file (image name, port binding, data mount, the resource caps and the `DATA_DIR` / `TRAME_USE_HOST` / `VISFEM_DATASETS` / `VISFEM_MESH_CACHE_MB` settings).
 - [`setup/launcher.json`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/launcher.json): the trame launcher config (concurrency `port_range`, start `timeout`), baked into the image at build.
 - [`setup/apps.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/apps.yml): the session command of the launcher, `visfem` with the idle `--timeout`.
 - [`setup/requirements.txt`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/requirements.txt): the pinned dependencies of the image, exported from `uv.lock`, see [Deployment requirements](development.md#deployment-requirements).

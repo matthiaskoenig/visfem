@@ -8,11 +8,13 @@ The [3D-IRCADb-01](https://www.ircad.fr/research/data-sets/liver-segmentation-3d
 
 ```bash
 export DATA_DIR=/path/to/your/data
-visfem fetch-ircadb                      # download (~3 GB) and lay out the dataset
+visfem fetch-ircadb                      # download (~820 MB) and lay out the dataset
 visfem                                   # '3D-IRCADb-01' appears in the sidebar
 ```
 
 `--keep-archive` keeps the downloaded archive below `<data-dir>/downloads/`.
+
+Before anything is extracted, the meshes and licenses in the archive are checked against the SHA-256 checksum of those VisFEM was tested with; the archive itself is zipped anew for every download and differs in its timestamps. An archive with other content, e.g. a corrupted download or a new release of IRCAD, is not extracted; it is kept below `<data-dir>/downloads/` and both checksums are printed.
 
 IRCAD provides the 3D-IRCADb-01 dataset under its own license terms.
 

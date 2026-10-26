@@ -97,6 +97,73 @@ def test_load_mesh_returns_detached_copies(tmp_path: Path) -> None:
     assert "added" not in second.point_data
 
 
+def test_lru_cache_evicts_the_least_recently_used() -> None:
+    """Check that the cache drops the least recently used values over its limit and keeps a single value above it."""
+    cache: mesh.LruCache[str, int] = mesh.LruCache(10, lambda value: value)
+    cache.put("a", 4)
+    cache.put("b", 4)
+    assert cache.get("a") == 4  # b is the least recently used now
+    cache.put("c", 4)
+    assert ("a" in cache, "b" in cache, "c" in cache) == (True, False, True)
+    assert cache.total == 8
+    cache.put("a", 5)  # a replaced value is weighed again
+    assert cache.total == 9
+    cache.put("d", 20)  # the most recent value stays, alone
+    assert (len(cache), cache.get("d"), cache.total) == (1, 20, 20)
+
+
+def test_step_cache_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Check that the steps of a series over the memory limit are evicted and loaded again on demand."""
+    pvd = write_pvd(tmp_path, "series", 4)
+    step_bytes = mesh.load_mesh(pvd, 0).actual_memory_size * 1024
+    cache: mesh.LruCache = mesh.LruCache(2 * step_bytes, mesh._cache_weight)
+    monkeypatch.setattr(mesh, "_mesh_cache", cache)
+    loads: list[int] = []
+    load_pvd = mesh._load_pvd
+
+    def counting_load_pvd(path: Path, step: int = 0) -> pv.DataSet:
+        loads.append(step)
+        return load_pvd(path, step)
+
+    monkeypatch.setattr(mesh, "_load_pvd", counting_load_pvd)
+    for step in range(4):
+        mesh.load_mesh(pvd, step)
+    assert len(cache) == 2 and cache.total <= cache.limit
+    assert [key[2] for key in cache._entries] == [2, 3]
+    # step 3 is served from memory, step 0 was evicted and comes from disk again;
+    # step k is the file written as number 3 - k
+    assert np.all(mesh.load_mesh(pvd, 3).point_data["u"] == 0.0)
+    assert np.all(mesh.load_mesh(pvd, 0).point_data["u"] == 3.0)
+    assert loads == [0, 1, 2, 3, 0]
+
+
+def test_skins_share_the_mesh_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Check that the skin of a static mesh is cached with its mesh and weighed with its ids."""
+    path = tmp_path / "mesh.vtu"
+    region_grid().save(path)
+    cache: mesh.LruCache = mesh.LruCache(1 << 30, mesh._cache_weight)
+    monkeypatch.setattr(mesh, "_mesh_cache", cache)
+    surface, point_ids, cell_ids = mesh.load_skin(path)
+    assert point_ids is not None and cell_ids is not None
+    assert ("mesh", path, 0) in cache and ("skin", path, 0) in cache
+    volume = mesh.load_mesh(path).actual_memory_size * 1024
+    skin = surface.actual_memory_size * 1024 + point_ids.nbytes + cell_ids.nbytes
+    assert cache.total == volume + skin
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"), [("", 2048), ("512", 512), ("lots", 2048), ("-1", 0)]
+)
+def test_mesh_cache_limit_from_the_environment(
+    value: str, expected: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Check that VISFEM_MESH_CACHE_MB sets the limit and an invalid value falls back to the default."""
+    monkeypatch.setenv("VISFEM_MESH_CACHE_MB", value)
+    assert mesh._env_megabytes("VISFEM_MESH_CACHE_MB", 2048) == expected << 20
+
+
 def test_vtk_series_steps_natural_order(tmp_path: Path) -> None:
     """Check that a flat VTK series is ordered by the numbers in the file names."""
     for name in ["frame_10.vtk", "frame_2.vtk", "frame_1.vtk", "other.vtk"]:

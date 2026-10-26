@@ -36,7 +36,9 @@ Without `DATA_DIR`, a checkout of the repository uses its own `data/` folder and
 | `DATA_DIR` | data directory, the datasets are read from its `datasets/` folder; `VISFEM_DATA_DIR` is an alias |
 | `VISFEM_DATASETS` | comma separated allowlist of dataset keys, e.g. `heart,ircadb`; the other datasets stay hidden. Empty shows every dataset |
 | `VISFEM_LOG_LEVEL` | level of the log output, e.g. `DEBUG` or `INFO`; the default is `WARNING` |
-| `VISFEM_PRELOAD` | `1` loads every mesh into memory at startup, so the first selection of a dataset does not wait for the disk |
+| `VISFEM_MESH_CACHE_MB` | memory in MB for the loaded meshes, the time steps of a series included; the default is `2048`. Beyond it the least recently used meshes are dropped and read from disk again when they are shown. A series plays from memory while its keyframes fit, `0` caches only the mesh on display |
+| `VISFEM_PRELOAD` | `1` loads every mesh into memory at startup, so the first selection of a dataset does not wait for the disk; the meshes beyond `VISFEM_MESH_CACHE_MB` are dropped again |
+| `VISFEM_SHOW_ERRORS` | `1` appends the text of the exception to the error messages of the app, e.g. the path of a file which could not be read. Unset, the messages only name what failed and the details go to the log; the public deployment leaves it unset |
 
 ## Opening a dataset by link
 

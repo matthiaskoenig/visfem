@@ -8,7 +8,7 @@ from typing import Any
 
 from visfem.engine.scene import Scene
 from visfem.engine.selection import select_step
-from visfem.log import get_logger
+from visfem.log import get_logger, user_error
 from visfem.mesh import load_mesh
 from visfem.models import MeshMetadata, ProjectMetadata
 
@@ -82,7 +82,9 @@ async def autoplay_loop(
                     "autoplay: step %d of %s failed", next_step, state.active_dataset
                 )
                 with state:
-                    state.error_message = f"Playback stopped at step {next_step}: {e}"
+                    state.error_message = user_error(
+                        f"Playback stopped at step {next_step}", e
+                    )
                     state.error_open = True
                 return
             with state:  # flush the step change to the client

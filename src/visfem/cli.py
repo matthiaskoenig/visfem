@@ -30,6 +30,8 @@ from visfem.models import RenderConfig, RendererName
 if TYPE_CHECKING:
     import http.client
     import urllib.request
+    import zipfile
+    from collections.abc import Iterable
 
 
 def _serve() -> int:
@@ -386,6 +388,10 @@ def cmd_new_dataset(args: argparse.Namespace) -> int:
 
 _IRCAD_URL = "https://cloud.ircad.fr/index.php/s/JN3z7EynBiwYyjy/download"
 _IRCAD_PAGE = "https://www.ircad.fr/research/data-sets/liver-segmentation-3d-ircadb-01/"
+# Digest of the extracted members of the archive served on 2026-10-26, see _ircadb_digest.
+# The share zips the folder for every download anew, so the bytes of the archive itself
+# differ between downloads (its timestamps) while the members stay the same.
+_IRCAD_SHA256 = "df1b67abf1dd83efd89b281525be51463c0978cee4910c9edfff59b0ef21c0a3"
 
 # Shared by both fetch commands.
 _USER_AGENT = "visfem-fetch"
@@ -562,8 +568,32 @@ def _report_download_failure(e: OSError, page: str) -> int:
     return 1
 
 
-def _extract_ircadb(zip_path: Path, dest: Path) -> int:
-    """Extract each patient's .vtk meshes from *zip_path* to dest/patient_NN/; returns the patient count; raises ValueError for an oversized member."""
+class ArchiveMismatchError(ValueError):
+    """The members of a downloaded archive differ from the pinned ones."""
+
+    def __init__(self, expected: str, actual: str) -> None:
+        """Name the *expected* and the *actual* digest."""
+        super().__init__(f"expected sha256 {expected}, got {actual}")
+        self.expected = expected
+        self.actual = actual
+
+
+def _ircadb_digest(archive: zipfile.ZipFile, members: Iterable[str]) -> str:
+    """Return the SHA-256 hex digest over the names of *members* of *archive* and the SHA-256 of their content."""
+    import hashlib
+
+    digest = hashlib.sha256()
+    for name in sorted(members):
+        content = hashlib.sha256()
+        with archive.open(name) as fh:
+            while chunk := fh.read(1 << 20):  # 1 MiB
+                content.update(chunk)
+        digest.update(f"{name} {content.hexdigest()}\n".encode())
+    return digest.hexdigest()
+
+
+def _extract_ircadb(zip_path: Path, dest: Path, sha256: str | None = None) -> int:
+    """Extract each patient's .vtk meshes from *zip_path* to dest/patient_NN/; returns the patient count; raises ValueError for an oversized member and ArchiveMismatchError, before anything is written, when *sha256* is not the _ircadb_digest of the members."""
     import io
     import re
     import shutil
@@ -589,6 +619,12 @@ def _extract_ircadb(zip_path: Path, dest: Path) -> int:
             lic = re.search(r"3Dircadb1\.(\d+)/LICENSE\.txt$", member)
             if lic:
                 licenses[int(lic.group(1))] = member
+
+        if sha256 is not None:
+            # streamed, the hash needs no size limit
+            actual = _ircadb_digest(outer, [*mesh_zips.values(), *licenses.values()])
+            if actual != sha256:
+                raise ArchiveMismatchError(sha256, actual)
 
         for n in sorted(mesh_zips):
             pdir = dest / f"patient_{n:02d}"
@@ -636,16 +672,28 @@ def cmd_fetch_ircadb(args: argparse.Namespace) -> int:
         print(f">> Using the previously downloaded archive: {zip_path}")
     else:
         print(
-            ">> Downloading 3D-IRCADb-01 (~3 GB) from IRCAD (re-run to resume if interrupted) ..."
+            ">> Downloading 3D-IRCADb-01 (~820 MB) from IRCAD (re-run to resume if interrupted) ..."
         )
         try:
             _download_with_progress(_IRCAD_URL, zip_path)
         except OSError as e:
             return _report_download_failure(e, _IRCAD_PAGE)
 
-    print(">> Extracting per-patient meshes ...")
+    print(">> Checking and extracting the per-patient meshes ...")
     try:
-        count = _extract_ircadb(zip_path, dest)
+        count = _extract_ircadb(zip_path, dest, _IRCAD_SHA256)
+    except ArchiveMismatchError as e:
+        print(
+            "error: the archive differs from the one VisFEM was tested with\n"
+            f"       expected: sha256 {e.expected}\n"
+            f"       got:      sha256 {e.actual}\n"
+            f"       nothing was extracted, the archive was kept at {zip_path}.\n"
+            "       Delete it and run the command again to download it anew; if IRCAD has\n"
+            f"       published a new release ({_IRCAD_PAGE}),\n"
+            "       check it and update _IRCAD_SHA256 in visfem/cli.py",
+            file=sys.stderr,
+        )
+        return 1
     except Exception as e:  # noqa: BLE001 - zipfile.BadZipFile and friends
         print(f"error: could not extract the archive: {e}", file=sys.stderr)
         print(
@@ -1044,7 +1092,7 @@ def build_parser() -> argparse.ArgumentParser:
         "fetch-ircadb",
         parents=[data_dir_opts],
         help="download the public 3D-IRCADb-01 example dataset",
-        description="Download the public 3D-IRCADb-01 dataset (~3 GB) from IRCAD "
+        description="Download the public 3D-IRCADb-01 dataset (~820 MB) from IRCAD "
         "and lay it out as a ready-to-open VisFEM dataset. The data is "
         "provided by IRCAD under its own license terms.",
         epilog="Source: " + _IRCAD_PAGE,

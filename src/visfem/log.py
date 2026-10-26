@@ -1,4 +1,4 @@
-"""Logging setup: one RichHandler on the visfem logger, level from VISFEM_LOG_LEVEL."""
+"""Logging setup: one RichHandler on the visfem logger, level from VISFEM_LOG_LEVEL, and the error text shown to the user."""
 
 import logging
 import os
@@ -25,3 +25,11 @@ def get_logger(name: str) -> logging.Logger:
     """Return the logger for name; records propagate to the visfem logger configured on first call."""
     _configure()
     return logging.getLogger(name)
+
+
+def user_error(context: str, exc: BaseException) -> str:
+    """Return the error text shown to the user: *context*, followed by the text of *exc* when VISFEM_SHOW_ERRORS is 1."""
+    # The text of an exception can carry server paths; by default only the log gets it.
+    if os.environ.get("VISFEM_SHOW_ERRORS", "0") == "1":
+        return f"{context}: {exc}"
+    return context

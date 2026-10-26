@@ -8,7 +8,8 @@ import re
 import threading
 import warnings
 import xml.etree.ElementTree as ET
-from collections.abc import Callable, Iterable, Iterator
+from collections import OrderedDict
+from collections.abc import Callable, Hashable, Iterable, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -80,10 +81,88 @@ if "PolyLine" not in _xdmf_common.xdmf_to_meshio_type:
     _xdmf_common.meshio_to_xdmf_type["line"] = ["PolyLine"]
 
 
-# Mesh caches: static meshes and time-series steps are kept for the life of the process
-_static_cache: dict[Path, pv.DataSet] = {}
-_step_cache: dict[tuple[Path, int], pv.DataSet] = {}
-_step_cache_lock: threading.Lock = threading.Lock()
+class LruCache[K: Hashable, V]:
+    """Thread safe cache which evicts the least recently used values once their summed weight exceeds a limit."""
+
+    def __init__(self, limit: int, weight: Callable[[V], int]) -> None:
+        """Hold values up to a summed *weight* of *limit*; the most recent value stays even when it alone exceeds *limit*."""
+        self.limit = limit
+        self._weight = weight
+        self._entries: OrderedDict[K, tuple[V, int]] = OrderedDict()
+        self._total = 0
+        self._lock = threading.Lock()
+
+    @property
+    def total(self) -> int:
+        """Return the summed weight of the cached values."""
+        return self._total
+
+    def __len__(self) -> int:
+        """Return the number of cached values."""
+        return len(self._entries)
+
+    def __contains__(self, key: object) -> bool:
+        """Return True when a value is cached for *key*, without marking it as used."""
+        return key in self._entries
+
+    def get(self, key: K) -> V | None:
+        """Return the value cached for *key* and mark it as most recently used, or None."""
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                return None
+            self._entries.move_to_end(key)
+            return entry[0]
+
+    def put(self, key: K, value: V) -> None:
+        """Cache *value* for *key* as the most recently used value and evict the least recently used ones over the limit."""
+        weight = self._weight(value)
+        with self._lock:
+            old = self._entries.pop(key, None)
+            if old is not None:
+                self._total -= old[1]
+            self._entries[key] = (value, weight)
+            self._total += weight
+            while self._total > self.limit and len(self._entries) > 1:
+                evicted, (_, evicted_weight) = self._entries.popitem(last=False)
+                self._total -= evicted_weight
+                logger.debug("[mesh cache] evicted %s", evicted)
+
+
+def _env_megabytes(name: str, default: int) -> int:
+    """Return the size in bytes given in MB by the environment variable *name*, else *default* MB."""
+    raw = os.environ.get(name, "").strip()
+    try:
+        megabytes = int(raw) if raw else default
+    except ValueError:
+        logger.warning("%s=%r is no number of MB, using %s", name, raw, default)
+        megabytes = default
+    return max(megabytes, 0) << 20
+
+
+# Loaded meshes (static files and the steps of a series) and the skins of the static
+# files, keyed ("mesh", path, step) and ("skin", path, 0), share one memory budget,
+# VISFEM_MESH_CACHE_MB. The least recently used ones are evicted and loaded again on
+# demand; every session of the deployment is a process with its own cache.
+MESH_CACHE_MB = 2048
+_CacheKey = tuple[str, Path, int]
+
+
+def _cache_weight(value: pv.DataSet | Skin) -> int:
+    """Return the memory in bytes of a cached mesh or skin."""
+    if isinstance(value, tuple):
+        surface, point_ids, cell_ids = value
+        ids = [a.nbytes for a in (point_ids, cell_ids) if a is not None]
+        return surface.actual_memory_size * 1024 + sum(ids)
+    return value.actual_memory_size * 1024  # actual_memory_size is in KiB
+
+
+_mesh_cache: LruCache[_CacheKey, pv.DataSet | Skin] = LruCache(
+    _env_megabytes("VISFEM_MESH_CACHE_MB", MESH_CACHE_MB), _cache_weight
+)
+
+# Open readers are bounded by count; one holds the geometry of its file
+_MAX_READERS = 8
 
 
 # Internal utilities
@@ -232,7 +311,7 @@ def vtk_series_steps(ddir: Path, pattern: str) -> list[tuple[float, Path]]:
 # The master file; the database directory holds it plus sequential parts
 _LSDYNA_MASTER = "d3plot"
 # One reader per directory: vtkLSDynaReader streams one timestep at a time and is costly to instantiate
-_lsdyna_readers: dict[Path, vtkLSDynaReader] = {}
+_lsdyna_readers: LruCache[Path, vtkLSDynaReader] = LruCache(_MAX_READERS, lambda _: 1)
 # Step times per directory, memoised at reader creation; a frame read under the non-reentrant lock reads them directly
 _lsdyna_times: dict[Path, list[float]] = {}
 
@@ -252,7 +331,7 @@ def _lsdyna_reader(ddir: Path) -> vtkLSDynaReader:
         info = reader.GetOutputInformation(0)
         n = info.Length(_SDDP.TIME_STEPS())
         _lsdyna_times[ddir] = [float(info.Get(_SDDP.TIME_STEPS(), i)) for i in range(n)]
-        _lsdyna_readers[ddir] = reader
+        _lsdyna_readers.put(ddir, reader)
     return reader
 
 
@@ -810,10 +889,10 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
 
 # meshio-style XDMF time series readers
 
-# One reader per file for the life of the process: construction parses the whole XML manifest and read_points_cells re-reads the geometry, ~0.3 s against ~0.01 s for a frame's arrays
+# One reader per file, the most recent _MAX_READERS ones stay open: construction parses the whole XML manifest and read_points_cells re-reads the geometry, ~0.3 s against ~0.01 s for a frame's arrays
 # (reader, points, kept cell blocks, indices of the kept blocks)
 _XdmfEntry = tuple["meshio.xdmf.TimeSeriesReader", np.ndarray, list, list[int]]
-_xdmf_readers: dict[Path, _XdmfEntry] = {}
+_xdmf_readers: LruCache[Path, _XdmfEntry] = LruCache(_MAX_READERS, lambda _: 1)
 
 
 def _xdmf_reader(path: Path) -> _XdmfEntry:
@@ -824,7 +903,8 @@ def _xdmf_reader(path: Path) -> _XdmfEntry:
         logger.debug("Opening '%s' (%s steps)", path.name, reader.num_steps)
         points, cells = reader.read_points_cells()
         kept = _max_dim_blocks(cells)
-        entry = _xdmf_readers[path] = (reader, points, [cells[i] for i in kept], kept)
+        entry = (reader, points, [cells[i] for i in kept], kept)
+        _xdmf_readers.put(path, entry)
     return entry
 
 
@@ -869,24 +949,17 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
     fmt = _detect_format(path)
     logger.debug("Loading '%s' as '%s' step %s", path.name, fmt, step)
 
-    if fmt in ("pyvista_native", "meshio_fallback"):
-        if path not in _static_cache:
-            logger.info("[mesh cache miss] loading '%s' from disk", path.name)
-            _static_cache[path] = _load_static(path)
-        else:
-            logger.info("[mesh cache hit] '%s' served from memory", path.name)
-        return _detached_copy(_static_cache[path])
-
-    key = (path, step)
-    with _step_cache_lock:
-        if key in _step_cache:
-            logger.info(
-                "[mesh cache hit] '%s' step %s served from memory", path.name, step
-            )
-            return _detached_copy(_step_cache[key])
+    static = fmt in ("pyvista_native", "meshio_fallback")
+    key = ("mesh", path, 0 if static else step)
+    cached = _mesh_cache.get(key)
+    if cached is not None:
+        logger.info("[mesh cache hit] '%s' step %s served from memory", path.name, step)
+        return _detached_copy(cast(pv.DataSet, cached))
 
     logger.info("[mesh cache miss] loading '%s' step %s from disk", path.name, step)
-    if fmt == "pvd_timeseries":
+    if static:
+        mesh = _load_static(path)
+    elif fmt == "pvd_timeseries":
         mesh = _load_pvd(path, step)
     elif fmt == "fenics_xdmf":
         mesh = _load_fenics_xdmf(path, step)
@@ -894,8 +967,7 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
         mesh = _load_d3plot_frame(path, step)
     else:
         mesh = _load_timeseries_xdmf(path, step)
-    with _step_cache_lock:
-        _step_cache[key] = mesh
+    _mesh_cache.put(key, mesh)
     return _detached_copy(mesh)
 
 
@@ -903,7 +975,6 @@ def load_mesh(path: Path, step: int = 0) -> pv.DataSet:
 
 # trame-vtk runs vtkDataSetSurfaceFilter over every mapper input other than PolyData on every push to the browser (~2.5 s per push for an 800k-cell quadratic tibia volume, several pushes per click); a cached skin makes a push cost milliseconds
 Skin = tuple[pv.PolyData, np.ndarray | None, np.ndarray | None]
-_skin_cache: dict[Path, Skin] = {}  # one skin per file
 
 
 def as_surface(mesh: pv.DataSet) -> pv.PolyData:
@@ -930,9 +1001,12 @@ def skin_with_ids(mesh: pv.DataSet) -> Skin:
 
 def load_skin(path: Path) -> Skin:
     """Return the skin of the static mesh file at *path* with its volume ids, cached per path."""
-    if path not in _skin_cache:
-        _skin_cache[path] = skin_with_ids(load_mesh(path))
-    surface, point_ids, cell_ids = _skin_cache[path]
+    key = ("skin", path, 0)
+    skin = cast(Skin | None, _mesh_cache.get(key))
+    if skin is None:
+        skin = skin_with_ids(load_mesh(path))
+        _mesh_cache.put(key, skin)
+    surface, point_ids, cell_ids = skin
     # The shallow copy shares the cached buffers and owns its attribute lists; arrays added to it stay out of the cache
     return surface.copy(deep=False), point_ids, cell_ids
 

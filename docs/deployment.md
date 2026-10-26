@@ -260,7 +260,7 @@ Reload Caddy (`sudo systemctl reload caddy`). Remove the block and reload to go 
 
 ## Appendix B: deployment files in the repo
 
-- [`Dockerfile`](https://github.com/matthiaskoenig/visfem/blob/develop/Dockerfile): builds the app image from the `kitware/trame:uv` base (Python 3.13) and installs OSMesa for software 3D rendering.
+- [`Dockerfile`](https://github.com/matthiaskoenig/visfem/blob/develop/Dockerfile): builds the app image from the `kitware/trame:uv` base (Python 3.14) and installs OSMesa for software 3D rendering.
 - [`compose.deploy.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/compose.deploy.yml): the production Compose file (image name, port binding, data mount, and the `DATA_DIR` / `TRAME_USE_HOST` / `VISFEM_DATASETS` settings).
 - [`setup/launcher.json`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/launcher.json): the trame launcher config (concurrency `port_range`, start `timeout`), baked into the image at build.
 - [`setup/apps.yml`](https://github.com/matthiaskoenig/visfem/blob/develop/setup/apps.yml): the session command of the launcher, `visfem` with the idle `--timeout`.

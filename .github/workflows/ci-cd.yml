@@ -27,13 +27,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # the newest python on every platform, the oldest supported python on linux;
+        # the only supported python on every platform;
         # python 3.15 joins once vtk publishes wheels for it
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.14"]
-        include:
-          - os: ubuntu-latest
-            python-version: "3.13"
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1

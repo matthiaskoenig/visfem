@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: If you use this software, please cite it as below.
 type: software
 title: "VisFEM: Web visualization of FEM models"
-version: 0.1.0
-date-released: 2026-05-05
+version: 0.2.0
+date-released: 2026-10-26
 doi: 10.5281/zenodo.19220183
 license: MIT
 repository-code: https://github.com/matthiaskoenig/visfem

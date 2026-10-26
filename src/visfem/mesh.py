@@ -1,6 +1,9 @@
 """Mesh loading and metadata extraction for FEM simulation data."""
 
 import contextlib
+import hashlib
+import math
+import os
 import re
 import threading
 import warnings
@@ -108,17 +111,27 @@ def _path_lock(key: Path) -> threading.Lock:
         return _path_locks.setdefault(key, threading.Lock())
 
 
-def _filter_to_max_dim_cells(cells: list) -> list:
-    """Return the highest-dimensional cell blocks of *cells*."""
+def _max_dim_blocks(cells: list) -> list[int]:
+    """Return the indices of the highest-dimensional cell blocks of *cells*."""
     if not cells:
-        return cells
+        return []
     # Lower-dimensional boundary marker blocks crash pv.from_meshio()
-    max_dim = max(_CELL_DIM.get(block.type, 0) for block in cells)
-    filtered = [block for block in cells if _CELL_DIM.get(block.type, 0) == max_dim]
-    dropped = [block.type for block in cells if _CELL_DIM.get(block.type, 0) < max_dim]
+    dims = [_CELL_DIM.get(block.type, 0) for block in cells]
+    kept = [i for i, dim in enumerate(dims) if dim == max(dims)]
+    dropped = [cells[i].type for i in range(len(cells)) if i not in kept]
     if dropped:
         logger.debug("Filtered out lower-dimensional cell blocks: %s", dropped)
-    return filtered
+    return kept
+
+
+def _filter_to_max_dim_cells(cells: list) -> list:
+    """Return the highest-dimensional cell blocks of *cells*."""
+    return [cells[i] for i in _max_dim_blocks(cells)]
+
+
+def _filter_cell_data(cell_data: dict[str, list], kept: list[int]) -> dict[str, list]:
+    """Return *cell_data* with the per-block arrays of the blocks *kept*, the blocks a mesh keeps from _max_dim_blocks."""
+    return {name: [blocks[i] for i in kept] for name, blocks in cell_data.items()}
 
 
 def _parse_xdmf_base_grid(
@@ -219,12 +232,12 @@ def vtk_series_steps(ddir: Path, pattern: str) -> list[tuple[float, Path]]:
 # The master file; the database directory holds it plus sequential parts
 _LSDYNA_MASTER = "d3plot"
 # One reader per directory: vtkLSDynaReader streams one timestep at a time and is costly to instantiate
-_lsdyna_readers: dict[Path, "vtkLSDynaReader"] = {}
+_lsdyna_readers: dict[Path, vtkLSDynaReader] = {}
 # Step times per directory, memoised at reader creation; a frame read under the non-reentrant lock reads them directly
 _lsdyna_times: dict[Path, list[float]] = {}
 
 
-def _lsdyna_reader(ddir: Path) -> "vtkLSDynaReader":
+def _lsdyna_reader(ddir: Path) -> vtkLSDynaReader:
     """Return the vtkLSDynaReader for *ddir*, created with its step times memoised on first use; call under _path_lock(ddir)."""
     reader = _lsdyna_readers.get(ddir)
     if reader is None:
@@ -271,33 +284,79 @@ def _load_d3plot_frame(ddir: Path, step: int = 0) -> pv.DataSet:
 # Metadata extraction
 
 
-def _sidecar_cached(sidecar: Path, build: Callable[[], dict]) -> MeshMetadata:
-    """Return the MeshMetadata stored in *sidecar* when its schema hash is current, else validate the raw dict *build* returns, write it to *sidecar* and return it."""
+def _source_files(path: Path) -> list[Path]:
+    """Return the files the metadata of *path* is computed from: the file with its HDF5 companion or the files of its PVD steps, or every file of a d3plot database directory."""
+    if path.is_dir():
+        return sorted(
+            p
+            for p in path.iterdir()
+            if p.is_file() and not p.name.endswith(".meta.json")
+        )
+    files = [path]
+    suffix = path.suffix.lower()
+    if suffix in _XDMF_EXTENSIONS:
+        files.append(path.with_suffix(".h5"))
+    elif suffix == ".pvd":
+        with contextlib.suppress(ET.ParseError, ValueError):
+            files.extend(p for _, p in pvd_steps(path))
+    return files
+
+
+def source_signature(path: Path) -> str:
+    """Return a hash of the names, sizes and modification times of the source files of *path*; it changes when a mesh is exported again."""
+    entries = []
+    for file in _source_files(path):
+        try:
+            stat = file.stat()
+        except OSError:
+            entries.append(f"{file.name}:missing")
+            continue
+        entries.append(f"{file.name}:{stat.st_size}:{stat.st_mtime_ns}")
+    return hashlib.md5("|".join(entries).encode()).hexdigest()[:16]
+
+
+def _sidecar_cached(
+    sidecar: Path, source: Path, build: Callable[[], dict]
+) -> MeshMetadata:
+    """Return the MeshMetadata stored in *sidecar* when its schema hash and the signature of *source* are current, else validate the raw dict *build* returns, write it to *sidecar* and return it."""
+    signature = source_signature(source)
     if sidecar.exists():
         try:
             cached = MeshMetadata.model_validate_json(
                 sidecar.read_text(encoding="utf-8")
             )
-            if cached.schema_hash == MESH_METADATA_HASH:
+            if cached.schema_hash != MESH_METADATA_HASH:
+                logger.debug("Schema changed, regenerating '%s'", sidecar.name)
+            elif cached.source_signature != signature:
+                logger.debug("Source changed, regenerating '%s'", sidecar.name)
+            else:
                 logger.debug("Cache hit: '%s'", sidecar.name)
                 return cached
-            logger.debug("Schema changed, regenerating '%s'", sidecar.name)
-        except (ValueError, KeyError):
+        except ValueError, KeyError:
             logger.debug("Invalid sidecar, regenerating '%s'", sidecar.name)
 
-    meta = MeshMetadata.model_validate({**build(), "schema_hash": MESH_METADATA_HASH})
+    meta = MeshMetadata.model_validate(
+        {**build(), "schema_hash": MESH_METADATA_HASH, "source_signature": signature}
+    )
+    # The temporary sibling and the rename keep a concurrent session from reading half a file
+    tmp = sidecar.with_name(f"{sidecar.name}.{os.getpid()}.part")
     try:
-        sidecar.write_text(meta.model_dump_json(indent=2))
+        tmp.write_text(meta.model_dump_json(indent=2), encoding="utf-8")
+        os.replace(tmp, sidecar)
         logger.debug("Cached metadata to '%s'", sidecar.name)
     except OSError as e:
         # A read-only data mount fails the write; the sidecar is rebuilt on the next start
         logger.warning("Sidecar write failed for '%s': %s", sidecar.name, e)
+        with contextlib.suppress(OSError):
+            tmp.unlink()
     return meta
 
 
 def get_metadata(path: Path) -> MeshMetadata:
-    """Return the MeshMetadata of the mesh at *path*, cached as a .meta.json sidecar keyed on the schema hash."""
-    return _sidecar_cached(path.with_suffix(".meta.json"), lambda: _raw_metadata(path))
+    """Return the MeshMetadata of the mesh at *path*, cached as a .meta.json sidecar keyed on the schema hash and the source files."""
+    return _sidecar_cached(
+        path.with_suffix(".meta.json"), path, lambda: _raw_metadata(path)
+    )
 
 
 def _raw_metadata(path: Path) -> dict:
@@ -346,12 +405,16 @@ def _mesh_summary(mesh: pv.DataSet) -> dict:
 def _metadata_timeseries_xdmf(path: Path, fmt: str) -> dict:
     """Return the raw metadata dict of the meshio-style XDMF time series at *path* with format *fmt*."""
     with meshio.xdmf.TimeSeriesReader(path) as reader:
-        points, cells = reader.read_points_cells()
+        points, all_cells = reader.read_points_cells()
+        # the metadata describes the mesh load_mesh returns, without the lower-dimensional blocks
+        kept = _max_dim_blocks(all_cells)
+        cells = [all_cells[i] for i in kept]
         num_steps = reader.num_steps
         times: list[float] = []
         fields: dict[str, dict] = {}
         for step in range(num_steps):
-            timestamp, point_data, cell_data = reader.read_data(step)
+            timestamp, point_data, raw_cell_data = reader.read_data(step)
+            cell_data = _filter_cell_data(raw_cell_data, kept)
             times.append(float(timestamp))
             # Field shapes come from the first step
             if not fields:
@@ -434,7 +497,8 @@ def _metadata_fenics_xdmf(path: Path, fmt: str) -> dict:
                         fields[field_name] = {"center": center, "shape": shape}
     return {
         "format": fmt,
-        "n_steps": len(times),
+        # a static FEniCS geometry file has no time collection and is one step
+        "n_steps": max(len(times), 1),
         "times": times,
         "n_points": n_points,
         "n_cells": n_cells,
@@ -478,9 +542,9 @@ def metadata_for_series(paths: list[Path]) -> MeshMetadata:
 
 
 def metadata_for_d3plot(ddir: Path) -> MeshMetadata:
-    """Return MeshMetadata for the LS-DYNA d3plot database at *ddir*, cached as ``<ddir>/d3plot.meta.json`` keyed on the schema hash."""
+    """Return MeshMetadata for the LS-DYNA d3plot database at *ddir*, cached as ``<ddir>/d3plot.meta.json`` keyed on the schema hash and the database files."""
     return _sidecar_cached(
-        ddir / "d3plot.meta.json", lambda: _raw_d3plot_metadata(ddir)
+        ddir / "d3plot.meta.json", ddir, lambda: _raw_d3plot_metadata(ddir)
     )
 
 
@@ -518,14 +582,20 @@ def _boundable_fields(fields: dict) -> list[str]:
 
 
 def _array_minmax(arr: np.ndarray) -> tuple[float, float]:
-    """Return (min, max) of *arr*, of its per-row magnitude for a 3-vector array."""
-    if arr.ndim == 2 and arr.shape[1] == 3:
-        mag = np.linalg.norm(arr, axis=1)
-        return float(mag.min()), float(mag.max())
-    return float(arr.min()), float(arr.max())
+    """Return (min, max) of the finite values of *arr*, of its per-row magnitude for a 3-vector array; (nan, nan) without a finite value."""
+    values = (
+        np.linalg.norm(arr, axis=1)
+        if arr.ndim == 2 and arr.shape[1] == 3
+        else np.asarray(arr)
+    )
+    # NaN or inf marks missing values in some exports; they must not decide the colour range
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return float("nan"), float("nan")
+    return float(finite.min()), float(finite.max())
 
 
-def _mesh_array(mesh: pv.DataSet, name: str) -> "np.ndarray | None":
+def _mesh_array(mesh: pv.DataSet, name: str) -> np.ndarray | None:
     """Return the point or cell array *name* of *mesh*, or None."""
     arr = mesh.point_data.get(name)
     if arr is None:
@@ -553,6 +623,8 @@ def _accumulate_bounds(
     """Fold (name, lo, hi) *samples* into {name: [global_min, global_max]} over *names*, keeping only names that received a finite sample."""
     bounds = {n: [float("inf"), float("-inf")] for n in names}
     for name, lo, hi in samples:
+        if not (math.isfinite(lo) and math.isfinite(hi)):
+            continue
         bounds[name][0] = min(bounds[name][0], lo)
         bounds[name][1] = max(bounds[name][1], hi)
     return {
@@ -739,31 +811,34 @@ def _load_fenics_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
 # meshio-style XDMF time series readers
 
 # One reader per file for the life of the process: construction parses the whole XML manifest and read_points_cells re-reads the geometry, ~0.3 s against ~0.01 s for a frame's arrays
-_XdmfEntry = tuple["meshio.xdmf.TimeSeriesReader", np.ndarray, list]
+# (reader, points, kept cell blocks, indices of the kept blocks)
+_XdmfEntry = tuple["meshio.xdmf.TimeSeriesReader", np.ndarray, list, list[int]]
 _xdmf_readers: dict[Path, _XdmfEntry] = {}
 
 
 def _xdmf_reader(path: Path) -> _XdmfEntry:
-    """Return the cached (reader, points, cells) for *path* (call under _path_lock(path))."""
+    """Return the cached (reader, points, cells, kept block indices) for *path* (call under _path_lock(path))."""
     entry = _xdmf_readers.get(path)
     if entry is None:
         reader = meshio.xdmf.TimeSeriesReader(path)
         logger.debug("Opening '%s' (%s steps)", path.name, reader.num_steps)
         points, cells = reader.read_points_cells()
-        entry = _xdmf_readers[path] = (reader, points, _filter_to_max_dim_cells(cells))
+        kept = _max_dim_blocks(cells)
+        entry = _xdmf_readers[path] = (reader, points, [cells[i] for i in kept], kept)
     return entry
 
 
 def _load_timeseries_xdmf(path: Path, step: int = 0) -> pv.UnstructuredGrid:
     """Return timestep *step* of the meshio-style XDMF time series at *path*."""
     with _path_lock(path):  # the reader's h5py handle serves one thread at a time
-        reader, points, cells = _xdmf_reader(path)
+        reader, points, cells, kept = _xdmf_reader(path)
         _timestamp, point_data, cell_data = reader.read_data(step)
     mesh = meshio.Mesh(
         points=points,
         cells=cells,
         point_data=point_data,
-        cell_data=cell_data,
+        # the cell data of the dropped blocks goes with them
+        cell_data=_filter_cell_data(cell_data, kept),
     )
     return pv.from_meshio(mesh)
 

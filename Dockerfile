@@ -1,6 +1,6 @@
 FROM kitware/trame:uv
 
-ENV TRAME_PYTHON=3.13
+ENV TRAME_PYTHON=3.14
 
 RUN apt-get update \
     && apt-get install -y \

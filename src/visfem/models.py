@@ -41,15 +41,13 @@ class FieldInfo(_Strict):
     shape: list[int]  # [1] scalar, [3] vector, [3, 3] tensor
 
 
-Bounds3D = tuple[float, float, float, float, float, float]
-"""(xmin, xmax, ymin, ymax, zmin, zmax) bounding box."""
-
-
 class MeshMetadata(_Strict):
     """Per-mesh metadata generated from the mesh file and cached as a .meta.json sidecar."""
 
     # a sidecar whose hash differs from MESH_METADATA_HASH is regenerated
     schema_hash: str = ""
+    # a sidecar whose source files changed since, see mesh.source_signature, is regenerated
+    source_signature: str = ""
     format: str  # fenics_xdmf | timeseries_xdmf | pyvista_native | meshio_fallback
     n_steps: int = Field(ge=1)
     times: list[float]  # empty for static datasets
@@ -57,7 +55,6 @@ class MeshMetadata(_Strict):
     n_cells: int = Field(ge=0)
     cell_types: list[str]
     fields: dict[str, FieldInfo]
-    bounds: Bounds3D | None = None
     # field name -> [global min, global max] across all timesteps
     scalar_bounds: dict[str, list[float]] = {}
 
@@ -67,7 +64,7 @@ def compute_mesh_metadata_hash() -> str:
     fields = {
         name: str(field.annotation)
         for name, field in MeshMetadata.model_fields.items()
-        if name != "schema_hash"
+        if name not in ("schema_hash", "source_signature")
     }
     return hashlib.md5(json.dumps(fields, sort_keys=True).encode()).hexdigest()[:8]
 
@@ -176,8 +173,9 @@ class RenderConfig(_Strict):
     # timeseries renderer: flat VTK series or LS-DYNA database
     # glob of per-step mesh files relative to the dataset dir, natural-sorted
     series: str | None = None
-    # LS-DYNA d3plot master filename (e.g. "d3plot") inside the dataset dir
-    database: str | None = None
+    # LS-DYNA d3plot database in the dataset dir, named by its master file, which LS-DYNA
+    # always calls "d3plot"; the database is read from the dataset dir
+    database: Literal["d3plot"] | None = None
 
     # renderer-specific options
     fiber: FiberOptions | None = None  # region_id fibre overlay
@@ -189,7 +187,7 @@ class RenderConfig(_Strict):
     # upper clamp percentile for continuous fields
     percentile_clamp: int = Field(default=95, ge=1, le=100)
 
-    @field_validator("mesh_file", "mesh_candidates", "series", "database")
+    @field_validator("mesh_file", "mesh_candidates", "series")
     @classmethod
     def _relative_paths(cls, value: str | list[str] | None) -> str | list[str] | None:
         """Return value when every path in it stays inside the dataset dir; raises ValueError otherwise."""
@@ -222,7 +220,7 @@ class RenderConfig(_Strict):
         return name
 
     @model_validator(mode="after")
-    def _coerce_field_labels(self) -> "RenderConfig":
+    def _coerce_field_labels(self) -> RenderConfig:
         """Fill missing field labels with the humanised field name and return self."""
         for f in self.fields:
             if f.label is None:
@@ -239,9 +237,10 @@ class ProjectMetadata(_Strict):
     labels_file: str | None = None
     name: str
     pi: str
-    institution: list[str]
+    institution: list[str] = Field(min_length=1)
     biological_scale: BiologicalScale
-    organ_system: list[OrganSystem]  # multi-system datasets list several (e.g. IRCADb)
+    # the first one is the group in the dataset tree; multi-system datasets list several (e.g. IRCADb)
+    organ_system: list[OrganSystem] = Field(min_length=1)
     description: str = Field(max_length=500)
     mesh_format: str  # display label, e.g. "VTK", "XDMF+HDF5", "VTU (per-phase)"
     references: list[str] = []  # DOIs, URLs, or citations

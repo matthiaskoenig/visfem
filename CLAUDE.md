@@ -4,7 +4,7 @@ This file provides guidance when working with code in this repository.
 
 ## Project
 
-VisFEM is a trame web app for the visualization of Finite Element Method (FEM) models, with a focus on biomedical applications, plus a `visfem` command line (`visfem.cli:main`) which launches it and scaffolds, documents, validates and downloads datasets. Requires python >= 3.13 (no 3.15 yet, VTK publishes no wheels for it), packaged with hatchling (version is read from `src/visfem/__init__.py`). Runtime dependencies are trame 4 with its vuetify and vtk widgets, PyVista/VTK, meshio, h5py, numpy, pydantic and rich.
+VisFEM is a trame web app for the visualization of Finite Element Method (FEM) models, with a focus on biomedical applications, plus a `visfem` command line (`visfem.cli:main`) which launches it and scaffolds, documents, validates and downloads datasets. Requires python >= 3.14 (no 3.15 yet, VTK publishes no wheels for it), packaged with hatchling (version is read from `src/visfem/__init__.py`). Runtime dependencies are trame 4 with its vuetify and vtk widgets, PyVista/VTK, meshio, h5py, numpy, pydantic and rich.
 
 ## Commands
 
@@ -20,7 +20,7 @@ visfem validate-data                      # validate every descriptor of the dat
 
 # tests
 pytest                                    # all tests
-tox r -e py3.14                           # single tox env (py3.13, py3.14)
+tox r -e py3.14                           # single tox env
 tox run-parallel                          # full matrix + ty
 
 # lint / format / types
@@ -59,6 +59,7 @@ Documentation is [Zensical](https://zensical.org/): markdown sources in `docs/`,
 - Every module, class and function carries full type annotations and a docstring (ruff `D`, google convention). Every `except Exception` carries a `noqa: BLE001` with its reason. The UI is built from nested `with` blocks on purpose (`SIM117` is ignored).
 - Text from descriptors and file names reaches the Vue templates; pass it through state bindings or `json.dumps`, never format it into a template string or JS expression.
 - `setup/requirements.txt` is generated from `uv.lock` by `uv export`, never edit it by hand.
-- Datasets are not part of the repository (`data/` is gitignored); the tests do not need them.
+- Datasets are not part of the repository (`data/` is gitignored); the tests do not need them, `tests/conftest.py` writes synthetic meshes and descriptors into a temporary data directory. `tests/test_app.py` drives `VisfemApp` without a browser on an off-screen plotter; the module-level caches of `mesh.py` are keyed by path, so every test uses its own `tmp_path`. A warning fails a test.
+- The series metadata of the app (`xdmf_meta`) is keyed by the path of the XDMF or PVD file, never by its stem.
 - Markdown carries no hard line wraps: a paragraph, a list item or a table row is a single line and the wrapping is left to the editor.
 - Release notes go in `release-notes/` as part of a release commit.

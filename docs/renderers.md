@@ -28,8 +28,8 @@ When `renderer` is not set, it is inferred in this order:
 | field | renderers | content |
 | --- | --- | --- |
 | `renderer` | all | one of the renderers above |
-| `mesh_file` | single mesh renderers | mesh file relative to the dataset folder |
-| `mesh_candidates` | single mesh renderers | fallbacks tried in order, e.g. an `.stl` before an `.obj` |
+| `mesh_file` | `surface`, `region_id`, `scalar_field` | mesh file relative to the dataset folder; required by `region_id` and `scalar_field` |
+| `mesh_candidates` | `surface` | fallbacks tried in order, e.g. an `.stl` before an `.obj` |
 | `parts` | `multi_part` | list of `{"stem": ..., "label": ...}`, the stem is the path without extension relative to the dataset folder |
 | `part_extensions` | `multi_part` | extensions tried for every stem, default `.ply`, `.vtk`, `.vtu`, `.stl`, `.obj` |
 | `tube` | `multi_part` | `{"enabled": true, "n_sides": 8, "stride": 1}` draws line cells as tubes |
@@ -39,13 +39,13 @@ When `renderer` is not set, it is inferred in this order:
 | `region_labels` | region coloured | names per region id, e.g. `{"1": ["Ventricles"]}`; overrides `labels_file` |
 | `labels_mesh_key` | region coloured | the mesh section of `labels_file` to use, e.g. `M.vtu` |
 | `fiber` | `region_id` | `{"array": "Fiber", "stride": 5, "scale": 1.5}` draws glyphs oriented by a vector cell array |
-| `fields` | scalar fields | ordered list of `{"name": ..., "label": ...}`, the selectable fields; without it the fields of the mesh are discovered |
-| `exclude_fields` | scalar fields | discovered fields to drop |
-| `default_field` | scalar fields | field shown first; without it the first listed or discovered field |
+| `fields` | `scalar_field`, `timeseries` | ordered list of `{"name": ..., "label": ...}`, the selectable fields; required by `scalar_field`, a time series without it offers every field of its mesh |
+| `exclude_fields` | `timeseries` | discovered fields to drop |
+| `default_field` | `scalar_field`, `timeseries` | field shown first; without it the first listed or discovered field |
 | `categorical_fields` | `scalar_field` | fields drawn as discrete zones with a region legend |
 | `percentile_clamp` | `scalar_field` | upper percentile the continuous ramp is clamped to, 1 to 100, default 95 |
 | `series` | `timeseries` | glob of the per step mesh files relative to the dataset folder, natural sorted, e.g. `frame_*.vtk` |
-| `database` | `timeseries` | file name of an LS-DYNA d3plot database in the dataset folder, e.g. `d3plot` |
+| `database` | `timeseries` | `"d3plot"`: the dataset folder is an LS-DYNA d3plot database, named by its master file `d3plot` |
 | `solid` | `pvd_phase_series` | `true` draws every phase in one colour |
 
 The names of the palettes and colormaps are checked when the descriptor is read, so an unknown name fails `visfem validate-data`.

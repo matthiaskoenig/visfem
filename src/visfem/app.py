@@ -8,6 +8,7 @@ import asyncio
 import base64
 import contextlib
 import importlib.resources
+import math
 from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Any
@@ -18,10 +19,6 @@ from trame.decorators import change
 from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.engine.colors import (
-    BG_DARK_BOTTOM,
-    BG_DARK_TOP,
-    BG_LIGHT_BOTTOM,
-    BG_LIGHT_TOP,
     clear_overrides,
     set_override,
 )
@@ -47,7 +44,9 @@ from visfem.engine.scene import (
     Scene,
     TrameCtrl,
     apply_opacity,
+    clear_scene,
     push_scene,
+    set_background,
     update_scalar_range,
 )
 from visfem.engine.selection import (
@@ -92,15 +91,16 @@ class VisfemApp(TrameApp):
         self._opacity_task: asyncio.Task | None = None
         self._project_metadata = load_project_metadata()
         self._organ_groups = group_by_organ_system(self._project_metadata)
-        self._xdmf_meta: dict[str, MeshMetadata] = {}
+        self._xdmf_meta: dict[Path, MeshMetadata] = {}
         for key, meta in self._project_metadata.items():
-            series = list(discover_xdmf(dataset_dir(meta)).items())
+            # keyed by path: two datasets may ship a series of the same name
+            series = list(discover_xdmf(dataset_dir(meta)).values())
             pvd = pvd_file_path(meta)
             if pvd and pvd.exists():
-                series.append((pvd.stem, pvd))
-            for name, path in series:
+                series.append(pvd)
+            for path in series:
                 try:
-                    self._xdmf_meta[name] = get_metadata(path)
+                    self._xdmf_meta[path] = get_metadata(path)
                 except Exception as e:  # noqa: BLE001 - skip the corrupt file and keep serving
                     logger.warning(
                         "Dataset '%s': skipping '%s', metadata read failed: %s",
@@ -152,8 +152,8 @@ class VisfemApp(TrameApp):
         # typeshed types the functools.wraps wrappers of Plotter as unbound methods,
         # the renderers are called directly where possible.
         self.plotter.enable_depth_peeling(number_of_peels=4)  # ty: ignore[missing-argument]
-        self.plotter.renderers.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
         self.scene = Scene(self.plotter)
+        set_background(self.scene, dark_mode=True)
         # Physical scale stays default: SetPhysicalScale is server-only; the JS selectstart handler scales XR metres by 1000 to VTK mm.
 
     @staticmethod
@@ -256,10 +256,7 @@ class VisfemApp(TrameApp):
     def toggle_theme(self) -> None:
         """Toggle between dark and light mode."""
         self.state.dark_mode = not self.state.dark_mode
-        if self.state.dark_mode:
-            self.plotter.renderers.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
-        else:
-            self.plotter.renderers.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)
+        set_background(self.scene, bool(self.state.dark_mode))
         push_scene(self.scene, self.ctrl, reset_camera=False)
 
     async def reset_camera(self) -> None:
@@ -314,9 +311,21 @@ class VisfemApp(TrameApp):
         try:
             lo = float(self.state.clim_input_min)
             hi = float(self.state.clim_input_max)
-        except ValueError:
-            return
-        if lo >= hi:
+        except TypeError, ValueError:
+            lo, hi = 0.0, 0.0
+        if not (math.isfinite(lo) and math.isfinite(hi)) or lo >= hi:
+            # a rejected range shows the range in use again
+            override = self.state.clim_override
+            self.state.clim_input_min = (
+                f"{override[0]:g}"
+                if override
+                else self.state.scalar_bar.get("min_label", "")
+            )
+            self.state.clim_input_max = (
+                f"{override[1]:g}"
+                if override
+                else self.state.scalar_bar.get("max_label", "")
+            )
             return
         field = self.state.active_scalar_field
         if not field:
@@ -327,14 +336,15 @@ class VisfemApp(TrameApp):
             self.state.clim_override = [lo, hi]
             self.state.scalar_bar = scalar_bar
 
-    def _cancel_warmup(self) -> None:
-        """Cancel any running vtk.js warmup task and clear the loading and busy flags."""
+    def _cancel_warmup(self, *, release: bool = True) -> None:
+        """Cancel any running vtk.js warmup task; *release* also clears the loading and busy flags, which a caller holding the busy claim keeps."""
         self._warmup_gen += 1
         if self._warmup_task is not None and not self._warmup_task.done():
             self._warmup_task.cancel()
         self._warmup_task = None
-        self.state.loading = False
-        self.state.busy = False
+        if release:
+            self.state.loading = False
+            self.state.busy = False
 
     def _render_settle(self) -> float:
         """Return the overlay hold in seconds for the active mesh, scaled by cell count."""
@@ -343,7 +353,7 @@ class VisfemApp(TrameApp):
         if isinstance(stats, dict):
             try:
                 cells = int(stats.get("n_cells") or 0)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 cells = 0
         settle = _RENDER_SETTLE_MIN + _RENDER_SETTLE_PER_MCELL * (cells / 1_000_000)
         return min(settle, _RENDER_SETTLE_MAX)
@@ -414,7 +424,22 @@ class VisfemApp(TrameApp):
             await self._start_vtkjs_warmup()
         except Exception as e:  # noqa: BLE001 - UI boundary: report and release the view
             self._show_error(f"Failed to load {what}", e)
+            self._reset_view()
             clear_overlay(self.state)
+
+    def _reset_view(self) -> None:
+        """Clear the scene and the dataset state, so that a failed switch shows no part of the dataset before it."""
+        self._fiber_actor = None
+        clear_scene(self.scene, bool(self.state.dark_mode))
+        push_scene(self.scene, self.ctrl, reset_camera=False)
+        with self.state:
+            self.state.active_dataset = None
+            self.state.active_patient = None
+            self.state.active_meta = None
+            self.state.legend_items = []
+            self.state.mesh_stats = None
+            self.state.scalar_bar = None
+            self.state.has_fibers = False
 
     def _resolve_active_path(self) -> Path | None:
         """Return the load_mesh path of the active dataset (d3plot directory, series step file, PVD or XDMF), or None."""
@@ -445,8 +470,11 @@ class VisfemApp(TrameApp):
         if n_steps <= 1:
             self.state.step_inc = 1
             # The client paints push_scene's single push (disable_auto_switch); the sleep covers it.
+            gen = self._warmup_gen
             await asyncio.sleep(self._render_settle())
-            clear_overlay(self.state)
+            # a switch during the sleep owns the overlay now
+            if gen == self._warmup_gen:
+                clear_overlay(self.state)
             return
         self.state.step_inc = keyframe_increment(n_steps)
         path = self._resolve_active_path()
@@ -557,7 +585,7 @@ class VisfemApp(TrameApp):
         def prepare() -> None:
             """Stop playback and warmup, rewind to step 0 and drop the range override."""
             self.state.autoplay = False
-            self._cancel_warmup()
+            self._cancel_warmup(release=False)
             self.state.active_step = 0
             self.state.clim_override = None
 
@@ -577,7 +605,7 @@ class VisfemApp(TrameApp):
             ctrl: TrameCtrl,
             state: Any,
             project_metadata: dict[str, ProjectMetadata],
-            xdmf_meta: dict[str, MeshMetadata],
+            xdmf_meta: dict[Path, MeshMetadata],
         ) -> None:
             """Call select_step with the coerced *step* on *scene*, *ctrl*, *state*, *project_metadata* and *xdmf_meta*."""
             select_step(scene, ctrl, state, project_metadata, xdmf_meta, int(step))

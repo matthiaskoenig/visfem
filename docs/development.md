@@ -19,7 +19,7 @@ A pull request can only be merged once the four required checks are green:
 
 | check   | workflow      | content                                                              |
 | ------- | ------------- | -------------------------------------------------------------------- |
-| `tests` | `ci-cd.yml`   | python 3.13 and 3.14 on linux, python 3.14 on macos and windows       |
+| `tests` | `ci-cd.yml`   | python 3.14 on linux, macos and windows                               |
 | `ruff`  | `ruff.yml`    | `ruff check` and `ruff format --check`                                |
 | `ty`    | `ty.yml`      | `tox r -e ty`                                                         |
 | `docs`  | `docs.yml`    | the zensical build including the api reference, the agent files and the landing page |
@@ -68,7 +68,7 @@ A single sync creates the virtual environment in `.venv`, installs `visfem` into
 uv sync --extra dev
 ```
 
-The `dev` extra contains everything used below, i.e., pytest, ruff, ty, tox, pre-commit, zensical and bump-my-version, so nothing has to be installed separately. `uv.lock` pins the versions of the environment, `uv lock --upgrade` updates them. The python version is taken from `.python-version` (currently 3.14); to work against the oldest supported version instead use `uv sync --extra dev --python 3.13`, which replaces the environment.
+The `dev` extra contains everything used below, i.e., pytest, ruff, ty, tox, pre-commit, zensical and bump-my-version, so nothing has to be installed separately. `uv.lock` pins the versions of the environment, `uv lock --upgrade` updates them. The python version is taken from `.python-version` (currently 3.14); VisFEM supports python 3.14 only.
 
 The tools are then run either with `uv run <command>`, which uses the environment without activating it, or from the activated environment:
 
@@ -92,7 +92,7 @@ From now on every commit is checked with ruff (lint and format) and ty, i.e., th
 
 The tests are written with pytest, tox runs them against every supported python version.
 
-The tox environments are named after the interpreter (`py3.13` and `py3.14`, see `envlist` in `tox.ini`), a single one is run with
+The tox environments are named after the interpreter (`py3.14`, see `envlist` in `tox.ini`), a single one is run with
 ```bash
 tox r -e py3.14
 ```
@@ -101,16 +101,26 @@ and the complete matrix, including the `ty` environment, in parallel with
 tox run-parallel
 ```
 
-This needs the interpreters to be available, which uv installs with `uv python install 3.13 3.14`. Continuous integration runs the same environments as `uvx --with tox-uv tox -e py3.14`. Python 3.15 joins the matrix once [VTK](https://pypi.org/project/vtk/) publishes wheels for it.
+This needs the interpreters to be available, which uv installs with `uv python install 3.14`. Continuous integration runs the same environments as `uvx --with tox-uv tox -e py3.14`. Python 3.15 joins the matrix once [VTK](https://pypi.org/project/vtk/) publishes wheels for it.
 
 To run the tests directly against the development environment use
 
 ```bash
 pytest                                    # the full suite
-pytest tests/test_main.py                 # a single module
+pytest tests/test_app.py                  # a single module
+pytest tests/test_app.py::test_url_model  # a single test
 ```
 
-The tests do not need datasets. To check a change in the app itself, run it against a data directory, see [Running the app](usage.md), and look at the result in the browser.
+The tests do not need datasets: `tests/conftest.py` writes small synthetic meshes, PVD and XDMF series and dataset descriptors into a temporary data directory. They cover
+
+- the dataset descriptors and their validation (`test_models.py`) and the discovery of the datasets (`test_discovery.py`),
+- the loading of meshes and time series and their cached metadata (`test_mesh.py`), the FEBio reader (`test_febio.py`),
+- the resolution of the render block (`test_renderers.py`) and the colours (`test_colors.py`),
+- the command line, including `validate-data` and the IRCADb extraction (`test_cli.py`),
+- the app without a browser (`test_app.py`): it selects datasets, fields and time steps on an off-screen plotter and checks the state the client receives,
+- the escaping of text for the templates (`test_widgets.py`) and that `setup/requirements.txt` is the export of `uv.lock` (`test_requirements.py`).
+
+A warning fails a test (`filterwarnings` in `pyproject.toml`). To check a change of the user interface, run the app against a data directory, see [Running the app](usage.md), and look at the result in the browser.
 
 ## Linting and formatting
 

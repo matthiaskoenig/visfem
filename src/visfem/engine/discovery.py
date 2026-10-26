@@ -14,13 +14,18 @@ logger = get_logger(__name__)
 
 # ---- Paths ----
 
-# Datasets default to <repo>/data/datasets, a path that resolves only from an editable checkout; a deployment sets DATA_DIR or VISFEM_DATA_DIR to the mounted data directory.
+
+def default_data_dir() -> Path:
+    """Return the data directory without DATA_DIR: ``data/`` of a source checkout, else ``./visfem_data``, where the fetch commands put the example data."""
+    repo = Path(__file__).parents[3]
+    if (repo / "pyproject.toml").exists() and (repo / "src" / "visfem").is_dir():
+        return repo / "data"
+    return Path.cwd() / "visfem_data"
+
+
+# A deployment sets DATA_DIR or VISFEM_DATA_DIR to the mounted data directory.
 _DATA_ENV = os.environ.get("DATA_DIR") or os.environ.get("VISFEM_DATA_DIR")
-DATASETS_DIR = (
-    (Path(_DATA_ENV) / "datasets")
-    if _DATA_ENV
-    else (Path(__file__).parents[3] / "data" / "datasets")
-)
+DATASETS_DIR = (Path(_DATA_ENV) if _DATA_ENV else default_data_dir()) / "datasets"
 
 # VISFEM_DATASETS is a comma-separated allowlist of dataset keys; empty exposes every dataset and deployment sets the SPP2311 subset.
 _DATASETS_ENV = os.environ.get("VISFEM_DATASETS", "").strip()
@@ -185,8 +190,11 @@ def active_timeseries_path(
     if meta.is_pvd:
         return pvd_file_path(meta)
     xdmf_files = discover_xdmf(ddir)
-    stem: str | None = state.active_xdmf
-    return xdmf_files.get(stem) if stem else next(iter(xdmf_files.values()), None)
+    stem: str | None = getattr(state, "active_xdmf", None)
+    # an unknown stem, e.g. of the previous dataset, falls back to the first file
+    if stem and stem in xdmf_files:
+        return xdmf_files[stem]
+    return next(iter(xdmf_files.values()), None)
 
 
 def grasp_phase_pvd(patient_dir: Path) -> Path | None:

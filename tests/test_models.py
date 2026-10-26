@@ -45,3 +45,33 @@ def test_relative_paths_are_accepted() -> None:
     assert cfg.mesh_file == "sub/mesh.vtu"
     assert cfg.series == "frame_*.vtk"
     assert ProjectMetadata.model_validate(_DESCRIPTOR).data_path == "heart"
+
+
+def test_lists_need_an_entry() -> None:
+    """Check that a dataset names at least one organ system and one institution, the tree groups by the first organ system."""
+    for field in ("organ_system", "institution"):
+        with pytest.raises(ValidationError):
+            ProjectMetadata.model_validate({**_DESCRIPTOR, field: []})
+
+
+def test_render_block_options() -> None:
+    """Check the names of palettes and colormaps, the d3plot database and the default field labels."""
+    with pytest.raises(ValidationError, match="unknown palette"):
+        RenderConfig.model_validate({"categorical_palette": "rainbow"})
+    with pytest.raises(ValidationError, match="unknown colormap"):
+        RenderConfig.model_validate({"continuous_cmap": "jet"})
+    with pytest.raises(ValidationError):
+        RenderConfig.model_validate({"database": "results.d3plot"})
+    assert RenderConfig.model_validate({"database": "d3plot"}).database == "d3plot"
+    cfg = RenderConfig.model_validate(
+        {"fields": [{"name": "von_mises"}, {"name": "u", "label": "Displacement"}]}
+    )
+    assert [f.label for f in cfg.fields] == ["von mises", "Displacement"]
+
+
+def test_comments_and_unknown_fields() -> None:
+    """Check that keys starting with an underscore are comments and unknown keys are errors."""
+    meta = ProjectMetadata.model_validate({**_DESCRIPTOR, "_comment": "a note"})
+    assert meta.name == "Heart"
+    with pytest.raises(ValidationError):
+        ProjectMetadata.model_validate({**_DESCRIPTOR, "colour": "red"})

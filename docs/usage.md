@@ -1,5 +1,7 @@
 # Running the app
 
+VisFEM runs as a local web server which the browser connects to; the `visfem` command starts it and prepares the datasets it shows.
+
 ## Launching
 
 ```bash
@@ -25,7 +27,7 @@ export DATA_DIR=/path/to/your/data    # datasets are read from /path/to/your/dat
 visfem
 ```
 
-Without `DATA_DIR`, a checkout of the repository uses its own `data/` folder. How a dataset is laid out is described in [Datasets](datasets.md).
+Without `DATA_DIR`, a checkout of the repository uses its own `data/` folder and an installed VisFEM uses `./visfem_data` in the working directory, where the fetch commands of the [example data](example-data.md) put their datasets. How a dataset is laid out is described in [Datasets](datasets.md).
 
 ## Environment variables
 
@@ -38,7 +40,7 @@ Without `DATA_DIR`, a checkout of the repository uses its own `data/` folder. Ho
 
 ## Opening a dataset by link
 
-The `model` query parameter selects a dataset when the app opens, e.g. [app.visfem.de/?model=heart](https://app.visfem.de/?model=heart). The value is the key of the dataset, i.e., the file name of its JSON descriptor without `.json`. The tiles of the landing page link to the models this way.
+The `model` query parameter, or its alias `dataset`, selects a dataset when the app opens, e.g. [app.visfem.de/?model=heart](https://app.visfem.de/?model=heart). The value is the key of the dataset, i.e., the file name of its JSON descriptor without `.json`. The tiles of the landing page link to the models this way.
 
 ## Command line
 

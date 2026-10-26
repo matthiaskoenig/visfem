@@ -162,7 +162,7 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
 # Scene state
 
 
-def _set_background(scene: Scene, dark_mode: bool) -> None:
+def set_background(scene: Scene, dark_mode: bool) -> None:
     """Set the gradient background of *scene* for *dark_mode*."""
     if dark_mode:
         scene.plotter.renderers.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
@@ -176,7 +176,7 @@ def clear_scene(scene: Scene, dark_mode: bool) -> None:
     # Removing an actor makes the local-mode client drop its geometry.
     for actor in list(scene.plotter.renderer.actors.values()):
         scene.plotter.renderer.RemoveActor(actor)
-    _set_background(scene, dark_mode)
+    set_background(scene, dark_mode)
 
 
 def apply_opacity(scene: Scene, opacity: float) -> None:
@@ -231,6 +231,32 @@ def update_actor_palette(
     push_scene(scene, ctrl, reset_camera=False)
 
 
+def _zone_index(mesh: pv.DataSet, field: str) -> tuple[list[int], np.ndarray]:
+    """Return the sorted zone ids of the categorical cell array *field* of *mesh* and the dense zone index of every cell, the ``_zone_id`` array the actors colour by."""
+    zones = np.asarray(mesh.cell_data[field]).astype(int)
+    zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
+    index = np.searchsorted(np.asarray(zone_ids), zones).astype(np.int32)
+    return zone_ids, index
+
+
+def _zone_legend(
+    zone_ids: list[int], colors: list[str], zone_labels: dict[int, list[str]]
+) -> list[dict[str, Any]]:
+    """Return the legend of the zones *zone_ids* in *colors*, named by *zone_labels*."""
+    return [
+        {"names": zone_labels.get(z, [f"Zone {z}"]), "color": colors[i]}
+        for i, z in enumerate(zone_ids)
+    ]
+
+
+def _continuous_clim(data: np.ndarray, percentile: int) -> list[float]:
+    """Return the colour limits of *data*: its finite minimum and the upper limit at *percentile*, which keeps outliers from washing out the ramp."""
+    finite = np.asarray(data)[np.isfinite(data)]
+    if finite.size == 0:
+        return [0.0, 1.0]
+    return [float(finite.min()), float(np.percentile(finite, percentile))]
+
+
 def update_scalar_field_view(
     scene: Scene,
     ctrl: TrameCtrl,
@@ -251,11 +277,14 @@ def update_scalar_field_view(
     mesh = load_mesh(ddir / mesh_file)  # served from the load_mesh cache
 
     if field in categorical_fields:
-        zones = mesh.cell_data[field].astype(int)
-        zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
+        zone_ids, index = _zone_index(mesh, field)
         n = len(zone_ids)
         colors = region_colors(n, palette)
-        # _zone_id is the dense zone index redraw_scalar_field freezes on the skin.
+        # The skin carries the zone index of the field drawn first; *field* needs its own.
+        _, _, cell_ids = load_skin(ddir / mesh_file)
+        skin = cast("pv.DataSetMapper", mapper).dataset
+        if skin is not None:
+            skin.cell_data["_zone_id"] = index if cell_ids is None else index[cell_ids]
         mapper.SelectColorArray("_zone_id")
         mapper.SetScalarModeToUseCellFieldData()
         mapper.SetInterpolateScalarsBeforeMapping(False)
@@ -263,15 +292,9 @@ def update_scalar_field_view(
         mapper.SetScalarRange(0, max(n - 1, 1))
         mapper.Modified()
         push_scene(scene, ctrl, reset_camera=False)
-        legend = [
-            {"names": zone_labels.get(z, [f"Zone {z}"]), "color": colors[i]}
-            for i, z in enumerate(zone_ids)
-        ]
-        return legend, None
+        return _zone_legend(zone_ids, colors, zone_labels), None
 
-    data = mesh.cell_data[field]
-    # The upper limit at the percentile keeps outliers from washing out the ramp.
-    clim = [float(data.min()), float(np.percentile(data, percentile))]
+    clim = _continuous_clim(mesh.cell_data[field], percentile)
     mapper.SelectColorArray(field)
     mapper.SetScalarModeToUseCellFieldData()
     mapper.SetInterpolateScalarsBeforeMapping(True)
@@ -288,7 +311,7 @@ def update_scalar_range(
     field: str,
     clim: list[float],
     cmap: str,
-) -> "dict | None":
+) -> dict | None:
     """Set the active actor's scalar range to *clim* in place and return the scalar bar dict."""
     actor = scene.xdmf_actor if scene.xdmf_actor is not None else scene.active_actor
     if actor is None:
@@ -310,23 +333,23 @@ def redraw_xdmf(
     scene: Scene,
     ctrl: TrameCtrl,
     path: Path,
-    xdmf_meta: dict[str, MeshMetadata],
+    xdmf_meta: dict[Path, MeshMetadata],
     dark_mode: bool,
     opacity: float,
     field: str | None = None,
     step: int = 0,
     reset_camera: bool = True,
     cmap: str = "viridis",
-    mesh_meta: "MeshMetadata | None" = None,
+    mesh_meta: MeshMetadata | None = None,
 ) -> RenderResult:
     """Render step *step* of the time series at *path* and return the RenderResult."""
     clear_scene(scene, dark_mode)
     mesh = load_mesh(path, step=step)
 
     scene.xdmf_mesh = mesh
-    # A flat-series file passes mesh_meta; an XDMF/PVD manifest is keyed by stem.
+    # A flat-series file passes mesh_meta; an XDMF/PVD manifest is keyed by its path.
     if mesh_meta is None:
-        mesh_meta = xdmf_meta.get(path.stem)
+        mesh_meta = xdmf_meta.get(path)
     if field is None:
         field = next(iter(mesh_meta.fields), None) if mesh_meta else None
 
@@ -370,7 +393,7 @@ def redraw_xdmf(
             try:
                 lo, hi = mesh.get_data_range(colour_by)
                 clim = [float(lo), float(hi)]
-            except (KeyError, ValueError):  # array absent in this frame: bar hidden
+            except KeyError, ValueError:  # array absent in this frame: bar hidden
                 pass
         if clim is not None:
             # The bar label is the plain field name; the vector selector conveys the magnitude.
@@ -383,7 +406,7 @@ def update_xdmf_step(
     scene: Scene,
     ctrl: TrameCtrl,
     path: Path,
-    xdmf_meta: dict[str, MeshMetadata],
+    xdmf_meta: dict[Path, MeshMetadata],
     step: int,
     field: str | None,
     cmap: str,
@@ -430,7 +453,7 @@ def update_xdmf_step(
     stats = {"n_cells": new_mesh.n_cells, "n_points": new_mesh.n_points}
     scalar_bar: dict | None = None
     if field:
-        mesh_meta = xdmf_meta.get(path.stem)
+        mesh_meta = xdmf_meta.get(path)
         clim: list[float] | None = None
         if mesh_meta and field in mesh_meta.scalar_bounds:
             clim = mesh_meta.scalar_bounds[field]
@@ -438,7 +461,7 @@ def update_xdmf_step(
             try:
                 lo, hi = new_mesh.get_data_range(field)
                 clim = [float(lo), float(hi)]
-            except (KeyError, ValueError):  # array absent in this frame: bar hidden
+            except KeyError, ValueError:  # array absent in this frame: bar hidden
                 pass
         if clim is not None:
             scalar_bar = _scalar_bar_dict(field, clim, cmap)
@@ -724,14 +747,10 @@ def redraw_scalar_field(
     surface, _, cell_ids = load_skin(sim_path)
 
     # _zone_id is the dense zone index update_scalar_field_view switches to in place.
+    zone_ids: list[int] = []
     if is_categorical:
-        zones = mesh.cell_data[field].astype(int)
-        zone_ids: list[int] = sorted(int(z) for z in np.unique(zones))
-        zone_map = {z: i for i, z in enumerate(zone_ids)}
-        zone_id = np.array([zone_map[int(z)] for z in zones], dtype=np.int32)
-        surface.cell_data["_zone_id"] = (
-            zone_id if cell_ids is None else zone_id[cell_ids]
-        )
+        zone_ids, index = _zone_index(mesh, field)
+        surface.cell_data["_zone_id"] = index if cell_ids is None else index[cell_ids]
     clear_scene(scene, dark_mode)
     stats = {"n_cells": mesh.n_cells, "n_points": mesh.n_points}
 
@@ -753,15 +772,11 @@ def redraw_scalar_field(
         )
         apply_opacity(scene, opacity)
         push_scene(scene, ctrl, reset_camera=reset_camera)
-        legend = [
-            {"names": zone_labels.get(z, [f"Zone {z}"]), "color": colors[i]}
-            for i, z in enumerate(zone_ids)
-        ]
-        return RenderResult(legend_items=legend, mesh_stats=stats)
+        return RenderResult(
+            legend_items=_zone_legend(zone_ids, colors, zone_labels), mesh_stats=stats
+        )
 
-    data = mesh.cell_data[field]
-    # The upper limit at the percentile keeps outliers from washing out the ramp.
-    clim = [float(data.min()), float(np.percentile(data, percentile))]
+    clim = _continuous_clim(mesh.cell_data[field], percentile)
     scene.active_actor = scene.plotter.add_mesh(
         surface,
         scalars=field,

@@ -1,6 +1,6 @@
 # Installation
 
-VisFEM requires python >= 3.13 and is available from [pypi](https://pypi.org/project/visfem/). It is an application, so it is best installed as a tool into an environment of its own.
+VisFEM requires python >= 3.14 and is available from [pypi](https://pypi.org/project/visfem/). It is an application, so it is best installed as a tool into an environment of its own.
 
 ## With uv
 

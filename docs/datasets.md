@@ -33,9 +33,9 @@ visfem                                             # my_model now appears
 | `data_path` | yes | folder under `datasets/` holding the meshes, usually the key; the `.pvd` file for a PVD dataset |
 | `name` | yes | display name |
 | `pi` | yes | principal investigator |
-| `institution` | yes | list of institutions |
+| `institution` | yes | list of institutions, at least one |
 | `biological_scale` | yes | one of `subcellular`, `cell`, `tissue`, `organ`, `organ_system` |
-| `organ_system` | yes | list of `abdominal`, `bone`, `heart`, `kidney`, `liver`, `lung`, `musculoskeletal`, `torso`, `vasculature`; the dataset is listed under every one of them |
+| `organ_system` | yes | list of `abdominal`, `bone`, `heart`, `kidney`, `liver`, `lung`, `musculoskeletal`, `torso`, `vasculature`, at least one; the dataset tree lists the dataset under the first one, the dataset info shows all of them |
 | `description` | yes | short description, at most 500 characters |
 | `mesh_format` | yes | display label of the format, e.g. `VTK`, `VTU`, `STL`, `XDMF+HDF5`, `PVD` |
 | `references` | no | list of DOIs, URLs or citations |

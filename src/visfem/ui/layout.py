@@ -310,7 +310,6 @@ def build_ui(
                         disable_auto_switch=True,
                         on_local_image_capture="utils.download(`screenshot_${new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,16).replace('T','_').replace(':','-')}.png`, $event)",
                     ) as view:
-                        ctrl.reset_camera = view.reset_camera
                         ctrl.view_push_camera = view.push_camera
                         ctrl.view_update = view.update
                         ctrl.view_update_geometry = view.update_geometry

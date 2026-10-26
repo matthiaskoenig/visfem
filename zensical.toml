@@ -1,0 +1,161 @@
+[project]
+site_name = "VisFEM"
+site_url = "https://visfem.de/docs/"
+site_description = "VisFEM: Web visualization of FEM models"
+site_author = "Michelle Elias & Matthias König"
+
+copyright = 'Copyright &copy; 2026 Michelle Elias &amp; <a href="https://livermetabolism.com">Matthias König</a>'
+
+repo_url = "https://github.com/matthiaskoenig/visfem"
+repo_name = "matthiaskoenig/visfem"
+edit_uri = "edit/develop/docs/"
+
+# the GitHub Pages site serves the landing page from `deploy/pages` at the root
+# and the documentation below `docs/`, see `docs/development.md`
+site_dir = "site/docs"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Installation" = "installation.md" },
+  { "User guide" = [
+    { "Running the app" = "usage.md" },
+    { "Datasets" = "datasets.md" },
+    { "Renderers" = "renderers.md" },
+    { "Example data" = "example-data.md" },
+  ] },
+  { "Deployment" = "deployment.md" },
+  { "API reference" = [
+    { "Overview" = "api/index.md" },
+    { "visfem" = [
+      { "app" = "api/app.md" },
+      { "cli" = "api/cli.md" },
+      { "models" = "api/models.md" },
+      { "mesh" = "api/mesh.md" },
+      { "febio" = "api/febio.md" },
+      { "log" = "api/log.md" },
+    ] },
+    { "visfem.engine" = [
+      { "discovery" = "api/engine/discovery.md" },
+      { "renderers" = "api/engine/renderers.md" },
+      { "scene" = "api/engine/scene.md" },
+      { "selection" = "api/engine/selection.md" },
+      { "playback" = "api/engine/playback.md" },
+      { "xr_manager" = "api/engine/xr_manager.md" },
+      { "colors" = "api/engine/colors.md" },
+      { "palettes" = "api/engine/palettes.md" },
+    ] },
+    { "visfem.ui" = [
+      { "layout" = "api/ui/layout.md" },
+      { "toolbar" = "api/ui/toolbar.md" },
+      { "left_panel" = "api/ui/left_panel.md" },
+      { "right_panel" = "api/ui/right_panel.md" },
+      { "footer" = "api/ui/footer.md" },
+      { "widgets" = "api/ui/widgets.md" },
+      { "theme" = "api/ui/theme.md" },
+    ] },
+  ] },
+  { "Contributing" = "development.md" },
+]
+
+[project.theme]
+language = "en"
+favicon = "images/favicon/favicon.ico"
+logo = "images/favicon/visfem-100x100.png"
+features = [
+  "content.action.edit",
+  "content.code.annotate",
+  "content.code.copy",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+  "search.suggest",
+  "toc.follow",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "teal"
+accent = "teal"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "teal"
+accent = "teal"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/matthiaskoenig/visfem"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/python"
+link = "https://pypi.org/project/visfem/"
+
+# API reference is rendered from the docstrings, see the `docs/api` pages
+[project.plugins.mkdocstrings]
+default_handler = "python"
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "google"
+docstring_section_style = "table"
+# a description of the returned value may span several lines, it is no list
+# of returned values
+docstring_options = { returns_multiple_items = false }
+show_source = false
+# the page provides the heading, see the `docs/api` pages
+show_root_heading = false
+show_root_toc_entry = false
+show_root_full_path = false
+show_symbol_type_heading = true
+show_symbol_type_toc = true
+members_order = "source"
+separate_signature = true
+signature_crossrefs = true
+merge_init_into_class = true
+filters = ["!^_"]
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+pymdownx.betterem = {}
+pymdownx.caret = {}
+pymdownx.details = {}
+pymdownx.emoji.emoji_generator = "zensical.extensions.emoji.to_svg"
+pymdownx.emoji.emoji_index = "zensical.extensions.emoji.twemoji"
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.magiclink = {}
+pymdownx.mark = {}
+pymdownx.smartsymbols = {}
+pymdownx.superfences = {}
+pymdownx.tabbed.alternate_style = true
+pymdownx.tasklist.custom_checkbox = true
+pymdownx.tilde = {}

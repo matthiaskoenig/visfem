@@ -1,5 +1,6 @@
 """Widgets shared by the panels: section headers and tooltip icon buttons."""
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -7,6 +8,42 @@ from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 
 from visfem.ui.theme import ACCENT, FS_MD, FW_BOLD, GAP_MD, LS_WIDEST, OP_SUBDUED
+
+# Characters a JS string literal carries unescaped; everything else, e.g. quotes,
+# braces and angle brackets, becomes a \uXXXX escape.
+_JS_SAFE = re.compile(r"[A-Za-z0-9 _.,:;()/+-]")
+
+
+def js_string(value: str) -> str:
+    """Return value as a single quoted JS string literal for a Vue template.
+
+    The literal contains no quote, brace or angle bracket, so it is safe in a
+    template interpolation, in a Vue expression and in an HTML attribute; text
+    of descriptors and file names reaches the client this way.
+
+    Args:
+        value: text to quote.
+
+    Returns:
+        The JS string literal, e.g. ``'heart'``.
+    """
+    escaped = "".join(
+        c if _JS_SAFE.fullmatch(c) else "".join(f"\\u{u:04x}" for u in _utf16(c))
+        for c in value
+    )
+    return f"'{escaped}'"
+
+
+def _utf16(char: str) -> list[int]:
+    """Return the UTF-16 code units of char, i.e., a surrogate pair beyond the BMP."""
+    data = char.encode("utf-16-be")
+    return [int.from_bytes(data[i : i + 2], "big") for i in range(0, len(data), 2)]
+
+
+def js_text(value: str) -> str:
+    """Return a template interpolation which renders value as escaped text."""
+    return "{{ " + js_string(value) + " }}"
+
 
 # Style of the uppercase section titles.
 _TITLE_STYLE = f"font-size:{FS_MD}; font-weight:{FW_BOLD}; text-transform:uppercase; letter-spacing:{LS_WIDEST}; opacity:{OP_SUBDUED};"

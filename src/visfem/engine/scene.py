@@ -131,16 +131,15 @@ def _fmt_value(v: float) -> str:
     a = abs(v)
     if a == 0.0:
         return "0"
-    elif a >= 1000:
+    if a >= 1000:
         return f"{v:.0f}"
-    elif a >= 100:
+    if a >= 100:
         return f"{v:.1f}"
-    elif a >= 1:
+    if a >= 1:
         return f"{v:.2f}"
-    elif a >= 0.01:
+    if a >= 0.01:
         return f"{v:.3f}"
-    else:
-        return f"{v:.2e}"
+    return f"{v:.2e}"
 
 
 def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
@@ -165,11 +164,10 @@ def _scalar_bar_dict(field: str, clim: list[float], cmap: str) -> dict:
 
 def _set_background(scene: Scene, dark_mode: bool) -> None:
     """Set the gradient background of *scene* for *dark_mode*."""
-    # typeshed leaves these functools.wraps wrappers unbound; the ignores here and in push_scene cover that.
     if dark_mode:
-        scene.plotter.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)  # type: ignore[arg-type]
+        scene.plotter.renderers.set_background(BG_DARK_BOTTOM, top=BG_DARK_TOP)
     else:
-        scene.plotter.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)  # type: ignore[arg-type]
+        scene.plotter.renderers.set_background(BG_LIGHT_BOTTOM, top=BG_LIGHT_TOP)
 
 
 def clear_scene(scene: Scene, dark_mode: bool) -> None:
@@ -193,7 +191,7 @@ def push_scene(scene: Scene, ctrl: TrameCtrl, reset_camera: bool = True) -> None
     # Each renderer and in-place update calls this once, at its end.
     scene.plotter.render()
     if reset_camera:
-        scene.plotter.reset_camera()  # type: ignore[call-arg]
+        scene.plotter.renderer.reset_camera()
         ctrl.view_push_camera()
     # Full push (ui.layout._make_push_scene): after a dataset switch a local-mode delta can hit a stale content-hash.
     push = getattr(ctrl, "view_push_scene", None)
@@ -466,7 +464,7 @@ def redraw_ircadb(
     for organ in organs:
         vtk_path = patient_dir / f"{organ}.vtk"
         if not vtk_path.exists():
-            logger.warning(f"Skipping missing organ file {vtk_path}.")
+            logger.warning("Skipping missing organ file %s.", vtk_path)
             continue
         try:
             mesh = load_mesh(vtk_path).triangulate()
@@ -477,7 +475,7 @@ def redraw_ircadb(
             parts.append(mesh)
             loaded_organs.append(organ)
         except Exception as e:  # noqa: BLE001 - a bad organ file skips that organ
-            logger.warning(f"Skipping organ '{vtk_path.name}': {e}")
+            logger.warning("Skipping organ '%s': %s", vtk_path.name, e)
 
     n = len(parts)
     _palette = palette if palette is not None else CATEGORICAL_PALETTES["paired"]
@@ -569,7 +567,7 @@ def _render_region_array_mesh(
     if fiber is not None and fiber.array in mesh.cell_data:
         cell_idx = np.arange(0, mesh.n_cells, fiber.stride)
         # PyVista's ind type ndarray[dtype[int]] matches no real numpy int array.
-        centers = mesh.extract_cells(cell_idx).cell_centers()  # type: ignore[arg-type]
+        centers = mesh.extract_cells(cell_idx).cell_centers()
         centers[fiber.array] = mesh.cell_data[fiber.array][cell_idx]
         glyphs = centers.glyph(orient=fiber.array, scale=False, factor=fiber.scale)
         fiber_actor = scene.plotter.add_mesh(

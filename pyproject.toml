@@ -8,6 +8,8 @@ dynamic = ["version"]
 description = "VisFEM: Web visualization of FEM models"
 readme = "README.md"
 requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
 	{name="Michelle Elias", email="michelleelias66@gmail.com"},
 	{name="Matthias König", email="konigmatt@googlemail.com"}
@@ -18,7 +20,6 @@ maintainers = [
 classifiers = [
 	"Development Status :: 4 - Beta",
 	"Intended Audience :: Science/Research",
-	"License :: OSI Approved :: MIT License",
 	"Operating System :: OS Independent",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -37,8 +38,8 @@ dependencies = [
 	"meshio>=5.3",
 	"pyvista>=0.47",  # extract_surface(algorithm=...)
 	"vtk>=9.2.2",
-	"trame>=3.12",
-	"trame-client>=3.12.2",
+	"trame>=4.0",
+	"trame-client>=4.1",  # trame_client.widgets.client
 	"trame-vuetify>=3.2",
 	"trame-vtk>=2.11",
 	"h5py>=3.0",
@@ -47,45 +48,61 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "bump-my-version>=1.2.4",
-	"ruff>=0.14.0",
-	"pre-commit>=4.0.1",
-	"mypy>=1.18.2",
-    "tox>=4.31.0",
-    "pytest>=8.4.2",
-    "pytest-cov>=7.0.0",
+    "bump-my-version>=1.6.6",
+    "ruff>=0.17.2",
+    "pre-commit>=4.7.0",
+    "ty>=0.0.91",
+    "tox>=4.67.1",
+    "tox-uv>=1.37.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "zensical>=0.0.72",
+    "mkdocstrings-python>=2.0.10",
     "ipykernel>=7.0",  # kernel for notebooks/visfem.ipynb
 ]
 
 [project.urls]
-Homepage = "https://github.com/matthiaskoenig/visfem"
+Homepage = "https://visfem.de"
+Documentation = "https://visfem.de/docs/"
 Repository = "https://github.com/matthiaskoenig/visfem"
-Documentation = "https://github.com/matthiaskoenig/visfem"
 Issues = "https://github.com/matthiaskoenig/visfem/issues"
+Changelog = "https://github.com/matthiaskoenig/visfem/tree/develop/release-notes"
 Download = "https://pypi.org/project/visfem"
 
 [tool.hatch.version]
 path = "./src/visfem/__init__.py"
 
 [tool.hatch.build.targets.sdist]
-exclude = [
-	"/.github",
-	"/.zenodo.json",
-	"/DEPLOYMENT.md",
-	"/Dockerfile",
-	"/RELEASE.md",
-	"/compose.deploy.yml",
-	"/data/datasets/.gitignore",
-	"/deploy",
-	"/docker-compose.yml",
-	"/docs",
-	"/notebooks",
-	"/release-notes",
-	"/setup",
+# the source distribution holds what is needed to build, test and document the
+# package; not the deployment, the notebooks, the CI configuration or the lock file
+include = [
+    "/src",
+    "/tests",
+    "/docs",
+    "/scripts",
+    "/release-notes",
+    "/README.md",
+    "/LICENSE",
+    "/CITATION.cff",
+    "/zensical.toml",
+    "/tox.ini",
+    "/.ruff.toml",
 ]
 
 [project.scripts]
 visfem = "visfem.cli:main"
 
-[tool.mypy]
-disable_error_code = ["import-not-found"]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ty.environment]
+# first-party modules live in the src layout; the checked python version is
+# inferred from `project.requires-python` (i.e. the oldest supported version)
+root = ["./src"]
+
+[tool.ty.src]
+include = ["src", "tests", "scripts"]
+
+[tool.ty.terminal]
+# warnings are failures: keep the codebase free of any diagnostic
+error-on-warning = true

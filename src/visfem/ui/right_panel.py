@@ -1,6 +1,6 @@
 """Right panel: view, fibers, scalar field, color, regions, playback and scalar bar sections."""
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from functools import partial
 
@@ -110,13 +110,20 @@ def build_right_panel(
         with html.Div(v_if="has_fibers"):
             section_header("mdi-grain", "Fibers", "right_fibers_open")
             with html.Div(v_show="right_fibers_open", style="margin-bottom:4px;"):
-                v3.VSwitch(
+                # the label takes the body size of the panel rows; the thumb
+                # overhangs the track, the margin keeps it inside the panel padding
+                with v3.VSwitch(
                     v_model=("show_fibers", False),
-                    label="Show fiber glyphs",
                     density="compact",
                     hide_details=True,
                     color=ACCENT,
-                )
+                    style="margin-left:6px;",
+                ):
+                    with v3.Template(v_slot_label=""):
+                        html.Span(
+                            "Show fiber glyphs",
+                            style=f"font-size:{FS_MD}; margin-left:8px;",
+                        )
             v3.VDivider(style="margin-bottom:10px;")
 
         # Scalar Field: only for multi-field datasets.
@@ -424,7 +431,7 @@ def _clim_input(state_key: str, on_apply_clim: object) -> None:
 @contextmanager
 def _choice_list(
     loop: str, active_var: str, on_select: object, *, style: str = "padding:0;"
-) -> Iterator[None]:
+) -> Generator[None]:
     """Open a single-choice VList over the v-for expression loop with CSS style; the item whose name equals active_var is active, a click calls on_select with the name, and the body yields inside the item title slot."""
     var = loop.split(" in ")[0]
     with v3.VList(density="compact", nav=True, bg_color="transparent", style=style):

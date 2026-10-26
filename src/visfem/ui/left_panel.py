@@ -1,6 +1,6 @@
 """Left panel with the dataset tree and the active dataset info."""
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 from trame.widgets import html
@@ -37,7 +37,7 @@ from visfem.ui.theme import (
     SPP_COLOR,
     SPP_DIM,
 )
-from visfem.ui.widgets import section_header
+from visfem.ui.widgets import js_string, js_text, section_header
 
 _ICON_GAP = f"display:flex; align-items:center; gap:{GAP_MD};"
 
@@ -245,6 +245,7 @@ def build_left_panel(
                             "{{ ref }}",
                             href=("ref",),
                             target="_blank",
+                            rel="noopener noreferrer",
                             style=f"color:{ACCENT}; font-size:{FS_SM}; word-break:break-all; text-decoration:none;",
                         )
                     with html.Div(
@@ -269,6 +270,7 @@ def _render_dataset_item(
     """Render the tree entry for dataset key with metadata meta at left padding indent: a patient group when key is in patients_by_dataset, an XDMF file group when the dataset directory holds several XDMF files, else one item, with the on_select callbacks on click; returns None."""
     ddir = dataset_dir(meta)
     xdmf_files = discover_xdmf(ddir)
+    js_key = js_string(key)
     if key in patients_by_dataset:
         with _tree_group(key):
             with v3.Template(v_slot_activator="{ props }"):
@@ -276,7 +278,7 @@ def _render_dataset_item(
                     meta.name,
                     "mdi-circle-medium",
                     indent=indent,
-                    active=f"active_dataset === '{key}'",
+                    active=f"active_dataset === {js_key}",
                     activator=True,
                 )
             for patient in patients_by_dataset[key]:
@@ -284,8 +286,8 @@ def _render_dataset_item(
                     f"Patient {patient:02d}",
                     "mdi-account",
                     indent="24px",
-                    active=f"active_dataset === '{key}' && active_patient === {patient}",
-                    click=(on_select_patient, f"['{key}', {patient}]"),
+                    active=f"active_dataset === {js_key} && active_patient === {patient}",
+                    click=(on_select_patient, f"[{js_key}, {patient}]"),
                 )
     elif len(xdmf_files) <= 1:
         _tree_item(
@@ -293,8 +295,8 @@ def _render_dataset_item(
             "mdi-circle-medium",
             indent=indent,
             wrap=True,
-            active=f"active_dataset === '{key}'",
-            click=(on_select_dataset, f"['{key}']"),
+            active=f"active_dataset === {js_key}",
+            click=(on_select_dataset, f"[{js_key}]"),
         )
     else:
         with _tree_group(key):
@@ -304,7 +306,7 @@ def _render_dataset_item(
                     "mdi-circle-medium",
                     indent=indent,
                     wrap=True,
-                    active=f"active_dataset === '{key}'",
+                    active=f"active_dataset === {js_key}",
                     activator=True,
                 )
             for stem, _ in xdmf_files.items():
@@ -313,8 +315,8 @@ def _render_dataset_item(
                     "mdi-circle-small",
                     indent="24px",
                     icon_size="small",
-                    active=f"active_dataset === '{key}' && active_xdmf === '{stem}'",
-                    click=(on_select_xdmf, f"['{key}', '{stem}']"),
+                    active=f"active_dataset === {js_key} && active_xdmf === {js_string(stem)}",
+                    click=(on_select_xdmf, f"[{js_key}, {js_string(stem)}]"),
                 )
 
 
@@ -357,8 +359,9 @@ def _tree_item(
                     size=icon_size,
                     style=f"opacity:{OP_MUTED}; flex-shrink:0;",
                 )
+                # descriptor names and file names render as text, never as markup
                 html.Span(
-                    label,
+                    js_text(label),
                     style=f"font-size:{FS_MD};"
                     + (" white-space:normal; word-break:break-word;" if wrap else ""),
                 )
@@ -381,7 +384,7 @@ def _row(
     v_if: str | None = None,
     icon_style: str | None = None,
     label_upper: bool = True,
-) -> Iterator[None]:
+) -> Generator[None]:
     """Open a metadata row with icon and label, gated by the Vue expression v_if, and yield inside its value column; icon_style replaces the default icon style, label_upper uppercases the label; yields None."""
     with html.Div(v_if=v_if, style=_ROW_STYLE):
         v3.VIcon(icon, size=ICON_SM, style=icon_style or _ROW_ICON_STYLE)

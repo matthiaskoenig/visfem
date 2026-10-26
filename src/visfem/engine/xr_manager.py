@@ -137,8 +137,7 @@ class XRManager:
             )
             self._saved_cam = None
         else:
-            # functools.wraps wrapper whose stub omits self; mypy misreads the call
-            self.plotter.reset_camera()  # type: ignore[call-arg]
+            self.plotter.renderer.reset_camera()
             logger.info("[XR] camera reset to fit mesh, saved camera absent")
         self.ctrl.view_push_camera()
 

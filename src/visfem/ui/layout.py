@@ -8,11 +8,7 @@ from trame.ui.vuetify3 import SinglePageLayout
 from trame.widgets import html
 from trame.widgets import vuetify3 as v3
 from trame.widgets.vtk import VtkRemoteLocalView, VtkWebXRHelper
-
-try:  # trame 4 import path
-    from trame_client.widgets.client import Script
-except ImportError:  # trame 3 import path
-    from trame_client.widgets.trame import Script
+from trame_client.widgets.client import Script
 
 from visfem.models import ProjectMetadata
 from visfem.ui.footer import FOOTER_STYLE, build_footer
@@ -77,22 +73,23 @@ def _make_push_scene(view: VtkRemoteLocalView) -> object:
     def push_scene() -> None:
         """Publish the scene as a delta, then as the full state, to the connected client."""
         server = view.server
-        if not getattr(server, "protocol", None):
+        protocol = getattr(server, "protocol", None)
+        if not protocol:
             return  # headless: the protocol arrives with the first client connection
         try:
             helper = view._helper
             vtk_view = view._VtkRemoteLocalView__view
             scene_key = view._VtkRemoteLocalView__scene_id
         except AttributeError:  # private trame-vtk attrs vary by version
+            helper = None
+        if helper is None:
             view.update()
             return
         # Only the delta carries removeViewProp calls, derived from the previous push's dependencies.
-        server.protocol.publish(
-            "trame.vtk.delta", helper.scene(vtk_view, new_state=False)
-        )
+        protocol.publish("trame.vtk.delta", helper.scene(vtk_view, new_state=False))
         # The full state (ignore_last_dependencies) re-emits every array; delta array hashes can collide across a dataset switch.
         full_state = helper.scene(vtk_view, new_state=True)
-        server.protocol.publish("trame.vtk.delta", full_state)
+        protocol.publish("trame.vtk.delta", full_state)
         # The full state doubles as the reconnect snapshot that view.update() serialises separately.
         server.state[scene_key] = full_state
 

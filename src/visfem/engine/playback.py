@@ -72,7 +72,8 @@ async def autoplay_loop(
         while state.autoplay:
             step = int(state.active_step)
             n = int(state.n_steps)
-            inc = int(state.step_inc)
+            # the client sets step_inc and playback_speed, clamp them to what the UI offers
+            inc = max(int(state.step_inc), 1)
             next_step = 0 if step + inc >= n else step + inc
             try:
                 select_step(scene, ctrl, state, project_metadata, xdmf_meta, next_step)
@@ -86,7 +87,7 @@ async def autoplay_loop(
                 return
             with state:  # flush the step change to the client
                 pass
-            speed = float(getattr(state, "playback_speed", 1.0)) or 1.0
+            speed = min(max(float(getattr(state, "playback_speed", 1.0)), 0.5), 4.0)
             # frame_sleep is the delay at 1x speed
             await asyncio.sleep(frame_sleep / speed)
     finally:

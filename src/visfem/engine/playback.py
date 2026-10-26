@@ -64,7 +64,7 @@ async def autoplay_loop(
     scene: Scene,
     ctrl: Any,
     project_metadata: dict[str, ProjectMetadata],
-    xdmf_meta: dict[str, MeshMetadata],
+    xdmf_meta: dict[Path, MeshMetadata],
     frame_sleep: float,
 ) -> None:
     """Advance *state.active_step* by *state.step_inc* through select_step with *scene*, *ctrl*, *project_metadata* and *xdmf_meta*, wrapping to step 0, every *frame_sleep* / *state.playback_speed* seconds until *state.autoplay* clears or a step fails."""
@@ -91,4 +91,6 @@ async def autoplay_loop(
             # frame_sleep is the delay at 1x speed
             await asyncio.sleep(frame_sleep / speed)
     finally:
-        state.autoplay = False
+        # flushed, the client shows the stop of a failed or cancelled playback
+        with state:
+            state.autoplay = False

@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from visfem.engine.colors import apply_overrides_to_state, region_colors
-from visfem.engine.discovery import discover_xdmf, grasp_phase_pvd, pvd_file_path
+from visfem.engine.discovery import (
+    active_timeseries_path,
+    discover_xdmf,
+    grasp_phase_pvd,
+)
 from visfem.engine.scene import (
     RenderResult,
     Scene,
@@ -121,7 +125,7 @@ class RenderContext:
     ddir: Path  # dataset dir (or patient dir for patient renderers)
     meta: ProjectMetadata
     cfg: RenderConfig  # resolved (explicit plus inferred) render config
-    xdmf_meta: dict[str, MeshMetadata]
+    xdmf_meta: dict[Path, MeshMetadata]
     opacity: float
     palette: list[str]  # resolved by selection._resolve_palette
     cmap: str  # resolved by selection.resolve_cmap
@@ -239,7 +243,7 @@ def render_timeseries(ctx: RenderContext) -> RenderResult:
             cmap=ctx.cmap,
             mesh_meta=_series_metadata(ctx.ddir, ctx.cfg.series),
         )
-    path = _timeseries_path(ctx)
+    path = active_timeseries_path(ctx.meta, ctx.state, ctx.ddir)
     if path is None:
         logger.error("timeseries renderer requires a PVD or XDMF file in %s", ctx.ddir)
         return RenderResult()
@@ -312,17 +316,6 @@ def render_scalar_field(ctx: RenderContext) -> RenderResult:
         percentile=cfg.percentile_clamp,
         reset_camera=ctx.reset_camera,
     )
-
-
-def _timeseries_path(ctx: RenderContext) -> Path | None:
-    """Return the active timeseries file for ctx, or None."""
-    if ctx.meta.is_pvd:
-        return pvd_file_path(ctx.meta)
-    xdmf_files = discover_xdmf(ctx.ddir)
-    stem = getattr(ctx.state, "active_xdmf", None)
-    if stem and stem in xdmf_files:
-        return xdmf_files[stem]
-    return next(iter(xdmf_files.values()), None)
 
 
 # Per-(dir, pattern) caches for a flat VTK series' ordered files and global metadata.
@@ -431,8 +424,8 @@ def _timeseries_mesh_meta(ctx: RenderContext) -> MeshMetadata | None:
         return _d3plot_metadata(ctx.ddir)
     if ctx.cfg.series:
         return _series_metadata(ctx.ddir, ctx.cfg.series)
-    path = _timeseries_path(ctx)
-    return ctx.xdmf_meta.get(path.stem) if path is not None else None
+    path = active_timeseries_path(ctx.meta, ctx.state, ctx.ddir)
+    return ctx.xdmf_meta.get(path) if path is not None else None
 
 
 def apply_result_to_state(state: Any, result: RenderResult) -> None:

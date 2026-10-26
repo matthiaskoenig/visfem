@@ -79,16 +79,27 @@ def cmd_validate_data(_args: argparse.Namespace) -> int:
 
     errors: list[str] = []
     n_ok = 0
+    seen: dict[str, Path] = {}
     for path in iter_descriptor_paths():
         if not DATASET_KEY.fullmatch(path.stem):
             errors.append(
                 f"{path}: dataset key '{path.stem}' allows only letters, digits, '_', '.' and '-'"
             )
             continue
+        # the app loads the first descriptor of a key and skips the others
+        if path.stem in seen:
+            errors.append(
+                f"{path}: dataset key '{path.stem}' is already used by {seen[path.stem]}"
+            )
+            continue
+        seen[path.stem] = path
         try:
             meta = load_descriptor(path)
         except ValidationError as e:
             errors.append(f"{path}: invalid metadata\n{_format_validation_error(e)}")
+            continue
+        except (ValueError, OSError) as e:  # e.g. a file which is no UTF-8 text
+            errors.append(f"{path}: unreadable descriptor: {e}")
             continue
 
         # PVD datasets point data_path at the .pvd file itself; others at a dir.
@@ -130,34 +141,62 @@ def _format_validation_error(e: ValidationError) -> str:
 
 def _check_render_files(ddir: Path, cfg: RenderConfig) -> list[str]:
     """Return the problems with the files *cfg* references under *ddir*."""
+    from visfem.engine.discovery import discover_xdmf, grasp_phase_pvd, patient_numbers
+    from visfem.engine.renderers import resolve_mesh_file
+
     problems: list[str] = []
-    patient_driven = any(d.is_dir() for d in ddir.glob("patient_*"))
+    patients = patient_numbers(ddir)
 
-    if cfg.renderer == RendererName.MULTI_PART:
-        for part in cfg.parts:
-            if not any(
-                (ddir / f"{part.stem}{ext}").exists() for ext in cfg.part_extensions
-            ):
+    match cfg.renderer:
+        case RendererName.MULTI_PART:
+            for part in cfg.parts:
+                if not any(
+                    (ddir / f"{part.stem}{ext}").exists() for ext in cfg.part_extensions
+                ):
+                    problems.append(
+                        f"part '{part.stem}' not found (tried {cfg.part_extensions})"
+                    )
+            if not cfg.parts:
+                problems.append("multi_part renderer needs render.parts")
+        case RendererName.REGION_ID | RendererName.SCALAR_FIELD:
+            if not cfg.mesh_file:
+                problems.append(f"{cfg.renderer.value} renderer needs render.mesh_file")
+            elif not (ddir / cfg.mesh_file).exists():
+                problems.append(f"mesh_file '{cfg.mesh_file}' not found")
+            if cfg.renderer == RendererName.SCALAR_FIELD and not cfg.fields:
+                problems.append("scalar_field renderer needs render.fields")
+        case RendererName.TIMESERIES if cfg.series:
+            if not any(ddir.glob(cfg.series)):
+                problems.append(f"series glob '{cfg.series}' matched no files")
+        case RendererName.TIMESERIES if cfg.database:
+            if not (ddir / cfg.database).exists():
+                problems.append(f"d3plot master '{cfg.database}' not found in {ddir}")
+        case RendererName.TIMESERIES:
+            if not discover_xdmf(ddir):
                 problems.append(
-                    f"part '{part.stem}' not found (tried {cfg.part_extensions})"
+                    "timeseries renderer found no XDMF file with its .h5 companion "
+                    "(or set render.series or render.database)"
                 )
-    elif cfg.renderer in (RendererName.REGION_ID, RendererName.SCALAR_FIELD):
-        if cfg.mesh_file and not (ddir / cfg.mesh_file).exists():
-            problems.append(f"mesh_file '{cfg.mesh_file}' not found")
-    elif cfg.renderer == RendererName.TIMESERIES and cfg.series:
-        if not any(ddir.glob(cfg.series)):
-            problems.append(f"series glob '{cfg.series}' matched no files")
-    elif cfg.renderer == RendererName.TIMESERIES and cfg.database:
-        if not (ddir / cfg.database).exists():
-            problems.append(f"d3plot master '{cfg.database}' not found in {ddir}")
-    elif cfg.renderer == RendererName.SURFACE and not patient_driven:
-        from visfem.engine.renderers import resolve_mesh_file
-
-        if resolve_mesh_file(ddir, cfg) is None:
-            problems.append(
-                "surface renderer could not resolve a mesh file "
-                "(set render.mesh_file or render.mesh_candidates)"
-            )
+        case RendererName.PATIENT_ORGANS | RendererName.PVD_PHASE_SERIES:
+            if not patients:
+                problems.append(
+                    f"{cfg.renderer.value} renderer found no patient_<n> folders"
+                )
+            elif cfg.renderer == RendererName.PVD_PHASE_SERIES:
+                problems.extend(
+                    f"patient_{n:02d} has no tissue_surface.pvd"
+                    for n in patients
+                    if grasp_phase_pvd(ddir / f"patient_{n:02d}") is None
+                )
+        case RendererName.SURFACE if not patients:
+            name = resolve_mesh_file(ddir, cfg)
+            if name is None:
+                problems.append(
+                    "surface renderer could not resolve a mesh file "
+                    "(set render.mesh_file or render.mesh_candidates)"
+                )
+            elif not (ddir / name).exists():
+                problems.append(f"mesh_file '{name}' not found")
     return problems
 
 
@@ -311,10 +350,16 @@ def cmd_example(args: argparse.Namespace) -> int:
 
 
 def cmd_new_dataset(args: argparse.Namespace) -> int:
-    """Scaffold datasets/<name>/<name>.json from a template; returns 1 when it exists, else 0."""
-    from visfem.engine.discovery import DATASETS_DIR
+    """Scaffold datasets/<name>/<name>.json from a template; returns 1 when it exists or name is no valid key, else 0."""
+    from visfem.engine.discovery import DATASET_KEY, DATASETS_DIR
 
     name: str = args.name
+    if not DATASET_KEY.fullmatch(name):
+        print(
+            f"error: '{name}' is no dataset key, use only letters, digits, '_', '.' and '-'",
+            file=sys.stderr,
+        )
+        return 1
     folder = DATASETS_DIR / name
     out = folder / f"{name}.json"
     if out.exists():
@@ -401,9 +446,11 @@ def _urlopen(req: urllib.request.Request) -> http.client.HTTPResponse:
 
 
 def _resolve_data_dir(arg: str | None) -> Path:
-    """Return the data dir: *arg*, else $DATA_DIR or $VISFEM_DATA_DIR, else ./visfem_data."""
+    """Return the data dir: *arg*, else $DATA_DIR or $VISFEM_DATA_DIR, else the default of the app, see discovery.default_data_dir."""
+    from visfem.engine.discovery import default_data_dir
+
     env = os.environ.get("DATA_DIR") or os.environ.get("VISFEM_DATA_DIR")
-    return Path(arg or env or (Path.cwd() / "visfem_data")).expanduser()
+    return Path(arg or env or default_data_dir()).expanduser()
 
 
 def _download_with_progress(url: str, dest: Path) -> None:
@@ -607,14 +654,17 @@ def cmd_fetch_ircadb(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
+    if count == 0:
+        # the archive stays for a look at its layout, a new download takes long
+        print(
+            f"error: no patient meshes were extracted, the archive was kept at {zip_path}",
+            file=sys.stderr,
+        )
+        return 1
     if args.keep_archive:
         print(f">> Kept the archive: {zip_path}")
     else:
         zip_path.unlink()
-
-    if count == 0:
-        print("error: no patient meshes were extracted.", file=sys.stderr)
-        return 1
 
     _write_descriptor(dest, _IRCAD_DESCRIPTOR)
     _print_next_steps(
@@ -869,6 +919,9 @@ def cmd_fetch_openknee(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if not wanted and args.no_gen1:
+        print("nothing to do: the selection is empty (--specimens none with --no-gen1)")
+        return 0
 
     _print_fetch_header(
         "Open Knee(s) is provided by the Open Knee(s) Development Team (Cleveland Clinic)\n"
@@ -911,9 +964,6 @@ def cmd_fetch_openknee(args: argparse.Namespace) -> int:
         )
         return 1
 
-    if not done:
-        print("nothing to do: the selection is empty (--specimens none with --no-gen1)")
-        return 0
     _print_next_steps(
         f"Prepared {len(done)} dataset(s) under {datasets}",
         data_dir,
@@ -934,7 +984,7 @@ def build_parser() -> argparse.ArgumentParser:
     data_dir_opts = argparse.ArgumentParser(add_help=False)
     data_dir_opts.add_argument(
         "--data-dir",
-        help="target data directory (default: $DATA_DIR, else ./visfem_data)",
+        help="target data directory (default: $DATA_DIR, else data/ of a source checkout, else ./visfem_data)",
     )
 
     sub.add_parser("serve", help="launch the web app (default)").set_defaults(

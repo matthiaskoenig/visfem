@@ -1,6 +1,6 @@
 # Example data
 
-Two public datasets are downloaded and laid out by the command line, so VisFEM can be tried without data of your own. Both commands write into the data directory, i.e., `--data-dir`, else `DATA_DIR`, else `./visfem_data`, and print the `DATA_DIR` to launch the app with.
+Two public datasets are downloaded and laid out by the command line, so VisFEM can be tried without data of your own. Both commands write into the data directory, i.e., `--data-dir`, else `DATA_DIR`, else the default of the app (`data/` of a source checkout, else `./visfem_data`), and print the `DATA_DIR` to launch the app with.
 
 ## 3D-IRCADb-01
 

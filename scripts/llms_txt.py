@@ -97,7 +97,9 @@ def summary(markdown: str) -> str:
     Returns:
         The summary, empty if no paragraph was found.
     """
-    for block in markdown.split("\n\n"):
+    # a fenced code block may hold blank lines, it never is the summary
+    prose = re.sub(r"^```.*?^```", "", markdown, flags=re.MULTILINE | re.DOTALL)
+    for block in prose.split("\n\n"):
         line = block.strip()
         if not line or line.startswith(("#", "!", "[", "```", "|", ">", ":::")):
             continue
@@ -117,7 +119,7 @@ def signature(obj: Any) -> str:
     """
     try:
         return f"{obj.__name__}{inspect.signature(obj)}"
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return str(obj.__name__)
 
 

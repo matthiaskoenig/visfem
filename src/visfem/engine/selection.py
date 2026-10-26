@@ -36,6 +36,7 @@ from visfem.engine.scene import (
     push_scene,
     update_actor_palette,
     update_scalar_field_view,
+    update_scalar_range,
     update_xdmf_step,
 )
 from visfem.log import get_logger
@@ -96,7 +97,7 @@ def _build_context(
     meta: ProjectMetadata,
     cfg: RenderConfig,
     ddir: Path,
-    xdmf_meta: dict[str, MeshMetadata],
+    xdmf_meta: dict[Path, MeshMetadata],
     *,
     field: str | None = None,
     step: int = 0,
@@ -178,7 +179,7 @@ def _redraw(
     meta: ProjectMetadata,
     cfg: RenderConfig,
     ddir: Path,
-    xdmf_meta: dict[str, MeshMetadata],
+    xdmf_meta: dict[Path, MeshMetadata],
     *,
     field: str | None = None,
     step: int = 0,
@@ -204,7 +205,7 @@ def select_dataset(
     ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
-    xdmf_meta: dict[str, MeshMetadata],
+    xdmf_meta: dict[Path, MeshMetadata],
     key: str,
 ) -> vtkActor | None:
     """Render dataset *key* via its render config; return the fibre actor or None."""
@@ -262,7 +263,7 @@ def select_xdmf(
     ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
-    xdmf_meta: dict[str, MeshMetadata],
+    xdmf_meta: dict[Path, MeshMetadata],
     key: str,
     stem: str,
 ) -> None:
@@ -277,7 +278,7 @@ def select_xdmf(
         if discover_xdmf(dataset_dir(meta)).get(stem) is None:
             logger.error("XDMF file not found: %s in %s", stem, key)
             return
-        # renderers._timeseries_path reads state.active_xdmf to pick this stem.
+        # discovery.active_timeseries_path reads state.active_xdmf to pick this stem.
         ctx = _build_context(
             scene, ctrl, state, meta, cfg, dataset_dir(meta), xdmf_meta
         )
@@ -292,7 +293,7 @@ def select_scalar_field(
     ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
-    xdmf_meta: dict[str, MeshMetadata],
+    xdmf_meta: dict[Path, MeshMetadata],
     field: str,
 ) -> None:
     """Re-render the current dataset with a different scalar field."""
@@ -325,7 +326,7 @@ def select_step(
     ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
-    xdmf_meta: dict[str, MeshMetadata],
+    xdmf_meta: dict[Path, MeshMetadata],
     step: int,
 ) -> None:
     """Navigate the current time-series dataset to a different timestep."""
@@ -356,6 +357,7 @@ def select_step(
             state.mesh_stats = result.mesh_stats
             if result.scalar_bar_info is not None:
                 state.scalar_bar = result.scalar_bar_info
+            _reapply_clim_override(scene, ctrl, state)
             return
 
         # XDMF / PVD scalar series swap the step in place; a failed swap redraws.
@@ -384,6 +386,21 @@ def select_step(
         state.mesh_stats = stats
         if scalar_bar is not None:
             state.scalar_bar = scalar_bar
+        if not success:
+            _reapply_clim_override(scene, ctrl, state)
+
+
+def _reapply_clim_override(scene: Scene, ctrl: TrameCtrl, state: Any) -> None:
+    """Apply the colour range the user entered, ``state.clim_override``, to an actor which a redraw built with the automatic range."""
+    override = getattr(state, "clim_override", None)
+    field = state.active_scalar_field
+    if not override or not field or state.scalar_bar is None:
+        return
+    scalar_bar = update_scalar_range(
+        scene, ctrl, field, list(override), resolve_cmap(state)
+    )
+    if scalar_bar:
+        state.scalar_bar = scalar_bar
 
 
 def select_patient(
@@ -441,7 +458,7 @@ def recolor_categories(
     ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
-    xdmf_meta: dict[str, MeshMetadata],
+    xdmf_meta: dict[Path, MeshMetadata],
 ) -> None:
     """Re-apply category colour overrides in place, or via select_color_scheme."""
     if state.active_dataset is None:
@@ -456,7 +473,7 @@ def select_color_scheme(
     ctrl: TrameCtrl,
     state: Any,
     project_metadata: dict[str, ProjectMetadata],
-    xdmf_meta: dict[str, MeshMetadata],
+    xdmf_meta: dict[Path, MeshMetadata],
 ) -> None:
     """Re-render the current scene after a palette or colormap change."""
     key: str | None = state.active_dataset

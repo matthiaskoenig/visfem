@@ -1,44 +1,26 @@
-"""WebXR session management and in-VR exit panel."""
+"""WebXR session management."""
 
 from __future__ import annotations
 
 import asyncio
 from typing import Any
 
-import numpy as np
 import pyvista as pv
 from trame.widgets.vtk import VtkWebXRHelper
-from vtkmodules.vtkRenderingCore import vtkActor
 
 from visfem.log import get_logger
 
 logger = get_logger(__name__)
 
-# Exit panel geometry in mm, the mesh unit
-_PANEL_W = 200.0
-_PANEL_H = 80.0
-_BORDER_PAD = 10.0
-_TEXT_HEIGHT = 26.0
-
-# Placement offsets relative to camera at VR entry (mm)
-_FORWARD = 600.0  # arm's length in front
-_RIGHTWARD = 350.0  # to the right, clear of the mesh
-_DOWNWARD = 80.0  # slightly below eye level
-
-PANEL_COLOR = "#00bfa5"  # app accent teal
-
 
 class XRManager:
-    """Manages WebXR entry and exit and the three in-VR exit panel actors."""
+    """Manages WebXR entry and exit."""
 
     def __init__(self, plotter: pv.Plotter, state: Any, ctrl: Any) -> None:
         """Store the plotter, trame state and controller."""
         self.plotter = plotter
         self.state = state
         self.ctrl = ctrl
-        self._panel_actor: vtkActor | None = None
-        self._border_actor: vtkActor | None = None
-        self._label_actor: vtkActor | None = None
         self._saved_cam: dict | None = None
         self._refresh_task: asyncio.Task | None = None
 
@@ -50,7 +32,6 @@ class XRManager:
         self._save_camera()
         logger.info("[XR] on_enter_xr: setting xr_active=True")
         self.state.xr_active = True
-        # self._place_exit_panel()
         self.ctrl.view_update()
         logger.info("[XR] view_update sent after entering XR")
 
@@ -58,7 +39,6 @@ class XRManager:
         """Clear xr_active, restore the camera and schedule the 250 ms refresh."""
         logger.info("[XR] on_exit_xr: restoring camera and resyncing scene")
         self.state.xr_active = False
-        # self._remove_exit_panel()
         self._restore_camera()
         self.ctrl.view_update()
         self._refresh_task = asyncio.ensure_future(self._post_exit_refresh())
@@ -72,18 +52,6 @@ class XRManager:
         else:
             logger.info("[XR] toggle_xr: starting XR session (HmdVR)")
             self.ctrl.start_xr(VtkWebXRHelper.XrSessionTypes.HmdVR)
-
-    def on_exit_triggered(self, triggered: bool) -> None:
-        """Stop the XR session on a JS ray-sphere hit, signaled by `triggered`."""
-        logger.info(
-            "[XR] on_exit_triggered called with triggered=%s xr_active=%s",
-            triggered,
-            self.state.xr_active,
-        )
-        if triggered and self.state.xr_active:
-            self.state.xr_exit_triggered = False
-            logger.info("[XR] exit panel triggered: stopping XR")
-            self.ctrl.stop_xr()
 
     def on_session_ended(self, ended: bool) -> None:
         """Handle the JS session 'end' event flagged by `ended` (system-button exit)."""
@@ -109,7 +77,6 @@ class XRManager:
         """Reset XR state when the client reconnects."""
         logger.info("[XR] client reconnected: resetting xr_active to False")
         self.state.xr_active = False
-        # self._remove_exit_panel()
 
     def _save_camera(self) -> None:
         """Store the camera position, focal point and view-up for restore after XR."""
@@ -155,111 +122,3 @@ class XRManager:
         self.ctrl.view_push_camera()
         self.ctrl.view_update()
         self.ctrl.view_update_geometry()
-
-    def _camera_frame(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Return the camera position and its fwd, right and up unit vectors."""
-        cam = self.plotter.camera
-        pos = np.array(cam.position, dtype=float)
-        fp = np.array(cam.focal_point, dtype=float)
-
-        fwd = fp - pos
-        n = np.linalg.norm(fwd)
-        fwd = fwd / n if n > 1e-6 else np.array([0.0, 1.0, 0.0])
-
-        # cam.up orthogonalized against fwd
-        raw_up = np.array(cam.up, dtype=float)
-        raw_up -= np.dot(raw_up, fwd) * fwd
-        u = np.linalg.norm(raw_up)
-        if u < 1e-6:
-            raw_up = np.array([0.0, 0.0, 1.0])
-            raw_up -= np.dot(raw_up, fwd) * fwd
-            u = np.linalg.norm(raw_up)
-        up = raw_up / u
-
-        right = np.cross(fwd, up)
-        right /= np.linalg.norm(right)
-        return pos, fwd, right, up
-
-    def _place_exit_panel(self) -> None:
-        """Add the exit panel actors before the camera and set state.exit_btn_pos."""
-        self._remove_exit_panel()
-        pos, fwd, right, up = self._camera_frame()
-
-        # Panel center in the camera frame
-        center = pos + fwd * _FORWARD + right * _RIGHTWARD - up * _DOWNWARD
-        logger.info("[XR] placing exit panel at (%.1f, %.1f, %.1f)", *center)
-
-        # Flat panel with its normal facing the camera (-fwd)
-        panel_mesh = pv.Plane(
-            center=center,
-            direction=-fwd,
-            i_size=_PANEL_W,
-            j_size=_PANEL_H,
-            i_resolution=1,
-            j_resolution=1,
-        )
-        # Border: 2 mm behind the panel
-        border_mesh = pv.Plane(
-            center=center + fwd * 2,
-            direction=-fwd,
-            i_size=_PANEL_W + _BORDER_PAD * 2,
-            j_size=_PANEL_H + _BORDER_PAD * 2,
-            i_resolution=1,
-            j_resolution=1,
-        )
-
-        # Label centered in local XY, then transformed to face the camera
-        label_mesh = pv.Text3D("EXIT VR", depth=4, height=_TEXT_HEIGHT)
-        tb = label_mesh.bounds
-        tw = tb[1] - tb[0]
-        th = tb[3] - tb[2]
-        label_mesh.translate([-tw / 2, -th / 2, 0], inplace=True)
-        # local X→world right, local Y→world up, local Z→-fwd (faces camera)
-        R = np.column_stack([right, up, -fwd])
-        T = np.eye(4)
-        T[:3, :3] = R
-        T[:3, 3] = center - fwd * 3  # 3 mm in front of panel
-        label_mesh.transform(T, inplace=True)
-
-        panel_actor = self.plotter.add_mesh(
-            panel_mesh,
-            color=PANEL_COLOR,
-            show_scalar_bar=False,
-            render=False,
-            opacity=0.93,
-        )
-        assert panel_actor is not None
-        panel_actor.DragableOff()
-        self._panel_actor = panel_actor
-
-        border_actor = self.plotter.add_mesh(
-            border_mesh,
-            color="white",
-            show_scalar_bar=False,
-            render=False,
-            opacity=0.20,
-        )
-        assert border_actor is not None
-        border_actor.DragableOff()
-        self._border_actor = border_actor
-
-        label_actor = self.plotter.add_mesh(
-            label_mesh,
-            color="white",
-            show_scalar_bar=False,
-            render=False,
-        )
-        assert label_actor is not None
-        label_actor.DragableOff()
-        self._label_actor = label_actor
-
-        self.state.exit_btn_pos = list(center)
-        logger.info("[XR] exit panel actors added at (%.1f, %.1f, %.1f)", *center)
-
-    def _remove_exit_panel(self) -> None:
-        """Remove the panel, border and label actors from the plotter."""
-        for attr in ("_panel_actor", "_border_actor", "_label_actor"):
-            actor = getattr(self, attr, None)
-            if actor is not None:
-                self.plotter.remove_actor(actor)
-                setattr(self, attr, None)

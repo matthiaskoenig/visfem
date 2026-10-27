@@ -53,12 +53,8 @@ def build_toolbar(
     icon_button(
         "Toggle fullscreen",
         icon=("fullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'",),
-        click=(
-            "fullscreen = !fullscreen; "
-            "fullscreen "
-            "? $event.currentTarget.ownerDocument.documentElement.requestFullscreen() "
-            ": $event.currentTarget.ownerDocument.exitFullscreen()"
-        ),
+        # the template scope has no window, the toggle is defined in layout.py
+        click="$event.currentTarget.ownerDocument.defaultView.visfemToggleFullscreen()",
         classes="ml-1",
     )
 

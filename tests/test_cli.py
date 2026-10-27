@@ -1,7 +1,8 @@
-"""Tests of the command line: dispatch of the app launch and the IRCADb extraction."""
+"""Tests of the command line: dispatch of the app launch and the IRCADb download and extraction."""
 
 import io
 import json
+import urllib.request
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -75,6 +76,105 @@ def test_extract_ircadb_rejects_oversized_member(
     monkeypatch.setattr(cli, "_MAX_MESH", 10)
     with pytest.raises(ValueError, match="exceeds"):
         cli._extract_ircadb(archive, tmp_path / "out")
+
+
+class _Response(io.BytesIO):
+    """HTTP response of the fake IRCAD server: a 206 serves the bytes from the requested offset."""
+
+    def __init__(self, data: bytes, offset: int) -> None:
+        """Serve *data* from *offset*, a partial response when *offset* is not 0."""
+        super().__init__(data[offset:])
+        self.status = 206 if offset else 200
+        self.headers = {"Content-Length": str(len(data) - offset)}
+
+
+def _members_digest(archive: Path) -> str:
+    """Return the digest of the members of *archive* which fetch-ircadb extracts."""
+    with zipfile.ZipFile(archive) as z:
+        names = [
+            n for n in z.namelist() if n.endswith(("MESHES_VTK.zip", "LICENSE.txt"))
+        ]
+        return cli._ircadb_digest(z, names)
+
+
+def test_ircadb_digest_ignores_the_timestamps(tmp_path: Path) -> None:
+    """Check that the digest follows the content of the members, not the timestamps the share writes into every download."""
+    first = _ircadb_archive(tmp_path / "first.zip", {"liver.vtk": b"liver"})
+    second = tmp_path / "second.zip"
+    with zipfile.ZipFile(first) as src, zipfile.ZipFile(second, "w") as dst:
+        for info in src.infolist():
+            info.date_time = (2030, 1, 1, 0, 0, 0)
+            dst.writestr(info, src.read(info))
+    assert first.read_bytes() != second.read_bytes()
+    assert _members_digest(first) == _members_digest(second)
+    changed = _ircadb_archive(tmp_path / "changed.zip", {"liver.vtk": b"tumour"})
+    assert _members_digest(changed) != _members_digest(first)
+
+
+@pytest.fixture
+def ircad_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Callable[[bool], bytes]:
+    """Return a function which serves a fake IRCADb archive for the download and returns it, pinned when called with True."""
+
+    def serve(pinned: bool) -> bytes:
+        archive = _ircadb_archive(tmp_path / "served.zip", {"liver.vtk": b"liver"})
+        digest = _members_digest(archive) if pinned else "0" * 64
+        monkeypatch.setattr(cli, "_IRCAD_SHA256", digest)
+        data = archive.read_bytes()
+
+        def urlopen(req: urllib.request.Request) -> _Response:
+            offset = int(req.headers.get("Range", "bytes=0-")[6:-1])
+            return _Response(data, offset)
+
+        monkeypatch.setattr(cli, "_urlopen", urlopen)
+        return data
+
+    return serve
+
+
+def test_fetch_ircadb(tmp_path: Path, ircad_server: Callable[[bool], bytes]) -> None:
+    """Check that an archive with the pinned members is extracted and removed."""
+    ircad_server(True)
+    assert cli.main(["fetch-ircadb", "--data-dir", str(tmp_path)]) == 0
+    assert (tmp_path / "datasets/ircadb/patient_01/liver.vtk").read_bytes() == b"liver"
+    assert not (tmp_path / "downloads/3Dircadb1.zip").exists()
+
+
+def test_fetch_ircadb_resumes_the_download(
+    tmp_path: Path, ircad_server: Callable[[bool], bytes]
+) -> None:
+    """Check that a download continues the part file of an interrupted run."""
+    data = ircad_server(True)
+    part = tmp_path / "downloads/3Dircadb1.zip.part"
+    part.parent.mkdir()
+    part.write_bytes(data[:100])
+    assert (
+        cli.main(["fetch-ircadb", "--data-dir", str(tmp_path), "--keep-archive"]) == 0
+    )
+    assert (tmp_path / "downloads/3Dircadb1.zip").read_bytes() == data
+    assert (tmp_path / "datasets/ircadb/patient_01/liver.vtk").exists()
+
+
+@pytest.mark.parametrize("downloaded", [False, True])
+def test_fetch_ircadb_refuses_a_changed_archive(
+    downloaded: bool,
+    tmp_path: Path,
+    ircad_server: Callable[[bool], bytes],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Check that an archive with other members, fresh or from an earlier run, is kept and nothing is extracted."""
+    data = ircad_server(False)
+    archive = tmp_path / "downloads/3Dircadb1.zip"
+    if downloaded:
+        archive.parent.mkdir()
+        archive.write_bytes(data)
+    assert cli.main(["fetch-ircadb", "--data-dir", str(tmp_path)]) == 1
+    err = capsys.readouterr().err
+    assert f"expected: sha256 {'0' * 64}" in err
+    assert f"got:      sha256 {_members_digest(archive)}" in err
+    assert archive.read_bytes() == data
+    assert not (tmp_path / "datasets/ircadb/patient_01").exists()
 
 
 def test_renderers_lists_every_renderer(capsys: pytest.CaptureFixture[str]) -> None:

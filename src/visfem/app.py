@@ -60,7 +60,7 @@ from visfem.engine.selection import (
     select_xdmf,
 )
 from visfem.engine.xr_manager import XRManager
-from visfem.log import get_logger
+from visfem.log import get_logger, user_error
 from visfem.mesh import get_metadata, preload_all_meshes, vtk_series_steps
 from visfem.models import MeshMetadata, ProjectMetadata
 from visfem.ui.layout import UICallbacks, build_ui
@@ -214,7 +214,7 @@ class VisfemApp(TrameApp):
                 "active_continuous_cmap": "viridis",
                 "categorical_palette_meta": CATEGORICAL_META,
                 "continuous_cmap_meta": CONTINUOUS_META,
-                "fullscreen": False,
+                "fullscreen": False,  # client-only, set by the fullscreenchange listener in layout.py
                 "loading": False,
                 "busy": False,
                 # Set by _show_error; shown by the snackbar in layout.py.
@@ -224,14 +224,14 @@ class VisfemApp(TrameApp):
                 "webgl_blocked": False,
                 "camera_resetting": False,
                 "color_reversed": False,
-                "exit_btn_pos": [0.0, 0.0, 0.0],
-                "xr_exit_triggered": False,
                 "clim_input_min": "",
                 "clim_input_max": "",
                 "clim_override": None,
                 "opacity_adjusting": False,
             }
         )
+        # Each browser of a session follows its own fullscreen state.
+        self.state.client_only("fullscreen")
 
     @change("url_model")
     def _on_url_model_change(self, url_model: str = "", **_: object) -> None:
@@ -281,11 +281,6 @@ class VisfemApp(TrameApp):
     def take_screenshot(self) -> None:
         """Trigger vtk.js canvas capture and browser PNG download."""
         self.ctrl.capture_screenshot()
-
-    @change("xr_exit_triggered")
-    def _on_xr_exit_triggered(self, xr_exit_triggered: bool, **_: object) -> None:
-        """Forward the *xr_exit_triggered* change to the XR manager."""
-        self.xr.on_exit_triggered(xr_exit_triggered)
 
     @change("xr_session_ended")
     def _on_xr_session_ended(self, xr_session_ended: bool, **_: object) -> None:
@@ -359,11 +354,11 @@ class VisfemApp(TrameApp):
         return min(settle, _RENDER_SETTLE_MAX)
 
     def _show_error(self, context: str, exc: Exception) -> None:
-        """Log the traceback of *exc* and show "*context*: *exc*" to the user."""
+        """Log the traceback of *exc* and show *context* to the user, see log.user_error."""
         # logger.exception attaches the exception being handled.
         logger.exception(context)
         with self.state:
-            self.state.error_message = f"{context}: {exc}"
+            self.state.error_message = user_error(context, exc)
             self.state.error_open = True
 
     @contextlib.contextmanager

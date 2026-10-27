@@ -12,7 +12,7 @@ from trame.app import get_server
 
 from tests.conftest import region_grid, write_pvd
 from visfem.app import VisfemApp
-from visfem.engine import selection
+from visfem.engine import playback, selection
 
 
 @pytest.fixture
@@ -82,6 +82,11 @@ def test_startup(app: VisfemApp) -> None:
     assert sorted(app._project_metadata) == ["bone", "broken", "heart", "series"]
     assert [path.name for path in app._xdmf_meta] == ["series.pvd"]
     assert app.state.active_dataset is None
+
+
+def test_fullscreen_is_client_only(app: VisfemApp) -> None:
+    """Check that the fullscreen flag stays in the browser which set it, the other browsers of the session keep theirs."""
+    assert "fullscreen" in app.state.trame__client_only
 
 
 def test_select_region_dataset(app: VisfemApp) -> None:
@@ -174,13 +179,51 @@ def test_failed_dataset_resets_the_view(app: VisfemApp) -> None:
     _run(app.select_dataset("broken"))
     state = app.state
     assert state.error_open
-    assert "Failed to load dataset 'broken'" in state.error_message
+    # the exception text carries the server path of the mesh, the client gets none of it
+    assert state.error_message == "Failed to load dataset 'broken'"
     assert state.active_dataset is None
     assert state.active_meta is None
     assert state.legend_items == []
     assert state.mesh_stats is None
     assert not state.busy and not state.loading
     assert app.scene.active_actor is None
+
+
+def test_error_details_on_request(
+    app: VisfemApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Check that VISFEM_SHOW_ERRORS=1 appends the text of the exception to the error message."""
+    monkeypatch.setenv("VISFEM_SHOW_ERRORS", "1")
+    _run(app.select_dataset("broken"))
+    # the STL reader of meshio fails on the second line of the file
+    assert app.state.error_message == (
+        "Failed to load dataset 'broken': could not convert string to float: 'is'"
+    )
+
+
+def test_playback_error_hides_the_details(
+    app: VisfemApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Check that a failed playback step stops the playback and names only the step."""
+    _run(app.select_dataset("series"))
+
+    def fail(*_: object) -> None:
+        raise FileNotFoundError("/secret/server/path/series_1.vtu")
+
+    monkeypatch.setattr("visfem.engine.playback.select_step", fail)
+    app.state.autoplay = True
+    _run(
+        playback.autoplay_loop(
+            app.state,
+            app.scene,
+            app.ctrl,
+            app._project_metadata,
+            app._xdmf_meta,
+            frame_sleep=0.0,
+        )
+    )
+    assert not app.state.autoplay
+    assert app.state.error_message == "Playback stopped at step 1"
 
 
 def test_category_colour_override(app: VisfemApp) -> None:

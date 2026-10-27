@@ -16,10 +16,19 @@ services:
     ports:
       - "127.0.0.1:8080:80"        # reachable by the reverse proxy only
     restart: unless-stopped
+    # Caps of the whole container, sized for the 6 sessions of setup/launcher.json: a
+    # session takes ~350 MB plus its mesh cache (VISFEM_MESH_CACHE_MB) plus the mesh
+    # on display, ~1.7 GB at most; see section 9 of docs/deployment.md
+    mem_limit: 12g
+    cpus: 4
+    pids_limit: 1024
     volumes:
       - ./data:/deploy/data:ro
     environment:
       DATA_DIR: /deploy/data       # discovery.py reads /deploy/data/datasets
       TRAME_USE_HOST: "wss://app.visfem.de"   # app subdomain
+      # Mesh cache of every session in MB; the 30 keyframes of heart_iv, the largest
+      # public series, take 905 MB and play from memory
+      VISFEM_MESH_CACHE_MB: "1024"
       # Public deployment exposes the SPP2311 subset
       VISFEM_DATASETS: "ia_ai4ia,avm_md,aneurysm,aneurysm_coils,heart,heart_ep,heart_iv,lobule_convergence,tibia_mesh,tibia_simulation,meniscus_regeneration,ami,liver_vessels,rectangle_one_tree,rectangle_two_trees,rectangle_quad_500,rectangle_quad_2000,rectangle_quad_3000,openknees_gen1,openknees_oks001,openknees_oks002,openknees_oks003,openknees_oks004,openknees_oks006,openknees_oks007,openknees_oks008,openknees_oks009"

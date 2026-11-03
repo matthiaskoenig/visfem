@@ -7,6 +7,7 @@ VISFEM_LOG_LEVEL sets the log level (default WARNING).
 import asyncio
 import base64
 import contextlib
+import errno
 import importlib.resources
 import math
 from collections.abc import Callable, Generator
@@ -686,15 +687,29 @@ class VisfemApp(TrameApp):
             )
 
 
+# errno of a port which is already bound: EADDRINUSE, and WSAEADDRINUSE on Windows.
+_ADDRESS_IN_USE = {errno.EADDRINUSE, getattr(errno, "WSAEADDRINUSE", errno.EADDRINUSE)}
+
+
 def main() -> None:
-    """Build the app, preload every mesh when VISFEM_PRELOAD=1, and start the server."""
+    """Build the app, preload every mesh when VISFEM_PRELOAD=1, and start the server.
+
+    Raises:
+        SystemExit: The port is already in use, the message names it instead of a traceback.
+    """
     import os
 
     app = VisfemApp()
     # Unset in the per-session deployment: each session lazy-loads its one model and the idle container stays light.
     if os.environ.get("VISFEM_PRELOAD", "0") == "1":
         preload_all_meshes(app._project_metadata)
-    app.server.start()
+    try:
+        app.server.start()
+    except OSError as err:
+        if err.errno not in _ADDRESS_IN_USE:
+            raise
+        msg = f"visfem: {err.strerror}\nStart it on another port with --port <number>, --port 0 picks a free one."
+        raise SystemExit(msg) from None
 
 
 if __name__ == "__main__":

@@ -16,7 +16,21 @@ visfem serve --host 0.0.0.0           # listen on all interfaces of the machine
 visfem serve --help                   # every option of the trame server
 ```
 
-The server listens on `localhost` by default. A single `visfem serve` process is one session which every connected browser shares; a public instance runs behind the trame launcher, which starts one process per visitor, see [Deployment](deployment.md).
+The server listens on `localhost` by default, unless `--host` or the `TRAME_DEFAULT_HOST` environment variable names another interface; the `0.0.0.0` which `visfem serve --help` gives as the default of `--host` is not what the server uses. A single `visfem serve` process is one session which every connected browser shares; a public instance runs behind the trame launcher, which starts one process per visitor, see [Deployment](deployment.md).
+
+## Port
+
+The server listens on port 8080 by default. `--port`, or its short form `-p`, starts it on another port, with or without the `serve` command:
+
+```bash
+visfem --port 9000                    # the app at http://localhost:9000/
+visfem serve --server -p 9000         # the same without opening a browser
+visfem --port 0                       # any free port, the address is printed at startup
+```
+
+The `TRAME_ARGS` environment variable sets the options as well, e.g. `TRAME_ARGS="--port 9000 --server" visfem`; when it is set, the options of the command line are ignored.
+
+Every running `visfem` needs a port of its own. If the port is taken, e.g. by a second `visfem` on the default port, the start fails with `address already in use`; start it on another port or stop the process which holds the port.
 
 ## Data directory
 

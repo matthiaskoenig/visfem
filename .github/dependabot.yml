@@ -24,6 +24,9 @@ updates:
       python-dependencies:
         patterns:
           - "*"
+    # pyvista pins its own version exactly (pyvista-validation==0.2.2 in pyvista 0.49.1), it moves with pyvista
+    ignore:
+      - dependency-name: "pyvista-validation"
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps"

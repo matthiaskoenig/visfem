@@ -150,9 +150,7 @@ class VisfemApp(TrameApp):
     def _setup_plotter(self) -> None:
         """Initialize an empty off-screen plotter."""
         self.plotter = pv.Plotter(off_screen=True, theme=pv.themes.DarkTheme())
-        # typeshed types the functools.wraps wrappers of Plotter as unbound methods,
-        # the renderers are called directly where possible.
-        self.plotter.enable_depth_peeling(number_of_peels=4)  # ty: ignore[missing-argument]
+        self.plotter.enable_depth_peeling(number_of_peels=4)
         self.scene = Scene(self.plotter)
         set_background(self.scene, dark_mode=True)
         # Physical scale stays default: SetPhysicalScale is server-only; the JS selectstart handler scales XR metres by 1000 to VTK mm.
